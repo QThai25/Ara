@@ -1,0 +1,11 @@
+import * as service from "../services/accountAsset.service.js";
+import { asyncHandler } from "../utils/asyncHandler.js";
+import { sendSuccess } from "../utils/apiResponse.js";
+const call = (fn, message) => asyncHandler(async (req, res) => sendSuccess(res, message, await fn(req.user._id, req.params.id, req.body)));
+export const updateProfile = asyncHandler(async (req,res)=>sendSuccess(res,"Đã cập nhật thông tin cá nhân.",await service.updateProfile(req.user._id,req.body)));
+export const listAddresses = asyncHandler(async (req,res)=>sendSuccess(res,"Danh sách địa chỉ.",await service.listAddresses(req.user._id)));
+export const createAddress = asyncHandler(async (req,res)=>sendSuccess(res,"Đã thêm địa chỉ.",await service.createAddress(req.user._id,req.body),201));
+export const updateAddress = call(service.updateAddress,"Đã cập nhật địa chỉ."); export const deleteAddress = call(service.deleteAddress,"Đã xóa địa chỉ."); export const defaultAddress = call(service.setAddressDefault,"Đã đặt địa chỉ mặc định."); export const toggleAddress = call(service.toggleAddress,"Đã đổi trạng thái địa chỉ.");
+export const listDestinations = asyncHandler(async (req,res)=>sendSuccess(res,"Danh sách điểm nhận hoàn cọc.",await service.listDestinations(req.user._id)));
+export const createDestination = asyncHandler(async (req,res)=>sendSuccess(res,"Đã thêm điểm nhận hoàn cọc.",await service.createDestination(req.user._id,req.body),201));
+export const updateDestination = call(service.updateDestination,"Đã cập nhật điểm nhận."); export const deleteDestination = call(service.deleteDestination,"Đã xóa điểm nhận."); export const defaultDestination = call(service.setDestinationDefault,"Đã đặt điểm nhận mặc định."); export const toggleDestination = call(service.toggleDestination,"Đã đổi trạng thái điểm nhận.");

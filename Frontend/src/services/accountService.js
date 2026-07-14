@@ -1,0 +1,15 @@
+import { apiClient } from "./apiClient.js";
+const data = response => response?.data?.data ?? response?.data;
+export const updateProfile=async body=>data(await apiClient.patch("/account/profile",body));
+export const listAddresses=async()=>data(await apiClient.get("/account/addresses"));
+export const createAddress=async body=>data(await apiClient.post("/account/addresses",body));
+export const updateAddress=async(id,body)=>data(await apiClient.patch(`/account/addresses/${id}`,body));
+export const deleteAddress=async id=>data(await apiClient.delete(`/account/addresses/${id}`));
+export const setDefaultAddress=async id=>data(await apiClient.patch(`/account/addresses/${id}/default`));
+export const toggleAddress=async id=>data(await apiClient.patch(`/account/addresses/${id}/toggle`));
+export const listRefundDestinations=async()=>data(await apiClient.get("/account/refund-destinations"));
+export const createRefundDestination=async body=>data(await apiClient.post("/account/refund-destinations",body));
+export const deleteRefundDestination=async id=>data(await apiClient.delete(`/account/refund-destinations/${id}`));
+export const setDefaultRefundDestination=async id=>data(await apiClient.patch(`/account/refund-destinations/${id}/default`));
+export const toggleRefundDestination=async id=>data(await apiClient.patch(`/account/refund-destinations/${id}/toggle`));
+export const uploadRefundQr=async file=>{const body=new FormData();body.append("image",file);return data(await apiClient.post("/uploads/refund-qr",body));};

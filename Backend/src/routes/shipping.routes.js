@@ -1,0 +1,2 @@
+import {Router} from "express";import {auth,optionalAuth} from "../middlewares/auth.middleware.js";import {adminOnly} from "../middlewares/admin.middleware.js";import * as c from "../controllers/shipping.controller.js";
+export const shippingRoutes=Router(),adminShippingRoutes=Router();shippingRoutes.get("/methods",c.methods);shippingRoutes.post("/quote",optionalAuth,c.quote);adminShippingRoutes.use(auth,adminOnly);adminShippingRoutes.get("/",c.list);adminShippingRoutes.post("/",c.create);adminShippingRoutes.patch("/:id",c.update);adminShippingRoutes.delete("/:id",c.remove);

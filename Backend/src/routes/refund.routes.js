@@ -1,0 +1,16 @@
+import { Router } from "express";
+import { auth } from "../middlewares/auth.middleware.js";
+import { adminOnly } from "../middlewares/admin.middleware.js";
+import * as c from "../controllers/refund.controller.js";
+export const refundRoutes = Router();
+export const adminRefundRoutes = Router();
+refundRoutes.use(auth);
+refundRoutes.get("/:orderId", c.getOrder);
+refundRoutes.patch("/:orderId/destination", c.destination);
+adminRefundRoutes.use(auth, adminOnly);
+adminRefundRoutes.get("/", c.list);
+adminRefundRoutes.get("/:id", c.detail);
+adminRefundRoutes.patch("/:id/start", c.start);
+adminRefundRoutes.patch("/:id/complete", c.complete);
+adminRefundRoutes.patch("/:id/fail", c.fail);
+adminRefundRoutes.patch("/:id/cancel", c.cancel);

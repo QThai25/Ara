@@ -1,0 +1,47 @@
+import { Router } from "express";
+import * as controller from "../controllers/rentalOrder.controller.js";
+import { auth, optionalAuth } from "../middlewares/auth.middleware.js";
+import { adminOnly } from "../middlewares/admin.middleware.js";
+import { validate } from "../middlewares/validate.middleware.js";
+import { createRentalOrderValidation, inspectionValidation, publicLookupValidation, rejectOrderValidation } from "../validations/rentalOrder.validation.js";
+import { publicLookupRateLimit } from "../middlewares/publicLookupRateLimit.middleware.js";
+import * as refundController from "../controllers/refund.controller.js";
+
+export const rentalOrderRoutes = Router();
+export const adminRentalOrderRoutes = Router();
+
+rentalOrderRoutes.post("/", optionalAuth, createRentalOrderValidation, validate, controller.createRentalOrder);
+rentalOrderRoutes.post("/public/lookup", publicLookupRateLimit, publicLookupValidation, validate, controller.publicLookup);
+rentalOrderRoutes.get("/public/session/:orderCode", publicLookupRateLimit, controller.publicSession);
+rentalOrderRoutes.post("/public/bank-transfer", publicLookupRateLimit, publicLookupValidation, validate, controller.guestBankTransfer);
+rentalOrderRoutes.get("/my", auth, controller.listMyOrders);
+rentalOrderRoutes.get("/:orderId/refund", auth, refundController.getOrder);
+rentalOrderRoutes.patch("/:orderId/refund-destination", auth, refundController.destination);
+rentalOrderRoutes.get("/:id", auth, controller.getOrder);
+rentalOrderRoutes.patch("/:id/cancel", auth, controller.cancelOrder);
+rentalOrderRoutes.get("/credits/available", auth, controller.listCredits);
+rentalOrderRoutes.post("/:id/issues", auth, controller.reportPickupIssue);
+rentalOrderRoutes.get("/:id/issues", auth, controller.listIssues);
+rentalOrderRoutes.post("/:id/apply-credit", auth, controller.applyCredit);
+
+adminRentalOrderRoutes.get("/", auth, adminOnly, controller.listAdminOrders);
+adminRentalOrderRoutes.get("/:id", auth, adminOnly, controller.getAdminOrder);
+adminRentalOrderRoutes.patch("/:id/approve", auth, adminOnly, controller.approveOrder);
+adminRentalOrderRoutes.patch("/:id/reject", auth, adminOnly, rejectOrderValidation, validate, controller.rejectOrder);
+adminRentalOrderRoutes.patch("/:id/cancel", auth, adminOnly, controller.cancelOrder);
+adminRentalOrderRoutes.patch("/:id/ready-for-pickup", auth, adminOnly, controller.readyForPickup);
+adminRentalOrderRoutes.patch("/:id/picked-up", auth, adminOnly, controller.pickedUp);
+adminRentalOrderRoutes.patch("/:id/returned", auth, adminOnly, controller.returned);
+adminRentalOrderRoutes.post("/:id/inspection", auth, adminOnly, inspectionValidation, validate, controller.inspectReturn);
+adminRentalOrderRoutes.get("/:id/inspection", auth, adminOnly, controller.listInspection);
+adminRentalOrderRoutes.patch("/:id/complete", auth, adminOnly, controller.completeOrder);
+adminRentalOrderRoutes.patch("/:id/deposit", auth, adminOnly, controller.confirmDeposit);
+adminRentalOrderRoutes.patch("/:id/deposit/return-original-id", auth, adminOnly, controller.returnOriginalId);
+adminRentalOrderRoutes.patch("/:id/logistics", auth, adminOnly, controller.updateLogistics);
+adminRentalOrderRoutes.patch("/:id/extra-days", auth, adminOnly, controller.confirmExtraDays);
+adminRentalOrderRoutes.post("/:id/exchanges", auth, adminOnly, controller.exchangeCostume);
+adminRentalOrderRoutes.get("/:id/issues", auth, adminOnly, controller.listIssues);
+adminRentalOrderRoutes.patch("/:id/issues/:issueId", auth, adminOnly, controller.handleIssue);
+adminRentalOrderRoutes.post("/:id/settlement", auth, adminOnly, controller.settleDeposit);
+adminRentalOrderRoutes.patch("/:id/immediate-return", auth, adminOnly, controller.immediateReturn);
+adminRentalOrderRoutes.post("/:id/collect-cash-and-pickup", auth, adminOnly, controller.collectCashAndPickup);

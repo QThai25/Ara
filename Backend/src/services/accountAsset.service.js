@@ -1,0 +1,63 @@
+import crypto from "node:crypto";
+import { CustomerAddress } from "../models/CustomerAddress.js";
+import { RefundDestination } from "../models/RefundDestination.js";
+import { ApiError } from "../utils/ApiError.js";
+import { User } from "../models/User.js";
+import { normalizePhone } from "../utils/phone.js";
+
+function required(value, label) { const text = String(value || "").trim(); if (!text) throw new ApiError(400, `${label} là bắt buộc.`); return text; }
+
+export async function updateProfile(userId, body) {
+  const user = await User.findById(userId);
+  if (!user) throw new ApiError(404, "Không tìm thấy tài khoản.");
+  const name = required(body.name, "Họ tên");
+  const phone = required(body.phone, "Số điện thoại");
+  const phoneNormalized = normalizePhone(phone);
+  if (!/^(?:0)(?:3|5|7|8|9)\d{8}$/.test(phoneNormalized)) throw new ApiError(400, "Số điện thoại không hợp lệ.");
+  const email = String(body.email || "").trim().toLowerCase();
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new ApiError(400, "Email không hợp lệ.");
+  const duplicate = await User.findOne({ _id: { $ne: userId }, $or: [{ phoneNormalized }, ...(email ? [{ email }] : [])] });
+  if (duplicate) throw new ApiError(409, "Số điện thoại hoặc email đã được sử dụng.");
+  user.name = name;
+  user.phone = phone;
+  user.phoneNormalized = phoneNormalized;
+  user.email = email || undefined;
+  await user.save();
+  return User.findById(userId).select("-password");
+}
+function key() {
+  const raw = process.env.REFUND_ACCOUNT_ENCRYPTION_KEY || "";
+  let value;
+  try { value = Buffer.from(raw, "base64"); } catch { value = Buffer.alloc(0); }
+  if (value.length !== 32 && /^[a-f\d]{64}$/i.test(raw)) value = Buffer.from(raw, "hex");
+  if (value.length !== 32) throw new ApiError(503, "Chưa cấu hình khóa mã hóa tài khoản hoàn cọc.");
+  return value;
+}
+function encrypt(value) { const iv = crypto.randomBytes(12); const cipher = crypto.createCipheriv("aes-256-gcm", key(), iv); const body = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]); return [iv, cipher.getAuthTag(), body].map(v => v.toString("base64")).join("."); }
+function decrypt(value) { const [iv, tag, body] = String(value || "").split(".").map(part => Buffer.from(part, "base64")); const decipher = crypto.createDecipheriv("aes-256-gcm", key(), iv); decipher.setAuthTag(tag); return Buffer.concat([decipher.update(body), decipher.final()]).toString("utf8"); }
+function addressInput(body) { const provinceName = required(body.provinceName, "Tỉnh/thành"); return { label: required(body.label, "Nhãn địa chỉ"), receiverName: required(body.receiverName, "Người nhận"), receiverPhone: required(body.receiverPhone, "Số điện thoại"), addressLine: required(body.addressLine, "Địa chỉ"), wardCode: body.wardCode || "", wardName: required(body.wardName, "Phường/xã"), districtCode: body.districtCode || "", districtName: required(body.districtName, "Quận/huyện"), provinceCode: String(body.provinceCode || provinceName).trim(), provinceName, note: body.note || "" }; }
+async function ensureDefault(Model, userId, item) { if (item.isDefault) await Model.updateMany({ userId, _id: { $ne: item._id } }, { $set: { isDefault: false } }); }
+export async function listAddresses(userId) { return CustomerAddress.find({ userId }).sort({ isDefault: -1, createdAt: -1 }); }
+export async function createAddress(userId, body) { const count = await CustomerAddress.countDocuments({ userId }); const item = await CustomerAddress.create({ userId, ...addressInput(body), isDefault: body.isDefault === true || count === 0 }); await ensureDefault(CustomerAddress, userId, item); return item; }
+export async function updateAddress(userId, id, body) { const item = await CustomerAddress.findOne({ _id: id, userId }); if (!item) throw new ApiError(404, "Không tìm thấy địa chỉ."); Object.assign(item, addressInput({ ...item.toObject(), ...body })); if (body.isDefault === true) item.isDefault = true; await ensureDefault(CustomerAddress, userId, item); return item.save(); }
+export async function deleteAddress(userId, id) { const item = await CustomerAddress.findOneAndDelete({ _id: id, userId }); if (!item) throw new ApiError(404, "Không tìm thấy địa chỉ."); if (item.isDefault) { const next = await CustomerAddress.findOne({ userId, isEnabled: true }).sort({ createdAt: -1 }); if (next) { next.isDefault = true; await next.save(); } } return { id }; }
+export async function setAddressDefault(userId, id) { const item = await CustomerAddress.findOne({ _id: id, userId, isEnabled: true }); if (!item) throw new ApiError(404, "Địa chỉ không tồn tại hoặc đã tắt."); await CustomerAddress.updateMany({ userId }, { $set: { isDefault: false } }); item.isDefault = true; return item.save(); }
+export async function toggleAddress(userId, id) { const item = await CustomerAddress.findOne({ _id: id, userId }); if (!item) throw new ApiError(404, "Không tìm thấy địa chỉ."); item.isEnabled = !item.isEnabled; if (!item.isEnabled) item.isDefault = false; await item.save(); return item; }
+
+function publicDestination(item) { const value = item.toObject ? item.toObject() : item; delete value.encryptedAccountNumber; return { ...value, maskedAccountNumber: value.accountNumberLast4 ? `******${value.accountNumberLast4}` : "" }; }
+function destinationInput(body, existing = {}) {
+  const type = body.type || existing.type;
+  if (!["bank_account", "vietqr_image"].includes(type)) throw new ApiError(400, "Loại điểm nhận hoàn cọc không hợp lệ.");
+  const result = { type, label: required(body.label ?? existing.label, "Tên gợi nhớ") };
+  if (type === "bank_account") { result.bankCode = required(body.bankCode ?? existing.bankCode, "Mã ngân hàng"); result.bankName = required(body.bankName ?? existing.bankName, "Ngân hàng"); result.accountHolderName = required(body.accountHolderName ?? existing.accountHolderName, "Chủ tài khoản"); if (body.accountNumber) { const number = String(body.accountNumber).replace(/\s/g, ""); if (!/^\d{6,24}$/.test(number)) throw new ApiError(400, "Số tài khoản không hợp lệ."); result.encryptedAccountNumber = encrypt(number); result.accountNumberLast4 = number.slice(-4); } else if (!existing.encryptedAccountNumber) throw new ApiError(400, "Số tài khoản là bắt buộc."); }
+  else { const asset = body.qrAsset || existing.qrAsset; if (!asset?.secureUrl || !/^image\/(png|jpe?g|webp)$/i.test(asset.mimeType || "")) throw new ApiError(400, "Ảnh QR phải là PNG, JPG, JPEG hoặc WEBP."); result.qrAsset = asset; }
+  return result;
+}
+export async function listDestinations(userId) { return (await RefundDestination.find({ userId }).sort({ isDefault: -1, createdAt: -1 })).map(publicDestination); }
+export async function createDestination(userId, body) { const count = await RefundDestination.countDocuments({ userId }); const item = await RefundDestination.create({ userId, ...destinationInput(body), isDefault: body.isDefault === true || count === 0 }); await ensureDefault(RefundDestination, userId, item); return publicDestination(item); }
+export async function updateDestination(userId, id, body) { const item = await RefundDestination.findOne({ _id: id, userId }).select("+encryptedAccountNumber"); if (!item) throw new ApiError(404, "Không tìm thấy điểm nhận hoàn cọc."); Object.assign(item, destinationInput(body, item.toObject())); if (body.isDefault === true) item.isDefault = true; await ensureDefault(RefundDestination, userId, item); await item.save(); return publicDestination(item); }
+export async function deleteDestination(userId, id) { const item = await RefundDestination.findOneAndDelete({ _id: id, userId }); if (!item) throw new ApiError(404, "Không tìm thấy điểm nhận hoàn cọc."); return { id }; }
+export async function setDestinationDefault(userId, id) { const item = await RefundDestination.findOne({ _id: id, userId, isEnabled: true }); if (!item) throw new ApiError(404, "Điểm nhận không tồn tại hoặc đã tắt."); await RefundDestination.updateMany({ userId }, { $set: { isDefault: false } }); item.isDefault = true; await item.save(); return publicDestination(item); }
+export async function toggleDestination(userId, id) { const item = await RefundDestination.findOne({ _id: id, userId }); if (!item) throw new ApiError(404, "Không tìm thấy điểm nhận hoàn cọc."); item.isEnabled = !item.isEnabled; if (!item.isEnabled) item.isDefault = false; await item.save(); return publicDestination(item); }
+export function destinationSnapshot(item) { return { type: item.type, label: item.label, bankCode: item.bankCode, bankName: item.bankName, accountNumberLast4: item.accountNumberLast4, maskedAccountNumber: item.accountNumberLast4 ? `******${item.accountNumberLast4}` : "", accountHolderName: item.accountHolderName, qrAsset: item.type === "vietqr_image" ? item.qrAsset : undefined }; }
+export function adminDestination(item) { if (!item) return null; return { ...destinationSnapshot(item), accountNumber: item.type === "bank_account" && item.encryptedAccountNumber ? decrypt(item.encryptedAccountNumber) : "" }; }

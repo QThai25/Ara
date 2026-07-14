@@ -1,0 +1,36 @@
+{
+  "name": "ara-backend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch server.js",
+    "start": "node server.js",
+    "check": "node --check server.js",
+    "test": "node --test",
+    "migrate:payments": "node scripts/migrate-payment-statuses.js",
+    "migrate:notifications": "node scripts/migrate-notifications.js",
+    "migrate:notification-taxonomy": "node scripts/migrate-notification-taxonomy.js",
+    "migrate:notification-deeplinks": "node scripts/migrate-notification-deeplinks.js",
+    "migrate:costume-status": "node scripts/migrate-costume-operational-status.js",
+    "migrate:costume-images": "node scripts/migrate-costume-images.js",
+    "migrate:rental-order-codes": "node scripts/backfillRentalOrderCodes.js",
+    "migrate:user-login-indexes": "node scripts/migrateUserLoginIndexes.js",
+    "payos:webhook": "node src/scripts/registerPayosWebhook.js"
+  },
+  "dependencies": {
+    "@payos/node": "^2.0.5",
+    "bcryptjs": "^2.4.3",
+    "cloudinary": "^1.41.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "express-validator": "^7.2.1",
+    "googleapis": "^144.0.0",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.9.2",
+    "multer": "^2.2.0",
+    "multer-storage-cloudinary": "^4.0.0",
+    "socket.io": "^4.8.3"
+  }
+}

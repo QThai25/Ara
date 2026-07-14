@@ -1,0 +1,5 @@
+import { Router } from "express"; import { auth } from "../middlewares/auth.middleware.js"; import * as c from "../controllers/accountAsset.controller.js";
+export const accountRoutes=Router(); accountRoutes.use(auth);
+accountRoutes.patch("/profile",c.updateProfile);
+accountRoutes.get("/addresses",c.listAddresses); accountRoutes.post("/addresses",c.createAddress); accountRoutes.patch("/addresses/:id",c.updateAddress); accountRoutes.delete("/addresses/:id",c.deleteAddress); accountRoutes.patch("/addresses/:id/default",c.defaultAddress); accountRoutes.patch("/addresses/:id/toggle",c.toggleAddress);
+accountRoutes.get("/refund-destinations",c.listDestinations); accountRoutes.post("/refund-destinations",c.createDestination); accountRoutes.patch("/refund-destinations/:id",c.updateDestination); accountRoutes.delete("/refund-destinations/:id",c.deleteDestination); accountRoutes.patch("/refund-destinations/:id/default",c.defaultDestination); accountRoutes.patch("/refund-destinations/:id/toggle",c.toggleDestination);

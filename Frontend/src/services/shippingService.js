@@ -1,0 +1,1 @@
+import {apiClient}from"./apiClient.js";export const getShippingMethods=async()=>(await apiClient.get("/shipping/methods")).data;export const quoteShipping=async payload=>(await apiClient.post("/shipping/quote",payload)).data;
