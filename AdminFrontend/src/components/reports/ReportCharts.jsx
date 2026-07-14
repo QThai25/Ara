@@ -6,6 +6,11 @@ import { compactMoney, formatReportCurrency } from "../../utils/reportFormat.js"
 const palette = ["#4a3328", "#c9a24f", "#9c6b43", "#b98679", "#758078", "#d8c3a1", "#6f806f"];
 const tooltipStyle = { border: "1px solid #dfcfb9", borderRadius: 14, boxShadow: "0 14px 38px rgba(55,37,23,.12)", background: "#fffdf9" };
 const moneyTooltip = (value, name) => [formatReportCurrency(Number(value || 0)), name];
+const countTooltip = (value) => [`${Number(value || 0)} khách`, "Khách hàng mới"];
+const shortPeriod = (value) => {
+  const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return match ? `${match[3]}/${match[2]}` : value;
+};
 
 export function ReportChartCard({ title, description, children, empty = false, className = "" }) {
   return <section className={`report-chart-card ${className}`}><header><div><h2>{title}</h2>{description && <p>{description}</p>}</div></header>{empty ? <ReportEmptyState /> : children}</section>;
@@ -36,9 +41,11 @@ export function DonutBreakdownChart({ data = [], center }) {
   return <div className="report-donut-layout"><ResponsiveContainer width="100%" height={260}><PieChart><Pie data={data} dataKey="amount" nameKey="label" innerRadius={70} outerRadius={98} paddingAngle={4} cornerRadius={6}>{data.map((_, index) => <Cell key={index} fill={palette[index % palette.length]} />)}</Pie><Tooltip formatter={moneyTooltip} contentStyle={tooltipStyle}/></PieChart></ResponsiveContainer><div className="report-donut-center">{center}</div><div className="report-chart-legend">{data.map((item, index) => <div key={item.key}><i style={{ background: palette[index % palette.length] }} /><span>{item.label}</span><strong title={formatReportCurrency(item.amount || item.revenue || 0)}>{formatReportCurrency(item.amount || item.revenue || 0)}</strong><em>{item.percentage || 0}%</em></div>)}</div></div>;
 }
 
-export function BarMoneyChart({ data = [], dataKey = "amount", nameKey = "label", layout = "vertical" }) {
+export function BarMoneyChart({ data = [], dataKey = "amount", nameKey = "label", layout = "vertical", valueType = "money" }) {
   const vertical = layout === "vertical";
-  return <div className="report-chart-canvas report-chart-canvas--bar"><ResponsiveContainer width="100%" height={Math.max(250, data.length * 58)}><BarChart data={data} layout={vertical ? "vertical" : "horizontal"} margin={{ top: 12, right: 34, left: vertical ? 14 : 0, bottom: 4 }} barCategoryGap="30%"><CartesianGrid horizontal={!vertical} vertical={vertical} stroke="#eadfce" strokeDasharray="4 5" />{vertical ? <XAxis type="number" domain={[0, "auto"]} axisLine={false} tickLine={false} tickFormatter={compactMoney} /> : <XAxis dataKey={nameKey} axisLine={false} tickLine={false} />}{vertical ? <YAxis type="category" dataKey={nameKey} width={115} axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: "#5d493c" }} /> : <YAxis domain={[0, "auto"]} axisLine={false} tickLine={false} tickFormatter={compactMoney} />}<Tooltip formatter={moneyTooltip} contentStyle={tooltipStyle} cursor={{ fill: "rgba(201,162,79,.08)" }} /><Bar dataKey={dataKey} maxBarSize={38} radius={[0, 10, 10, 0]}>{data.map((_, index) => <Cell key={index} fill={palette[index % palette.length]} />)}</Bar></BarChart></ResponsiveContainer></div>;
+  const isCount = valueType === "count";
+  const height = vertical ? Math.max(250, Math.min(520, data.length * 58)) : 320;
+  return <div className="report-chart-canvas report-chart-canvas--bar"><ResponsiveContainer width="100%" height={height}><BarChart data={data} layout={vertical ? "vertical" : "horizontal"} margin={{ top: 18, right: 24, left: vertical ? 14 : 0, bottom: vertical ? 4 : 12 }} barCategoryGap={vertical ? "30%" : "22%"}><CartesianGrid horizontal={!vertical} vertical={vertical} stroke="#eadfce" strokeDasharray="4 5" />{vertical ? <XAxis type="number" domain={[0, "auto"]} axisLine={false} tickLine={false} tickFormatter={isCount ? undefined : compactMoney} /> : <XAxis dataKey={nameKey} axisLine={false} tickLine={false} tickFormatter={shortPeriod} minTickGap={28} tick={{ fontSize: 11, fill: "#756556" }} dy={8} />}{vertical ? <YAxis type="category" dataKey={nameKey} width={115} axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: "#5d493c" }} /> : <YAxis domain={[0, "auto"]} allowDecimals={!isCount} axisLine={false} tickLine={false} tickFormatter={isCount ? undefined : compactMoney} tick={{ fontSize: 11, fill: "#756556" }} width={36} />}<Tooltip formatter={isCount ? countTooltip : moneyTooltip} labelFormatter={vertical ? undefined : (label) => `Ngày ${shortPeriod(label)}`} contentStyle={tooltipStyle} cursor={{ fill: "rgba(201,162,79,.08)" }} /><Bar dataKey={dataKey} name={isCount ? "Khách hàng mới" : undefined} fill={CHART_COLORS.total} minPointSize={3} maxBarSize={vertical ? 38 : 28} radius={vertical ? [0, 10, 10, 0] : [7, 7, 0, 0]}>{vertical && data.map((_, index) => <Cell key={index} fill={palette[index % palette.length]} />)}</Bar></BarChart></ResponsiveContainer></div>;
 }
 
 export function OrderTrendChart({ data = [] }) {

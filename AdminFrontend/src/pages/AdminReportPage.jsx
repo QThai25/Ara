@@ -187,7 +187,7 @@ function CustomersTab({ state }) {
         <ReportKpiCard icon={<Users />} label="Khách quay lại" metric={customers.summary?.returningCustomers || 0} />
       </section>
       <section className="report-grid-2">
-        <ReportChartCard title="Khách hàng mới">{state.loading ? <ReportSkeleton /> : <BarMoneyChart data={(customers.series?.[0]?.data || []).map((row) => ({ label: row.period, amount: row.value }))} layout="horizontal" />}</ReportChartCard>
+        <ReportChartCard title="Khách hàng mới" description="Số khách tạo tài khoản theo từng ngày">{state.loading ? <ReportSkeleton /> : <BarMoneyChart data={(customers.series?.[0]?.data || []).map((row) => ({ label: row.period, amount: row.value }))} layout="horizontal" valueType="count" />}</ReportChartCard>
         <ReportChartCard title="Top khách hàng theo doanh thu">
           <SimpleReportTable rows={customers.topCustomers || []} columns={[
             { key: "name", label: "Tên" },
