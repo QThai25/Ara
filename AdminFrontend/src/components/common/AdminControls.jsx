@@ -56,6 +56,45 @@ export function ModalSelect({ label, value, options = [], onChange, placeholder 
   </label>;
 }
 
+export function ModalMultiSelect({ label, value = [], options = [], onChange, placeholder = "Chọn một hoặc nhiều giá trị", disabled = false, className = "" }) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef(null), triggerRef = useRef(null), menuRef = useRef(null);
+  const menuStyle = usePortalPosition(open, triggerRef);
+  const normalized = useMemo(() => normalizeOptions(options), [options]);
+  const selectedIds = useMemo(() => new Set((Array.isArray(value) ? value : []).map(String)), [value]);
+  const selected = normalized.filter((option) => selectedIds.has(String(option.value)));
+  useEffect(() => {
+    if (!open) return undefined;
+    const close = (event) => {
+      if (event.key === "Escape") { setOpen(false); triggerRef.current?.focus(); }
+      if (event.type === "pointerdown" && !rootRef.current?.contains(event.target) && !menuRef.current?.contains(event.target)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", close); window.addEventListener("keydown", close);
+    return () => { document.removeEventListener("pointerdown", close); window.removeEventListener("keydown", close); };
+  }, [open]);
+  const toggle = (next) => {
+    const identity = String(next);
+    onChange(selectedIds.has(identity)
+      ? (Array.isArray(value) ? value : []).filter((item) => String(item) !== identity)
+      : [...(Array.isArray(value) ? value : []), next]);
+  };
+  const remove = (event, identity) => {
+    event.stopPropagation();
+    onChange((Array.isArray(value) ? value : []).filter((item) => String(item) !== String(identity)));
+  };
+  return <label className={`modal-select-field modal-multi-select-field ${className}`} ref={rootRef}>
+    {label && <span className="admin-control-label">{label}</span>}
+    <button ref={triggerRef} type="button" className={`modal-select-trigger modal-multi-select-trigger ${open ? "is-open" : ""} ${selected.length ? "" : "is-placeholder"}`} disabled={disabled} aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen((current) => !current)}>
+      <span className="modal-multi-select-values">{selected.length ? selected.map((option) => <span className="modal-multi-select-chip" key={String(option.value)}>{option.label}<span role="button" tabIndex={-1} aria-label={`Bỏ ${option.label}`} onClick={(event) => remove(event, option.value)}><X size={13}/></span></span>) : placeholder}</span>
+      <ChevronDown size={17}/>
+    </button>
+    {open && createPortal(<div ref={menuRef} className="modal-select-menu modal-multi-select-menu" style={menuStyle} role="listbox" aria-multiselectable="true" aria-label={label || placeholder}>
+      {!normalized.length && <p>Không có lựa chọn</p>}
+      {normalized.map((option) => { const active = selectedIds.has(String(option.value)); return <button type="button" role="option" aria-selected={active} className={active ? "is-selected" : ""} key={String(option.value)} onClick={() => toggle(option.value)}><span>{option.label}</span>{active && <CheckCircle2 size={16}/>}</button>; })}
+    </div>, document.body)}
+  </label>;
+}
+
 const iso = (date) => `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`;
 const parse = (value) => { const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value || ""); return match ? new Date(Number(match[1]), Number(match[2])-1, Number(match[3])) : null; };
 const displayDate = (value) => { const date = parse(value); return date ? `${String(date.getDate()).padStart(2,"0")}/${String(date.getMonth()+1).padStart(2,"0")}/${date.getFullYear()}` : ""; };

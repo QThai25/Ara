@@ -70,7 +70,8 @@ export async function deleteOption(type, id) {
   const item = await Model.findById(id);
   if (!item) throw new ApiError(404, "Không tìm thấy bộ lọc.");
   const field = type === "occasion" ? "occasion" : "style";
-  const used = await Costume.exists({ [field]: item.slug });
+  const idsField = type === "occasion" ? "occasionIds" : "styleIds";
+  const used = await Costume.exists({ $or: [{ [field]: item.slug }, { [idsField]: item._id }] });
   if (used) return updateOption(type, id, { status: "inactive", isVisible: false });
   await Model.findByIdAndDelete(id);
   return item;

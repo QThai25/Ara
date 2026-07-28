@@ -12,23 +12,7 @@ function key(userId = currentUserId()) {
 }
 
 function read(userId) {
-  const items = JSON.parse(localStorage.getItem(key(userId)) || "[]");
-
-  // Các giỏ được tạo trước đây đã làm rơi thông tin gói 3 ngày 2 đêm.
-  // Khôi phục ngày mặc chính từ ngày nhận để checkout không tính thành
-  // lịch thuê cũ theo số ngày.
-  return items.map((item) => {
-    if (item.mainUseDate || Number(item.rentalDays) !== 2) return item;
-
-    const pickupDate = String(item.rentalDate || "").slice(0, 10);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(pickupDate)) return item;
-    const [year, month, day] = pickupDate.split("-").map(Number);
-    const mainUseDate = new Date(Date.UTC(year, month - 1, day + 1))
-      .toISOString()
-      .slice(0, 10);
-
-    return { ...item, mainUseDate, extraDays: 0 };
-  });
+  return JSON.parse(localStorage.getItem(key(userId)) || "[]");
 }
 
 function write(items, userId) {
@@ -47,14 +31,25 @@ export function addToRentalCart(product, rentalDate, returnDate, userId, options
   const pickupTime = options.pickupTime || "";
   const returnTime = options.returnTime || "";
   const rentalDays = Number(options.rentalDays || 1);
-  const exists = items.some((item) =>
+  const existingIndex = items.findIndex((item) =>
     (item.product.id || item.product._id) === id &&
     item.rentalDate === rentalDate &&
     item.returnDate === returnDate &&
     (item.pickupTime || "") === pickupTime &&
     (item.returnTime || "") === returnTime
   );
-  if (exists) return items;
+  if (existingIndex >= 0) {
+    const next = [...items];
+    next[existingIndex] = {
+      ...next[existingIndex],
+      rentalDays,
+      mainUseDate: options.mainUseDate || next[existingIndex].mainUseDate || "",
+      extraDays: Math.max(0, Number(options.extraDays || 0)),
+      quote: options.quote || next[existingIndex].quote || null,
+      fulfillment: options.fulfillment || next[existingIndex].fulfillment || null
+    };
+    return write(next, userId);
+  }
   return write(
     [
       ...items,
@@ -68,7 +63,8 @@ export function addToRentalCart(product, rentalDate, returnDate, userId, options
         rentalDays,
         mainUseDate: options.mainUseDate || "",
         extraDays: Math.max(0, Number(options.extraDays || 0)),
-        quote: options.quote || null
+        quote: options.quote || null,
+        fulfillment: options.fulfillment || null
       }
     ],
     userId

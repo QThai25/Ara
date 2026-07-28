@@ -22,7 +22,7 @@ function CustomerLayoutContent({ user, logout, toast, children }) {
       <Header user={user} logout={logout} />
       {toast && <div className={`toast ${toast.type}`}>{toast.message}</div>}
       <main>{children}</main>
-      <FloatingContact interaction={interaction} message={message} />
+      <FloatingContact interaction={interaction} message={message} user={user} />
       <Footer />
     </div>
   );

@@ -3,7 +3,7 @@ import { io } from "socket.io-client";
 import { OrderDetail } from "../components/common/OrderDetail.jsx";
 import { AdminActionMenu, AdminFilterBar, AdminSelect, AdminSelectFilter, AdminStatCard, AdminStatusBadge } from "../components/common/AdminUI.jsx";
 import { StateMessage } from "../components/common/StateMessage.jsx";
-import { AdminModal, ModalDatePicker, ModalSelect, MoneyThousandsInput, PlainNumberInput } from "../components/common/AdminControls.jsx";
+import { AdminModal, ModalDatePicker, ModalMultiSelect, ModalSelect, MoneyThousandsInput, PlainNumberInput } from "../components/common/AdminControls.jsx";
 import { MultiImageUploader } from "../components/common/MultiImageUploader.jsx";
 import { StatusBadge } from "../components/common/StatusBadge.jsx";
 import { useDebouncedValue } from "../hooks/useDebouncedValue.js";
@@ -183,8 +183,8 @@ export function AdminPage({ activeTab, notify }) {
   const dashboardStats = useMemo(() => {
     const renting = orders.filter((order) => order.status === "renting").length;
     const completed = orders.filter((order) => order.status === "completed").length;
-    const available = costumes.filter((costume) => costume.status === "available").length;
-    const laundry = costumes.filter((costume) => ["laundry", "washing"].includes(costume.status)).length;
+    const available = costumes.filter((costume) => costume.currentDisplayStatus === "available").length;
+    const laundry = costumes.filter((costume) => costume.currentDisplayStatus === "cleaning").length;
     const heldDeposit = orders
       .filter((order) => ["deposit_paid", "ready_to_pickup", "renting"].includes(order.status))
       .reduce((sum, order) => sum + (order.totalDepositAmount || 0), 0);
@@ -202,7 +202,7 @@ export function AdminPage({ activeTab, notify }) {
   if (activeTab === adminTabs.dashboard) return chrome(<Dashboard summary={summary} stats={dashboardStats} orders={orders} costumes={costumes} />);
   if (activeTab === adminTabs.costumes) return chrome(<AdminCostumes costumes={costumes} categories={categories} brands={brands} occasions={occasions} styles={styles} notify={notify} reload={load} />);
   if (activeTab === adminTabs.brands) return chrome(<TaxonomyManager title="Quản lý thương hiệu" noun="thương hiệu" items={brands} notify={notify} reload={load} createItem={createBrand} updateItem={updateBrand} deleteItem={deleteBrand} toggleItem={toggleBrandStatus} />);
-  if (activeTab === adminTabs.categories) return chrome(<TaxonomyManager title="Quản lý danh mục" noun="danh mục" items={categories} notify={notify} reload={load} createItem={createCategory} updateItem={updateCategory} deleteItem={deleteCategory} toggleItem={toggleCategoryStatus} showIcon />);
+  if (activeTab === adminTabs.categories) return chrome(<TaxonomyManager title="Quản lý danh mục" noun="danh mục" items={categories} notify={notify} reload={load} createItem={createCategory} updateItem={updateCategory} deleteItem={deleteCategory} toggleItem={toggleCategoryStatus} showIcon defaultOptions={{ occasions, styles }} />);
   if (activeTab === adminTabs.occasions) return chrome(<TaxonomyManager title="Quản lý dịp mặc" noun="dịp mặc" items={occasions} notify={notify} reload={load} createItem={createOccasion} updateItem={updateOccasion} deleteItem={deleteOccasion} toggleItem={toggleOccasionStatus} showIcon />);
   if (activeTab === adminTabs.styles) return chrome(<TaxonomyManager title="Quản lý phong cách" noun="phong cách" items={styles} notify={notify} reload={load} createItem={createStyle} updateItem={updateStyle} deleteItem={deleteStyle} toggleItem={toggleStyleStatus} showIcon />);
   if (activeTab === adminTabs.orders) return chrome(<AdminOrders orders={orders} selected={selectedOrder} selectedOrderId={selectedOrderId} setSelectedOrderId={setSelectedOrderId} notify={notify} reload={load} />);
@@ -524,7 +524,8 @@ function AdminCostumes({
           item.skuCode,
           item.occasionName,
           item.styleName,
-          getStatusLabel(item.status)
+          getStatusLabel(item.operationalStatus || item.status),
+          item.currentDisplayStatus
         ]
           .filter(Boolean)
           .join(" ")
@@ -551,18 +552,20 @@ function AdminCostumes({
             item.size ===
             filters.size) &&
           (!filters.status ||
-            item.status ===
+            (item.operationalStatus || item.status) ===
             filters.status) &&
           (!filters.occasion ||
             item.occasion ===
             filters.occasion ||
             item.occasionSlug ===
-            filters.occasion) &&
+            filters.occasion ||
+            asArray(item.occasions).some((entry) => entry.slug === filters.occasion)) &&
           (!filters.style ||
             item.style ===
             filters.style ||
             item.styleSlug ===
-            filters.style)
+            filters.style ||
+            asArray(item.styles).some((entry) => entry.slug === filters.style))
         );
       }
     );
@@ -624,21 +627,17 @@ function AdminCostumes({
 
       available: asArray(costumes).filter(
         (item) =>
-          item.status === "available"
+          item.currentDisplayStatus === "available"
       ).length,
 
       rented: asArray(costumes).filter(
         (item) =>
-          ["rented", "renting"].includes(
-            item.status
-          )
+          item.currentDisplayStatus === "rented"
       ).length,
 
       laundry: asArray(costumes).filter(
         (item) =>
-          ["laundry", "washing"].includes(
-            item.status
-          )
+          item.currentDisplayStatus === "cleaning"
       ).length,
 
       hidden: asArray(costumes).filter(
@@ -647,7 +646,7 @@ function AdminCostumes({
             "maintenance",
             "hidden",
             "unavailable"
-          ].includes(item.status)
+          ].includes(item.operationalStatus || item.status)
       ).length
     }),
     [costumes]
@@ -793,8 +792,8 @@ function AdminCostumes({
       categoryId: payload.categoryId,
       size: payload.size,
       color: payload.color,
-      occasion: payload.occasion,
-      style: payload.style,
+      occasionIds: payload.occasionIds,
+      styleIds: payload.styleIds,
       material: payload.material,
 
       // Gửi toàn bộ danh sách ảnh
@@ -830,7 +829,8 @@ function AdminCostumes({
       ),
 
       skuCode: payload.skuCode,
-      status: payload.status,
+      operationalStatus: payload.operationalStatus,
+      cleaningDurationMinutes: Number(payload.cleaningDurationMinutes || 180),
       accessories: payload.accessories,
       conditionNote: payload.conditionNote
     };
@@ -1201,7 +1201,7 @@ function AdminCostumes({
               "180px",
               "160px",
               "78px",
-              "126px",
+              "150px",
               "76px"
             ]}
             columnClasses={{
@@ -1294,11 +1294,16 @@ function AdminCostumes({
                 </span>
               ),
 
-              status: (value) => (
-                <AdminStatusBadge
-                  type="costume"
-                  value={value}
-                />
+              status: (_, row) => (
+                <span className="costume-status-stack">
+                  <AdminSelect
+                    value={row.operationalStatus || (row.status === "available" ? "active" : row.status)}
+                    options={costumeStatusOptions}
+                    onChange={(value) => changeStatus(row, value)}
+                  />
+                  <AdminStatusBadge type="costume" value={row.currentDisplayStatus || "available"} />
+                  {row.currentStatusUntil && <small>Đến {formatDateTime(row.currentStatusUntil)}</small>}
+                </span>
               )
             }}
             actions={(row) => (
@@ -1328,13 +1333,14 @@ function AdminCostumes({
                   Sửa
                 </AdminButton>
 
+                {false && (<>
                 <AdminButton
                   onClick={() => {
                     const next =
-                      row.status ===
-                        "available"
+                      (row.operationalStatus || row.status) ===
+                        "active"
                         ? "maintenance"
-                        : "available";
+                        : "active";
 
                     if (
                       window.confirm(
@@ -1358,18 +1364,20 @@ function AdminCostumes({
                     toggle(row)
                   }
                 >
-                  {row.status ===
+                  {(row.operationalStatus || row.status) ===
                     "hidden" ? (
                     <Eye size={14} />
                   ) : (
                     <EyeOff size={14} />
                   )}
 
-                  {row.status ===
+                  {(row.operationalStatus || row.status) ===
                     "hidden"
                     ? "Hiện"
                     : "Ẩn"}
                 </AdminButton>
+
+                </>)}
 
                 <AdminButton
                   variant="danger"
@@ -1745,8 +1753,8 @@ function CostumeFormModal({
     categoryId: "",
     size: "M",
     color: "",
-    occasion: "",
-    style: "",
+    occasionIds: [],
+    styleIds: [],
     material: "",
     originalPrice: "",
     rentalPricePerDay: "",
@@ -1758,14 +1766,28 @@ function CostumeFormModal({
     imagePublicId: "",
     images: [],
     imageAssets: [],
-    status: "available",
+    operationalStatus: "active",
+    cleaningDurationMinutes: 180,
     accessories: "",
     conditionNote: ""
+  };
+
+  const classificationIds = (item, type, options) => {
+    const idsField = `${type}Ids`;
+    const valuesField = `${type}s`;
+    const direct = asArray(item?.[idsField]).map((value) => itemId(value) || value).filter(Boolean);
+    if (direct.length) return direct;
+    const expanded = asArray(item?.[valuesField]).map((value) => itemId(value) || value?.id).filter(Boolean);
+    if (expanded.length) return expanded;
+    const legacy = item?.[`${type}Slug`] || item?.[type];
+    const match = asArray(options).find((option) => option.slug === legacy || option.value === legacy);
+    return match ? [itemId(match)] : [];
   };
 
   const [form, setForm] = useState(() => ({
     ...empty,
     ...initial,
+    operationalStatus: initial?.operationalStatus || ({ available: "active", washing: "active", laundry: "active", repairing: "maintenance" }[initial?.status] || initial?.status || "active"),
     categoryId:
       initial?.categoryId?._id ||
       initial?.categoryId ||
@@ -1773,12 +1795,15 @@ function CostumeFormModal({
       initial?.category?._id ||
       "",
     brandSlug: resolveBrandSlug(initial),
+    occasionIds: classificationIds(initial, "occasion", occasions),
+    styleIds: classificationIds(initial, "style", styles),
     image: initial?.image || (typeof initial?.images?.[0] === "string" ? initial.images[0] : initial?.images?.[0]?.url) || "",
     imageAssets: (initial?.imageAssets?.length ? initial.imageAssets : initial?.images || [initial?.image].filter(Boolean)).map((item, index) => typeof item === "string" ? { url: item, publicId: item === initial?.image ? initial?.imagePublicId || "" : "", alt: "", sortOrder: index } : { ...item, sortOrder: index }),
     images: (initial?.images || [initial?.image].filter(Boolean)).map((item) => typeof item === "string" ? item : item?.url).filter(Boolean)
   }));
 
   const [uploading, setUploading] = useState(false);
+  const manuallyEditedClassification = useRef({ occasionIds: false, styleIds: false });
 
   const occasionSelectOptions =
     asArray(occasions).length
@@ -1794,6 +1819,25 @@ function CostumeFormModal({
     setForm((current) => ({
       ...current,
       [field]: value
+    }));
+  };
+
+  const updateClassification = (field, value) => {
+    manuallyEditedClassification.current[field] = true;
+    update(field, value);
+  };
+
+  const updateCategory = (value) => {
+    const category = categoryOptions.find((item) => itemId(item) === value);
+    setForm((current) => ({
+      ...current,
+      categoryId: value,
+      ...(!initial && !manuallyEditedClassification.current.occasionIds
+        ? { occasionIds: asArray(category?.defaultOccasionIds).map((item) => itemId(item) || item).filter(Boolean) }
+        : {}),
+      ...(!initial && !manuallyEditedClassification.current.styleIds
+        ? { styleIds: asArray(category?.defaultStyleIds).map((item) => itemId(item) || item).filter(Boolean) }
+        : {})
     }));
   };
 
@@ -1854,10 +1898,10 @@ function CostumeFormModal({
               <span>SKU</span>
               <input
                 value={form.skuCode}
-                onChange={(event) =>
-                  update("skuCode", event.target.value)
-                }
+                readOnly
+                placeholder="Tự động tạo sau khi lưu"
               />
+              <small>Hệ thống tự tạo SKU duy nhất cho trang phục.</small>
             </label>
 
             <label>
@@ -1908,37 +1952,29 @@ function CostumeFormModal({
                 value: itemId(category),
                 label: category.name
               }))}
-              onChange={(value) =>
-                update("categoryId", value)
-              }
+              onChange={updateCategory}
             />
 
-            <ModalSelect
+            <ModalMultiSelect
               label="Dịp mặc"
-              value={form.occasion}
-              placeholder="Chọn dịp mặc"
-              clearable
+              value={form.occasionIds}
+              placeholder="Chọn các dịp mặc"
               options={occasionSelectOptions.map((item) => ({
-                value: item.value || item.slug,
+                value: itemId(item),
                 label: item.label || item.name
-              }))}
-              onChange={(value) =>
-                update("occasion", value)
-              }
+              })).filter((item) => item.value)}
+              onChange={(value) => updateClassification("occasionIds", value)}
             />
 
-            <ModalSelect
+            <ModalMultiSelect
               label="Phong cách"
-              value={form.style}
-              placeholder="Chọn phong cách"
-              clearable
+              value={form.styleIds}
+              placeholder="Chọn các phong cách"
               options={styleSelectOptions.map((item) => ({
-                value: item.value || item.slug,
+                value: itemId(item),
                 label: item.label || item.name
-              }))}
-              onChange={(value) =>
-                update("style", value)
-              }
+              })).filter((item) => item.value)}
+              onChange={(value) => updateClassification("styleIds", value)}
             />
 
             <label>
@@ -2038,13 +2074,19 @@ function CostumeFormModal({
 
           <div className="form-grid">
             <ModalSelect
-              label="Trạng thái"
-              value={form.status}
-              placeholder="Chọn trạng thái"
+              label="Trạng thái vận hành"
+              value={form.operationalStatus}
+              placeholder="Chọn trạng thái vận hành"
               options={costumeStatusOptions}
               onChange={(value) =>
-                update("status", value)
+                update("operationalStatus", value)
               }
+            />
+            <PlainNumberInput
+              label="Thời gian vệ sinh (phút)"
+              value={form.cleaningDurationMinutes}
+              min={0}
+              onChange={(value) => update("cleaningDurationMinutes", value)}
             />
           </div>
 
@@ -2096,14 +2138,17 @@ function CostumeDetailModal({ item, onClose }) {
     ["Danh mục", item.category?.name || item.categoryId?.name],
     ["Size", item.size],
     ["Màu sắc", item.color],
-    ["Dịp mặc", item.occasionName || item.occasion],
-    ["Phong cách", item.styleName || item.style],
+    ["Dịp mặc", asArray(item.occasions).map((entry) => entry.name).filter(Boolean).join(", ") || item.occasionName || item.occasion],
+    ["Phong cách", asArray(item.styles).map((entry) => entry.name).filter(Boolean).join(", ") || item.styleName || item.style],
     ["Chất liệu", item.material],
     ["Giá thuê", money(item.rentalPricePerDay)],
     ["Tiền cọc", money(item.depositAmount)],
     ["Số lượng", item.quantity],
     ["SKU", item.skuCode],
-    ["Trạng thái", getStatusLabel(item.status)]
+    ["Trạng thái vận hành", getStatusLabel(item.operationalStatus || item.status)],
+    ["Trạng thái lịch", item.currentDisplayStatus],
+    ["Trạng thái đến", item.currentStatusUntil ? formatDateTime(item.currentStatusUntil) : "-"],
+    ["Có thể nhận lịch từ", item.nextAvailableAt ? formatDateTime(item.nextAvailableAt) : "-"]
   ];
 
   return (
@@ -2114,7 +2159,7 @@ function CostumeDetailModal({ item, onClose }) {
         </div>
         <div className="admin-detail-content">
           <div className="admin-detail-title">
-            <StatusBadge type="costume" value={item.status} />
+            <StatusBadge type="costume" value={item.currentDisplayStatus || item.operationalStatus || item.status} />
             <h3>{item.name}</h3>
             <p>{item.description || "Chưa có mô tả chi tiết."}</p>
           </div>
@@ -2138,7 +2183,7 @@ function CostumeDetailModal({ item, onClose }) {
   );
 }
 
-function TaxonomyManager({ title, noun, items, notify, reload, createItem, updateItem, deleteItem, toggleItem, showIcon = false }) {
+function TaxonomyManager({ title, noun, items, notify, reload, createItem, updateItem, deleteItem, toggleItem, showIcon = false, defaultOptions = null }) {
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebouncedValue(search, 600);
   const [modal, setModal] = useState(null);
@@ -2175,9 +2220,13 @@ function TaxonomyManager({ title, noun, items, notify, reload, createItem, updat
         </div>
         <AdminTable
           rows={filtered}
-          columns={showIcon ? ["name", "slug", "icon", "description", "status"] : ["name", "slug", "description", "status"]}
-          labels={showIcon ? ["Tên", "Slug", "Icon", "Mô tả", "Trạng thái"] : ["Tên", "Slug", "Mô tả", "Trạng thái"]}
-          format={{ status: (v) => <StatusBadge value={v} /> }}
+          columns={defaultOptions ? ["name", "slug", "defaultOccasionIds", "defaultStyleIds", "description", "status"] : showIcon ? ["name", "slug", "icon", "description", "status"] : ["name", "slug", "description", "status"]}
+          labels={defaultOptions ? ["Tên", "Slug", "Dịp mặc mặc định", "Phong cách mặc định", "Mô tả", "Trạng thái"] : showIcon ? ["Tên", "Slug", "Icon", "Mô tả", "Trạng thái"] : ["Tên", "Slug", "Mô tả", "Trạng thái"]}
+          format={{
+            status: (v) => <StatusBadge value={v} />,
+            defaultOccasionIds: (value, row) => asArray(value).map((item) => item.name).filter(Boolean).join(", ") || row.defaultOccasionName || "-",
+            defaultStyleIds: (value, row) => asArray(value).map((item) => item.name).filter(Boolean).join(", ") || row.defaultStyleName || "-"
+          }}
           actions={(row) => (
             <>
               <AdminButton onClick={() => setModal({ item: row })}><Pencil size={14} /> Sửa</AdminButton>
@@ -2187,13 +2236,21 @@ function TaxonomyManager({ title, noun, items, notify, reload, createItem, updat
           )}
         />
       </div>
-      {modal && <TaxonomyForm title={modal.item ? `Sửa ${noun}` : `Thêm ${noun}`} initial={modal.item} showIcon={showIcon} onClose={() => setModal(null)} onSave={save} />}
+      {modal && <TaxonomyForm title={modal.item ? `Sửa ${noun}` : `Thêm ${noun}`} initial={modal.item} showIcon={showIcon} defaultOptions={defaultOptions} onClose={() => setModal(null)} onSave={save} />}
     </>
   );
 }
 
-function TaxonomyForm({ title, initial, showIcon, onClose, onSave }) {
-  const [form, setForm] = useState({ name: initial?.name || "", slug: initial?.slug || "", description: initial?.description || "", icon: initial?.icon || "", status: initial?.status || "active" });
+function TaxonomyForm({ title, initial, showIcon, defaultOptions, onClose, onSave }) {
+  const initialDefaultIds = (type) => {
+    const values = asArray(initial?.[`default${type}Ids`]).map((item) => itemId(item) || item).filter(Boolean);
+    if (values.length) return values;
+    const legacySlug = initial?.[`default${type}Slug`];
+    const options = asArray(type === "Occasion" ? defaultOptions?.occasions : defaultOptions?.styles);
+    const match = options.find((item) => item.slug === legacySlug);
+    return match ? [itemId(match)] : [];
+  };
+  const [form, setForm] = useState({ name: initial?.name || "", slug: initial?.slug || "", description: initial?.description || "", icon: initial?.icon || "", status: initial?.status || "active", defaultOccasionIds: initialDefaultIds("Occasion"), defaultStyleIds: initialDefaultIds("Style") });
   const update = (field, value) => setForm((current) => ({ ...current, [field]: value }));
   return (
     <AdminModal title={title} onClose={onClose} className="taxonomy-form-modal">
@@ -2202,6 +2259,8 @@ function TaxonomyForm({ title, initial, showIcon, onClose, onSave }) {
           <label>Tên<input required value={form.name} onChange={(e) => update("name", e.target.value)} /></label>
           <label>Slug<input value={form.slug} onChange={(e) => update("slug", e.target.value)} placeholder="Tự tạo từ tên nếu bỏ trống" /></label>
           {showIcon && <label>Icon<input value={form.icon} onChange={(e) => update("icon", e.target.value)} /></label>}
+          {defaultOptions && <ModalMultiSelect label="Dịp mặc mặc định" value={form.defaultOccasionIds} placeholder="Không có" options={asArray(defaultOptions.occasions).map((item) => ({ value: itemId(item), label: item.name || item.label })).filter((item) => item.value)} onChange={(value) => update("defaultOccasionIds", value)} />}
+          {defaultOptions && <ModalMultiSelect label="Phong cách mặc định" value={form.defaultStyleIds} placeholder="Không có" options={asArray(defaultOptions.styles).map((item) => ({ value: itemId(item), label: item.name || item.label })).filter((item) => item.value)} onChange={(value) => update("defaultStyleIds", value)} />}
           <ModalSelect label="Trạng thái" value={form.status} onChange={(value) => update("status", value)} options={[["active", "Đang hiển thị"], ["inactive", "Đã ẩn"]]} />
         </div>
         <label>Mô tả<textarea value={form.description} onChange={(e) => update("description", e.target.value)} /></label>
@@ -2687,7 +2746,8 @@ function PaymentDetailModal({ id, fallback, notify, onChanged, onClose }) {
             <DetailRow label={"M\u00e3 \u0111\u01a1n thu\u00ea"} value={order.orderCode || `ARA-${String(itemId(order)).slice(-6).toUpperCase()}`} />
             <DetailRow label={"Kh\u00e1ch h\u00e0ng"} value={customer.name || customer.email || customer.phone} />
             <DetailRow label={"S\u1ed1 ti\u1ec1n"} value={money(payment.amount)} />
-            <DetailRow label={"Ph\u01b0\u01a1ng th\u1ee9c thanh to\u00e1n"} value={({ cash: "Tiền mặt", bank_transfer: "Chuyển khoản ngân hàng", momo: "MoMo", vnpay: "VNPay", payos: "QR ngân hàng", bank_gateway: "Cổng ngân hàng" })[payment.method] || payment.method} />
+            <DetailRow label={"Ph\u01b0\u01a1ng th\u1ee9c thanh to\u00e1n"} value={({ cash: "Tiền mặt", bank_transfer: "Chuyển khoản ngân hàng", momo: "MoMo", vnpay: "VNPay", payos: "PayOS", bank_gateway: "Cổng ngân hàng" })[payment.method] || payment.method} />
+            <DetailRow label="Minh chứng chuyển khoản" value={payment.proofUrl ? <a href={payment.proofUrl} target="_blank" rel="noreferrer">Xem minh chứng</a> : "Chưa tải lên"} />
             {!isRefund && <DetailRow label="Nhà cung cấp" value={payment.provider === "payos" ? "payOS" : payment.provider} />}
             {!isRefund && <DetailRow label="Mã đơn provider" value={payment.providerOrderCode || payment.providerOrderId} />}
             {!isRefund && <DetailRow label="Mã giao dịch provider" value={payment.providerTransactionId} />}

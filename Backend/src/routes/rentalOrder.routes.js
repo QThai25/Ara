@@ -11,6 +11,7 @@ export const rentalOrderRoutes = Router();
 export const adminRentalOrderRoutes = Router();
 
 rentalOrderRoutes.post("/", optionalAuth, createRentalOrderValidation, validate, controller.createRentalOrder);
+rentalOrderRoutes.post("/quote", optionalAuth, controller.quoteRental);
 rentalOrderRoutes.post("/public/lookup", publicLookupRateLimit, publicLookupValidation, validate, controller.publicLookup);
 rentalOrderRoutes.get("/public/session/:orderCode", publicLookupRateLimit, controller.publicSession);
 rentalOrderRoutes.post("/public/bank-transfer", publicLookupRateLimit, publicLookupValidation, validate, controller.guestBankTransfer);
@@ -25,6 +26,7 @@ rentalOrderRoutes.get("/:id/issues", auth, controller.listIssues);
 rentalOrderRoutes.post("/:id/apply-credit", auth, controller.applyCredit);
 
 adminRentalOrderRoutes.get("/", auth, adminOnly, controller.listAdminOrders);
+adminRentalOrderRoutes.post("/", auth, adminOnly, createRentalOrderValidation, validate, controller.createAdminRentalOrder);
 adminRentalOrderRoutes.get("/:id", auth, adminOnly, controller.getAdminOrder);
 adminRentalOrderRoutes.patch("/:id/approve", auth, adminOnly, controller.approveOrder);
 adminRentalOrderRoutes.patch("/:id/reject", auth, adminOnly, rejectOrderValidation, validate, controller.rejectOrder);

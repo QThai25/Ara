@@ -3,6 +3,24 @@ import { useSearchParams } from "react-router-dom";
 
 const rentalPolicies = [
   {
+    number: "00",
+    title: "Giữ lịch và thời gian vệ sinh",
+    items: [
+      {
+        label: "Xác nhận giữ lịch",
+        text: "Lịch thuê chỉ được giữ sau khi khách hàng hoàn tất khoản đặt cọc theo hướng dẫn của ARA."
+      },
+      {
+        label: "Khoảng đệm vệ sinh",
+        text: "Sau thời điểm hoàn trả, trang phục được khóa thêm 3 giờ để kiểm tra và vệ sinh."
+      },
+      {
+        label: "Đặt lịch tiếp theo",
+        text: "Khách hàng vẫn có thể chọn và đặt những ngày bắt đầu sau khi khoảng vệ sinh 3 giờ kết thúc."
+      }
+    ]
+  },
+  {
     number: "01",
     title: "Chính sách đặt cọc và hủy đơn",
     items: [
@@ -26,11 +44,11 @@ const rentalPolicies = [
     items: [
       {
         label: "Gói thuê tiêu chuẩn",
-        text: "Khách hàng được giữ đồ trong 3 ngày 2 đêm: nhận đồ trước ngày mặc → mặc ngày chính → trả đồ vào ngày hôm sau."
+        text: "Mỗi ngày thuê bằng đúng 24 giờ, tính từ lúc trang phục rời cửa hàng đến khi quay lại cửa hàng. Thời gian giao đi và nhận về nằm trong thời hạn này."
       },
       {
-        label: "Khách hàng ở tỉnh",
-        text: "Không tính thời gian trang phục vận chuyển trên đường đi và về vào thời gian giữ đồ."
+        label: "Giao và nhận lại tận nơi",
+        text: "Thời gian vận chuyển đi và về đều nằm trong gói 24 giờ; màn hình xác nhận sẽ hiển thị rõ thời gian khách dự kiến giữ đồ."
       }
     ]
   },

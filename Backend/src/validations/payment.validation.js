@@ -25,4 +25,8 @@ export const paymentQuoteValidation = [query("orderId").isMongoId().withMessage(
 export const paymentQuoteParamValidation = [param("orderId").isMongoId().withMessage("Đơn thuê không hợp lệ."), query("paymentType").isIn(PAYMENT_TYPES).withMessage("Loại thanh toán không hợp lệ.")];
 export const paymentIdValidation = [param("id").isMongoId().withMessage("Thanh toán không hợp lệ.")];
 export const confirmDirectPaymentValidation = paymentIdValidation;
+export const reportTransferValidation = [
+  ...paymentIdValidation,
+  body("proofUrl").optional({ checkFalsy: true }).isURL({ protocols: ["http", "https"], require_protocol: true }).withMessage("Đường dẫn minh chứng không hợp lệ.")
+];
 export const rejectPaymentValidation = [...paymentIdValidation, body("reason").optional().trim().isLength({ max: 500 }).withMessage("Lý do từ chối không được vượt quá 500 ký tự.")];

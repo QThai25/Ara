@@ -145,9 +145,8 @@ export function Footer() {
                 <span className="mei-footer-contact__content">
                   <small>Địa chỉ showroom</small>
                   <strong>
-                    55 Đào Duy Anh,
+                  41/1 Nguyễn Bỉnh Khiêm, Phường Đa Kao, Quận 1, Thành phố Hồ Chí Minh
                     <br />
-                    TP. Hồ Chí Minh
                   </strong>
                 </span>
 

@@ -163,6 +163,8 @@ const paymentSchema = new mongoose.Schema(
       accountName: { type: String, trim: true },
       qrUrl: { type: String, trim: true }
     },
+    proofUrl: { type: String, default: "", trim: true },
+    proofSubmittedAt: { type: Date, default: null },
 
     /*
      * Chỉ dùng cho direct payment.

@@ -46,7 +46,7 @@ export const getBookingGrid = asyncHandler(async (req, res) => {
 });
 export const createCostume = asyncHandler(async (req, res) => sendSuccess(res, "Tạo trang phục thành công.", await costumeService.createCostume(req.body), 201));
 export const updateCostume = asyncHandler(async (req, res) => sendSuccess(res, "Cập nhật trang phục thành công.", await costumeService.updateCostume(req.params.id, req.body)));
-export const updateCostumeStatus = asyncHandler(async (req, res) => sendSuccess(res, "Cập nhật trạng thái trang phục thành công.", await costumeService.updateCostumeStatus(req.params.id, req.body.status)));
+export const updateCostumeStatus = asyncHandler(async (req, res) => sendSuccess(res, "Cập nhật trạng thái trang phục thành công.", await costumeService.updateCostumeStatus(req.params.id, req.body.operationalStatus || req.body.status)));
 export const hideCostume = asyncHandler(async (req, res) => sendSuccess(res, "Đã ẩn trang phục.", await costumeService.hideCostume(req.params.id)));
 export const toggleCostumeVisibility = asyncHandler(async (req, res) => sendSuccess(res, "Cập nhật hiển thị trang phục thành công.", await costumeService.toggleCostumeVisibility(req.params.id)));
 export const deleteCostume = asyncHandler(async (req, res) => sendSuccess(res, "Xóa hoặc ẩn trang phục thành công.", await costumeService.deleteCostume(req.params.id)));

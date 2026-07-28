@@ -1,4 +1,5 @@
 export const costumeStatusText = {
+  active: "Hoạt động",
   available: "Có sẵn",
   reserved: "Đã giữ chỗ",
   rented: "Đang thuê",
@@ -31,6 +32,7 @@ export const orderStatusText = {
 
 // Costume.status is an operational switch only. Current/future reservations
 // are derived exclusively from RentalOrderItem intervals and quantity.
-export const rentableCostumeStatuses = ["available"];
+export const rentableCostumeStatuses = ["active", "available"];
+export const operationalCostumeStatuses = ["active", "maintenance", "unavailable", "hidden"];
 export const activeBookingStatuses = ["pending", "pending_confirmation", "confirmed", "deposit_paid", "deposited", "paid", "ready_to_pickup", "ready_for_pickup", "renting", "overdue"];
 export const adminRoles = ["admin", "staff", "owner"];

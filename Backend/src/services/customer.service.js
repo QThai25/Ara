@@ -158,7 +158,7 @@ export async function checkCostumeAvailability(
     );
   }
 
-  if (costume.status !== "available") {
+  if ((costume.operationalStatus || (costume.status === "available" ? "active" : costume.status)) !== "active") {
     return {
       available: false,
       stockAvailable: false,

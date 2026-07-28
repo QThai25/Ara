@@ -4,6 +4,7 @@ import { RefundDestination } from "../models/RefundDestination.js";
 import { ApiError } from "../utils/ApiError.js";
 import { User } from "../models/User.js";
 import { normalizePhone } from "../utils/phone.js";
+import { validateLocation } from "./locationCatalog.service.js";
 
 function required(value, label) { const text = String(value || "").trim(); if (!text) throw new ApiError(400, `${label} là bắt buộc.`); return text; }
 
@@ -35,7 +36,47 @@ function key() {
 }
 function encrypt(value) { const iv = crypto.randomBytes(12); const cipher = crypto.createCipheriv("aes-256-gcm", key(), iv); const body = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]); return [iv, cipher.getAuthTag(), body].map(v => v.toString("base64")).join("."); }
 function decrypt(value) { const [iv, tag, body] = String(value || "").split(".").map(part => Buffer.from(part, "base64")); const decipher = crypto.createDecipheriv("aes-256-gcm", key(), iv); decipher.setAuthTag(tag); return Buffer.concat([decipher.update(body), decipher.final()]).toString("utf8"); }
-function addressInput(body) { const provinceName = required(body.provinceName, "Tỉnh/thành"); return { label: required(body.label, "Nhãn địa chỉ"), receiverName: required(body.receiverName, "Người nhận"), receiverPhone: required(body.receiverPhone, "Số điện thoại"), addressLine: required(body.addressLine, "Địa chỉ"), wardCode: body.wardCode || "", wardName: required(body.wardName, "Phường/xã"), districtCode: body.districtCode || "", districtName: required(body.districtName, "Quận/huyện"), provinceCode: String(body.provinceCode || provinceName).trim(), provinceName, note: body.note || "" }; }
+function addressInput(body) {
+  const provinceCode = String(body.provinceCode || "").trim();
+  const communeCode = String(body.communeCode || body.wardCode || "").trim();
+  if (provinceCode && communeCode) {
+    const districtCode = required(body.districtCode, "Quận/huyện");
+    const { province, communes, districts } = validateLocation(provinceCode, [communeCode], [districtCode]);
+    const commune = communes[0];
+    const district = districts[0];
+    return {
+      label: required(body.label, "Nhãn địa chỉ"),
+      receiverName: required(body.receiverName, "Người nhận"),
+      receiverPhone: required(body.receiverPhone, "Số điện thoại"),
+      addressLine: required(body.addressLine, "Địa chỉ"),
+      communeCode: commune.code,
+      communeName: commune.name,
+      wardCode: commune.code,
+      wardName: commune.name,
+      districtCode: district.code,
+      districtName: district.displayName || district.name,
+      provinceCode: province.code,
+      provinceName: province.name,
+      note: body.note || ""
+    };
+  }
+  const provinceName = required(body.provinceName, "Tỉnh/thành");
+  return {
+    label: required(body.label, "Nhãn địa chỉ"),
+    receiverName: required(body.receiverName, "Người nhận"),
+    receiverPhone: required(body.receiverPhone, "Số điện thoại"),
+    addressLine: required(body.addressLine, "Địa chỉ"),
+    communeCode: body.communeCode || body.wardCode || "",
+    communeName: body.communeName || body.wardName || "",
+    wardCode: body.wardCode || "",
+    wardName: required(body.wardName, "Phường/xã"),
+    districtCode: body.districtCode || "",
+    districtName: body.districtName || "",
+    provinceCode: String(body.provinceCode || provinceName).trim(),
+    provinceName,
+    note: body.note || ""
+  };
+}
 async function ensureDefault(Model, userId, item) { if (item.isDefault) await Model.updateMany({ userId, _id: { $ne: item._id } }, { $set: { isDefault: false } }); }
 export async function listAddresses(userId) { return CustomerAddress.find({ userId }).sort({ isDefault: -1, createdAt: -1 }); }
 export async function createAddress(userId, body) { const count = await CustomerAddress.countDocuments({ userId }); const item = await CustomerAddress.create({ userId, ...addressInput(body), isDefault: body.isDefault === true || count === 0 }); await ensureDefault(CustomerAddress, userId, item); return item; }

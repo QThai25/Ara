@@ -110,9 +110,9 @@ export function normalizeCostume(costume) {
     categorySlug: costume.categorySlug || category.slug || "",
     categoryName: costume.categoryName || category.name || "",
     occasionSlug,
-    occasionName: costume.occasionName || occasionLabelBySlug[occasionSlug] || "",
+    occasionName: (costume.occasions || []).map((item) => item?.name).filter(Boolean).join(", ") || costume.occasionName || occasionLabelBySlug[occasionSlug] || "",
     styleSlug,
-    styleName: costume.styleName || styleLabelBySlug[styleSlug] || ""
+    styleName: (costume.styles || []).map((item) => item?.name).filter(Boolean).join(", ") || costume.styleName || styleLabelBySlug[styleSlug] || ""
   };
 }
 

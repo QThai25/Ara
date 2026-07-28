@@ -2,6 +2,8 @@ import mongoose from "mongoose";
 import { Costume } from "../models/Costume.js";
 import { Category } from "../models/Category.js";
 import { Brand } from "../models/Brand.js";
+import { Style } from "../models/Style.js";
+import { Occasion } from "../models/Occasion.js";
 import { RentalOrder } from "../models/RentalOrder.js";
 import { RentalOrderItem } from "../models/RentalOrderItem.js";
 import { ApiError } from "../utils/ApiError.js";
@@ -11,6 +13,7 @@ import { buildStandardRentalSchedule, resolveStandardPackagePrice } from "./rent
 import { brandToSlug } from "./brand.service.js";
 import { cloudinary } from "../config/cloudinary.js";
 import { costumeImagePayload, normalizeImageList } from "../utils/imageList.js";
+import { generateCostumeSku } from "../utils/costumeSku.js";
 
 const slugAliases = {
   party: "du-tiec",
@@ -52,6 +55,44 @@ const optionLabels = {
   "thanh-lich": "Thanh lịch"
 };
 
+const costumePopulate = [
+  { path: "categoryId" },
+  { path: "brandId" },
+  { path: "styleIds", select: "name slug status icon" },
+  { path: "occasionIds", select: "name slug status icon" }
+];
+
+const legacyToOperationalStatus = {
+  available: "active",
+  washing: "active",
+  laundry: "active",
+  repairing: "maintenance",
+  maintenance: "maintenance",
+  unavailable: "unavailable",
+  hidden: "hidden",
+  active: "active"
+};
+
+const operationalToLegacyStatus = {
+  active: "available",
+  maintenance: "maintenance",
+  unavailable: "unavailable",
+  hidden: "hidden"
+};
+
+export function operationalStatusOf(costume = {}) {
+  return costume.operationalStatus || legacyToOperationalStatus[costume.status] || "active";
+}
+
+function cleaningMinutesFor(costume = {}) {
+  const value = Number(costume.cleaningDurationMinutes);
+  return Number.isFinite(value) && value >= 0 ? value : RENTAL_TURNAROUND_MINUTES;
+}
+
+function isOperationallyActive(costume = {}) {
+  return operationalStatusOf(costume) === "active";
+}
+
 function canonicalSlug(value = "") {
   return slugAliases[value] || value;
 }
@@ -67,7 +108,53 @@ function parseBrandQuery(value) {
   return items.map((item) => brandToSlug(item)).filter(Boolean);
 }
 
-async function enrichCategoryPayload(data) {
+function hasClassificationValue(data, prefix) {
+  return [`${prefix}Ids`, prefix, `${prefix}Slug`, `${prefix}Name`]
+    .some((field) => Object.prototype.hasOwnProperty.call(data, field));
+}
+
+function applyCategoryDefaults(data, category) {
+  if (!hasClassificationValue(data, "style")) {
+    data.styleIds = category.defaultStyleIds?.length
+      ? category.defaultStyleIds.map(String)
+      : [category.defaultStyleId].filter(Boolean).map(String);
+  }
+  if (!hasClassificationValue(data, "occasion")) {
+    data.occasionIds = category.defaultOccasionIds?.length
+      ? category.defaultOccasionIds.map(String)
+      : [category.defaultOccasionId].filter(Boolean).map(String);
+  }
+}
+
+async function resolveClassification(data, type, Model) {
+  const idsField = `${type}Ids`;
+  const hasIds = Object.prototype.hasOwnProperty.call(data, idsField);
+  const legacyLookup = data[`${type}Slug`] || data[type];
+  if (!hasIds && !legacyLookup) return;
+
+  let options = [];
+  if (hasIds) {
+    const ids = [...new Set((data[idsField] || []).map(String))];
+    if (ids.some((id) => !mongoose.isValidObjectId(id))) throw new ApiError(400, `${type === "style" ? "Phong cách" : "Dịp mặc"} không hợp lệ.`);
+    options = await Model.find({ _id: { $in: ids }, status: "active" });
+    if (options.length !== ids.length) throw new ApiError(400, `${type === "style" ? "Phong cách" : "Dịp mặc"} không tồn tại hoặc đã bị ẩn.`);
+    const byId = new Map(options.map((option) => [String(option._id), option]));
+    options = ids.map((id) => byId.get(id));
+  } else {
+    const variants = querySlugVariants(legacyLookup);
+    const option = await Model.findOne({ slug: { $in: [legacyLookup, ...variants] }, status: "active" });
+    if (!option) throw new ApiError(400, `${type === "style" ? "Phong cách" : "Dịp mặc"} không tồn tại hoặc đã bị ẩn.`);
+    options = [option];
+  }
+
+  data[idsField] = options.map((option) => option._id);
+  const first = options[0];
+  data[type] = first ? canonicalSlug(first.slug) : "";
+  data[`${type}Slug`] = data[type];
+  data[`${type}Name`] = first?.name || "";
+}
+
+async function enrichCategoryPayload(data, { applyDefaults = false } = {}) {
   const lookup = data.categoryId || data.categorySlug || data.category;
   if (!lookup) return data;
   const query = mongoose.isValidObjectId(lookup) ? { _id: lookup } : { slug: brandToSlug(lookup) };
@@ -76,6 +163,7 @@ async function enrichCategoryPayload(data) {
   data.categoryId = category._id;
   data.categoryName = category.name;
   data.categorySlug = category.slug;
+  if (applyDefaults) applyCategoryDefaults(data, category);
   delete data.category;
   return data;
 }
@@ -98,18 +186,16 @@ async function enrichBrandPayload(payload = {}) {
   return data;
 }
 
-async function enrichCostumePayload(payload = {}) {
-  const data = await enrichCategoryPayload(await enrichBrandPayload(payload));
-  if (data.occasionSlug || data.occasion) {
-    data.occasionSlug = canonicalSlug(data.occasionSlug || data.occasion);
-    data.occasion = data.occasionSlug;
-    data.occasionName = data.occasionName || optionLabels[data.occasionSlug] || "";
+async function enrichCostumePayload(payload = {}, options = {}) {
+  const data = await enrichCategoryPayload(await enrichBrandPayload(payload), options);
+  if (data.operationalStatus || data.status) {
+    data.operationalStatus = legacyToOperationalStatus[data.operationalStatus || data.status];
+    data.status = operationalToLegacyStatus[data.operationalStatus];
   }
-  if (data.styleSlug || data.style) {
-    data.styleSlug = canonicalSlug(data.styleSlug || data.style);
-    data.style = data.styleSlug;
-    data.styleName = data.styleName || optionLabels[data.styleSlug] || "";
-  }
+  await Promise.all([
+    resolveClassification(data, "style", Style),
+    resolveClassification(data, "occasion", Occasion)
+  ]);
   return data;
 }
 
@@ -131,7 +217,10 @@ async function applyCategoryFilter(filter, value) {
 }
 
 async function buildCostumeFilter(query = {}, includeHidden = false) {
-  const filter = includeHidden ? {} : { status: { $ne: "hidden" } };
+  const filter = includeHidden ? {} : {
+    operationalStatus: { $ne: "hidden" },
+    status: { $ne: "hidden" }
+  };
   if (query.search) filter.$and = [{ $or: [{ name: new RegExp(query.search, "i") }, { description: new RegExp(query.search, "i") }, { skuCode: new RegExp(query.search, "i") }] }];
   await applyCategoryFilter(filter, query.category || query.categorySlug || query.categoryId);
   const brandSlugs = parseBrandQuery(query.brand);
@@ -140,27 +229,117 @@ async function buildCostumeFilter(query = {}, includeHidden = false) {
   if (query.color) filter.color = new RegExp(query.color, "i");
   if (query.occasion) {
     const variants = querySlugVariants(query.occasion);
-    filter.$and = [...(filter.$and || []), { $or: [{ occasionSlug: { $in: variants } }, { occasion: { $in: variants } }] }];
+    const option = await Occasion.findOne({ slug: { $in: [query.occasion, ...variants] } }).select("_id");
+    filter.$and = [...(filter.$and || []), { $or: [
+      { occasionSlug: { $in: variants } },
+      { occasion: { $in: variants } },
+      ...(option ? [{ occasionIds: option._id }] : [])
+    ] }];
   }
   if (query.style) {
     const variants = querySlugVariants(query.style);
-    filter.$and = [...(filter.$and || []), { $or: [{ styleSlug: { $in: variants } }, { style: { $in: variants } }] }];
+    const option = await Style.findOne({ slug: { $in: [query.style, ...variants] } }).select("_id");
+    filter.$and = [...(filter.$and || []), { $or: [
+      { styleSlug: { $in: variants } },
+      { style: { $in: variants } },
+      ...(option ? [{ styleIds: option._id }] : [])
+    ] }];
   }
-  if (query.status) filter.status = query.status;
+  if (query.operationalStatus || query.status) {
+    const requested = query.operationalStatus || query.status;
+    const operationalStatus = legacyToOperationalStatus[requested] || requested;
+    filter.$and = [...(filter.$and || []), {
+      $or: [
+        { operationalStatus },
+        { operationalStatus: { $exists: false }, status: operationalToLegacyStatus[operationalStatus] || requested }
+      ]
+    }];
+  }
   if (query.minPrice || query.maxPrice) filter.rentalPricePerDay = {};
   if (query.minPrice) filter.rentalPricePerDay.$gte = Number(query.minPrice);
   if (query.maxPrice) filter.rentalPricePerDay.$lte = Number(query.maxPrice);
   return filter;
 }
 
-function toCustomerCostume(costume) {
+async function currentScheduleState(costume, now = new Date()) {
+  const operationalStatus = operationalStatusOf(costume);
+  if (operationalStatus !== "active") {
+    return {
+      operationalStatus,
+      currentDisplayStatus: operationalStatus,
+      currentStatusUntil: null,
+      nextAvailableAt: null,
+      isBookable: false
+    };
+  }
+  const cleaningDurationMinutes = cleaningMinutesFor(costume);
+  const items = await loadActiveOrderItems(costume._id, null, null, cleaningDurationMinutes);
+  const blocks = items.map((item) => {
+    const start = new Date(item.order.rentalDate);
+    const end = new Date(effectiveOrderReturnDate(item.order));
+    return { start, end, cleaningEnd: new Date(end.getTime() + cleaningDurationMinutes * 60000), order: item.order };
+  }).filter((block) => !Number.isNaN(block.start.valueOf()) && !Number.isNaN(block.end.valueOf()))
+    .sort((a, b) => a.start - b.start);
+  const rented = blocks.find((block) => block.start <= now && now < block.end);
+  const cleaning = blocks.find((block) => block.end <= now && now < block.cleaningEnd);
+  const future = blocks.find((block) => block.start > now);
+  const current = rented || cleaning;
+  // Use the same quantity-aware overlap rule as the detailed booking grid.
+  // This value is global (not limited to the week/month currently displayed).
+  const pickupSlots = ["08:00", "09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00", "20:00", "21:00"];
+  const totalQuantity = Math.max(1, Number(costume.quantity) || 1);
+  const localDate = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Ho_Chi_Minh", year: "numeric", month: "2-digit", day: "2-digit"
+  });
+  let nextAvailableAt = null;
+  for (let dayOffset = 0; dayOffset <= 365 && !nextAvailableAt; dayOffset += 1) {
+    const seed = new Date(now.getTime() + dayOffset * 86400000);
+    const parts = Object.fromEntries(localDate.formatToParts(seed).filter((part) => part.type !== "literal").map((part) => [part.type, part.value]));
+    const day = `${parts.year}-${parts.month}-${parts.day}`;
+    for (const slot of pickupSlots) {
+      const candidate = combineVietnamDateTime(day, slot);
+      if (!candidate || candidate <= now) continue;
+      const candidateEnd = new Date(candidate.getTime() + 24 * 3600000);
+      const reservedQuantity = items.reduce((sum, item) => {
+        const existingStart = new Date(item.order.rentalDate);
+        const existingEnd = new Date(effectiveOrderReturnDate(item.order));
+        if (Number.isNaN(existingStart.valueOf()) || Number.isNaN(existingEnd.valueOf())) return sum;
+        return bookingRangesOverlap(
+          candidate,
+          candidateEnd,
+          existingStart,
+          existingEnd,
+          cleaningDurationMinutes
+        )
+          ? sum + Math.max(1, Number(item.quantity) || 1)
+          : sum;
+      }, 0);
+      if (hasSufficientQuantity(totalQuantity, reservedQuantity, 1)) {
+        nextAvailableAt = candidate;
+        break;
+      }
+    }
+  }
+  return {
+    operationalStatus,
+    currentDisplayStatus: rented ? "rented" : cleaning ? "cleaning" : future ? "booked" : "available",
+    currentStatusUntil: rented ? rented.end : cleaning ? cleaning.cleaningEnd : future ? future.start : null,
+    nextAvailableAt,
+    isBookable: true,
+    cleaningDurationMinutes
+  };
+}
+
+async function toCustomerCostume(costume) {
   const data = costume.toObject ? costume.toObject() : { ...costume };
   const media = costumeImagePayload(data, data);
-  const acceptsFutureBookings = rentableCostumeStatuses.includes(data.status);
+  const schedule = await currentScheduleState(costume);
+  const acceptsFutureBookings = schedule.operationalStatus === "active";
   return {
     ...data,
     ...media,
-    inventoryStatus: data.status,
+    ...schedule,
+    inventoryStatus: schedule.operationalStatus,
     bookingStatus: acceptsFutureBookings ? "accepting_bookings" : "not_accepting_bookings",
     bookingStatusLabel: acceptsFutureBookings
       ? "Sẵn sàng cho lịch thuê mới"
@@ -171,25 +350,26 @@ function toCustomerCostume(costume) {
 
 export async function listCostumes(query = {}) {
   const filter = await buildCostumeFilter(query, false);
-  const costumes = await Costume.find(filter).populate("categoryId").populate("brandId").sort({ createdAt: -1 });
-  return costumes.map(toCustomerCostume);
+  const costumes = await Costume.find(filter).populate(costumePopulate).sort({ createdAt: -1 });
+  return Promise.all(costumes.map(toCustomerCostume));
 }
 
 export async function listAdminCostumes(query = {}) {
   const filter = await buildCostumeFilter(query, true);
-  return Costume.find(filter).populate("categoryId").populate("brandId").sort({ createdAt: -1 });
+  const costumes = await Costume.find(filter).populate(costumePopulate).sort({ createdAt: -1 });
+  return Promise.all(costumes.map(async (costume) => ({ ...costume.toObject(), ...(await currentScheduleState(costume)) })));
 }
 
 export async function getCostume(id) {
-  const costume = await Costume.findOne({ _id: id, status: { $ne: "hidden" } }).populate("categoryId").populate("brandId");
+  const costume = await Costume.findOne({ _id: id, operationalStatus: { $ne: "hidden" }, status: { $ne: "hidden" } }).populate(costumePopulate);
   if (!costume) throw new ApiError(404, "Không tìm thấy trang phục.");
   return toCustomerCostume(costume);
 }
 
 export async function getAdminCostume(id) {
-  const costume = await Costume.findById(id).populate("categoryId").populate("brandId");
+  const costume = await Costume.findById(id).populate(costumePopulate);
   if (!costume) throw new ApiError(404, "Không tìm thấy trang phục.");
-  return costume;
+  return { ...costume.toObject(), ...(await currentScheduleState(costume)) };
 }
 
 function formatLocalDate(value) {
@@ -208,7 +388,7 @@ function formatLocalDate(value) {
   return formatLocalDate(date);
 }
 
-async function loadActiveOrderItems(costumeId, exceptOrderId = null, session = null) {
+async function loadActiveOrderItems(costumeId, exceptOrderId = null, session = null, cleaningDurationMinutes = RENTAL_TURNAROUND_MINUTES) {
   const itemQuery = { costumeId };
   if (exceptOrderId) itemQuery.orderId = { $ne: exceptOrderId };
   const itemQueryBuilder = RentalOrderItem.find(itemQuery);
@@ -222,7 +402,12 @@ async function loadActiveOrderItems(costumeId, exceptOrderId = null, session = n
   const ordersById = Object.fromEntries(orders.map((order) => [String(order._id), order]));
   return items
     .map((item) => ({ ...item.toObject(), order: ordersById[String(item.orderId)] }))
-    .filter((item) => item.order && isOrderHoldingSchedule(item.order));
+    .filter((item) => {
+      if (!item.order) return false;
+      if (!["returned", "completed"].includes(item.order.status)) return isOrderHoldingSchedule(item.order);
+      const returnedAt = effectiveOrderReturnDate(item.order);
+      return Boolean(returnedAt && new Date(returnedAt).getTime() + cleaningDurationMinutes * 60000 > Date.now());
+    });
 }
 
 export function isOrderHoldingSchedule(order, now = new Date()) {
@@ -249,21 +434,21 @@ function effectiveOrderReturnDate(order) {
     : order?.returnDate;
 }
 
-function classifyScheduleConflict(candidateStart, order) {
+function classifyScheduleConflict(candidateStart, order, cleaningDurationMinutes = RENTAL_TURNAROUND_MINUTES) {
   if (!candidateStart || !order) return null;
   const start = new Date(candidateStart);
   const existingStart = new Date(order.rentalDate);
   const existingReturn = new Date(effectiveOrderReturnDate(order));
-  const existingBlockedUntil = new Date(order.turnaroundUntil || existingReturn.getTime() + RENTAL_TURNAROUND_MINUTES * 60 * 1000);
+  const existingBlockedUntil = new Date(existingReturn.getTime() + cleaningDurationMinutes * 60 * 1000);
   if (start >= existingStart && start < existingReturn) return "booked";
   if (start >= existingReturn && start < existingBlockedUntil) return "turnaround";
   return "insufficient_window";
 }
 
-function selectDisplayConflict(candidateStart, overlappingItems = []) {
+function selectDisplayConflict(candidateStart, overlappingItems = [], cleaningDurationMinutes = RENTAL_TURNAROUND_MINUTES) {
   const classified = overlappingItems.map((item) => ({
     item,
-    type: classifyScheduleConflict(candidateStart, item.order)
+    type: classifyScheduleConflict(candidateStart, item.order, cleaningDurationMinutes)
   }));
   return classified.find((entry) => entry.type === "booked")
     || classified.find((entry) => entry.type === "turnaround")
@@ -275,36 +460,38 @@ export function hasSufficientQuantity(totalQuantity, reservedQuantity, requested
   return Number(reservedQuantity || 0) + Number(requestedQuantity || 1) <= Number(totalQuantity || 0);
 }
 
-async function getOverlappingReservations(costumeId, rentalDate, returnDate, exceptOrderId = null, session = null) {
+export async function getOverlappingReservations(costumeId, rentalDate, returnDate, exceptOrderId = null, session = null, cleaningDurationMinutes = RENTAL_TURNAROUND_MINUTES) {
   if (!rentalDate || !returnDate) return [];
-  const items = await loadActiveOrderItems(costumeId, exceptOrderId, session);
+  const items = await loadActiveOrderItems(costumeId, exceptOrderId, session, cleaningDurationMinutes);
   return items.filter((item) => bookingRangesOverlap(
     rentalDate,
     returnDate,
     item.order.rentalDate,
     effectiveOrderReturnDate(item.order),
-    RENTAL_TURNAROUND_MINUTES
+    cleaningDurationMinutes
   ));
 }
 
-async function getReservedQuantity(costumeId, rentalDate, returnDate, exceptOrderId = null, session = null) {
-  const items = await getOverlappingReservations(costumeId, rentalDate, returnDate, exceptOrderId, session);
+async function getReservedQuantity(costumeId, rentalDate, returnDate, exceptOrderId = null, session = null, cleaningDurationMinutes = RENTAL_TURNAROUND_MINUTES) {
+  const items = await getOverlappingReservations(costumeId, rentalDate, returnDate, exceptOrderId, session, cleaningDurationMinutes);
   return items.reduce((sum, item) => sum + Number(item.quantity || 1), 0);
 }
 
 export async function assertNoScheduleConflict(costumeId, rentalDate, returnDate, exceptOrderId = null, session = null, requestedQuantity = 1) {
   const costume = await Costume.findById(costumeId).session(session);
   if (!costume) throw new ApiError(404, "Không tìm thấy trang phục.");
-  const conflicts = await getOverlappingReservations(costumeId, rentalDate, returnDate, exceptOrderId, session);
+  if (!isOperationallyActive(costume)) throw new ApiError(409, `${costume.name} hiện không nhận lịch thuê.`);
+  const cleaningDurationMinutes = cleaningMinutesFor(costume);
+  const conflicts = await getOverlappingReservations(costumeId, rentalDate, returnDate, exceptOrderId, session, cleaningDurationMinutes);
   const reservedQuantity = conflicts.reduce((sum, item) => sum + Number(item.quantity || 1), 0);
   const totalQuantity = Number(costume.quantity || 1);
   if (!hasSufficientQuantity(totalQuantity, reservedQuantity, requestedQuantity)) {
-    const displayConflict = selectDisplayConflict(rentalDate, conflicts);
+    const displayConflict = selectDisplayConflict(rentalDate, conflicts, cleaningDurationMinutes);
     const conflictOrder = displayConflict?.item?.order;
     const conflictReturnDate = conflictOrder ? effectiveOrderReturnDate(conflictOrder) : null;
     const conflictType = displayConflict?.type || null;
     const conflictBlockedUntil = conflictOrder
-      ? conflictOrder.turnaroundUntil || new Date(new Date(conflictReturnDate).getTime() + RENTAL_TURNAROUND_MINUTES * 60 * 1000)
+      ? new Date(new Date(conflictReturnDate).getTime() + cleaningDurationMinutes * 60 * 1000)
       : null;
     const conflictWindow = conflictOrder
       ? ` từ ${new Date(conflictOrder.rentalDate).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })} đến ${new Date(conflictReturnDate).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}`
@@ -335,9 +522,14 @@ export async function checkAvailability(id, { rentalDate, returnDate, rentalDays
   const costume = await Costume.findById(id);
   if (!costume) throw new ApiError(404, "Không tìm thấy trang phục.");
   const totalQuantity = Number(costume.quantity || 1);
-  if (!rentableCostumeStatuses.includes(costume.status)) {
+  const operationalStatus = operationalStatusOf(costume);
+  const cleaningDurationMinutes = cleaningMinutesFor(costume);
+  const scheduleState = await currentScheduleState(costume);
+  if (!isOperationallyActive(costume)) {
     return {
       available: false,
+      isBookable: false,
+      ...scheduleState,
       costumeStatus: costume.status,
       totalQuantity,
       reservedQuantity: 0,
@@ -346,25 +538,27 @@ export async function checkAvailability(id, { rentalDate, returnDate, rentalDays
     };
   }
 
-  const quote = mainUseDate ? buildStandardRentalSchedule({ mainUseDate, pickupTime, returnTime, extraDays }, resolveStandardPackagePrice(costume)) : null;
+  const quote = mainUseDate ? buildStandardRentalSchedule({ mainUseDate, pickupTime, returnTime, extraDays }, resolveStandardPackagePrice(costume), cleaningDurationMinutes) : null;
   rentalDate = quote?.blockedFrom || rentalDate;
   const calculatedReturnDate = quote?.availabilityUntil || returnDate || calculateRentalReturnDate(rentalDate, Number(rentalDays));
   const conflicts = rentalDate && calculatedReturnDate
-    ? await getOverlappingReservations(id, rentalDate, calculatedReturnDate)
+    ? await getOverlappingReservations(id, rentalDate, calculatedReturnDate, null, null, cleaningDurationMinutes)
     : [];
   const reservedQuantity = conflicts.reduce((sum, item) => sum + Number(item.quantity || 1), 0);
   const availableQuantity = Math.max(0, totalQuantity - reservedQuantity);
   const available = availableQuantity >= Math.max(1, Number(quantity) || 1);
-  const displayConflict = selectDisplayConflict(rentalDate, conflicts);
+  const displayConflict = selectDisplayConflict(rentalDate, conflicts, cleaningDurationMinutes);
   const conflictOrder = displayConflict?.item?.order;
   const conflictType = displayConflict?.type || null;
   const blockedUntil = calculatedReturnDate
-    ? new Date(new Date(calculatedReturnDate).getTime() + RENTAL_TURNAROUND_MINUTES * 60 * 1000)
+    ? new Date(new Date(calculatedReturnDate).getTime() + cleaningDurationMinutes * 60 * 1000)
     : null;
   return {
     available,
-    stockAvailable: rentableCostumeStatuses.includes(costume.status),
-    acceptsFutureBookings: rentableCostumeStatuses.includes(costume.status),
+    ...scheduleState,
+    isBookable: available,
+    stockAvailable: true,
+    acceptsFutureBookings: true,
     costumeStatus: costume.status,
     totalQuantity,
     reservedQuantity,
@@ -377,8 +571,9 @@ export async function checkAvailability(id, { rentalDate, returnDate, rentalDays
     blockedUntil,
     conflictStartAt: conflictOrder?.rentalDate || null,
     conflictEndAt: conflictOrder ? effectiveOrderReturnDate(conflictOrder) : null,
-    conflictBlockedUntil: conflictOrder ? (conflictOrder.turnaroundUntil || new Date(new Date(effectiveOrderReturnDate(conflictOrder)).getTime() + RENTAL_TURNAROUND_MINUTES * 60 * 1000)) : null,
-    turnaroundMinutes: RENTAL_TURNAROUND_MINUTES,
+    conflictBlockedUntil: conflictOrder ? new Date(new Date(effectiveOrderReturnDate(conflictOrder)).getTime() + cleaningDurationMinutes * 60 * 1000) : null,
+    cleaningDurationMinutes,
+    turnaroundMinutes: cleaningDurationMinutes,
     ...(quote || {}),
     message: available
       ? "Trang phục còn trống trong khoảng ngày đã chọn."
@@ -397,9 +592,11 @@ export async function getAvailabilityCalendar(id, startDate, endDate, options = 
   const days = [];
   const current = new Date(start);
   const today = new Date();
-  const isRentable = rentableCostumeStatuses.includes(costume.status);
-  const items = isRentable ? await loadActiveOrderItems(id) : [];
-  const timeSlots = ["08:00", "09:00", "10:00", "11:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00"];
+  const isRentable = isOperationallyActive(costume);
+  const cleaningDurationMinutes = cleaningMinutesFor(costume);
+  const scheduleState = await currentScheduleState(costume);
+  const items = isRentable ? await loadActiveOrderItems(id, null, null, cleaningDurationMinutes) : [];
+  const timeSlots = ["08:00", "09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00", "20:00", "21:00"];
   const pickupCandidates = options.pickupTime ? [String(options.pickupTime)] : timeSlots;
   const returnCandidates = options.returnTime ? [String(options.returnTime)] : timeSlots;
   const requestedQuantity = Math.max(1, Number(options.quantity) || 1);
@@ -425,7 +622,7 @@ export async function getAvailabilityCalendar(id, startDate, endDate, options = 
               returnTime,
               extraDays: options.extraDays,
               fulfillmentMethod: options.fulfillmentMethod
-            }, resolveStandardPackagePrice(costume));
+            }, resolveStandardPackagePrice(costume), cleaningDurationMinutes);
             const reserved = items.reduce((sum, item) => {
               const existingEnd = effectiveOrderReturnDate(item.order);
               const overlaps = bookingRangesOverlap(
@@ -433,7 +630,7 @@ export async function getAvailabilityCalendar(id, startDate, endDate, options = 
                 quote.availabilityUntil,
                 item.order.rentalDate,
                 existingEnd,
-                RENTAL_TURNAROUND_MINUTES
+                cleaningDurationMinutes
               );
               if (overlaps) {
                 const overlapsRental = bookingRangesOverlap(
@@ -465,7 +662,7 @@ export async function getAvailabilityCalendar(id, startDate, endDate, options = 
       : isPast
         ? "past"
         : !isRentable
-          ? (["washing", "laundry"].includes(costume.status) ? "cleaning" : "costume_unavailable")
+          ? "costume_unavailable"
           : hasBookingConflict
             ? "booked"
             : hasCleaningConflict
@@ -485,9 +682,13 @@ export async function getAvailabilityCalendar(id, startDate, endDate, options = 
 
   return {
     costumeId: id,
+    ...scheduleState,
+    isBookable: isRentable,
     totalQuantity,
     stockAvailable: isRentable,
     acceptsFutureBookings: isRentable,
+    operationalStatus: operationalStatusOf(costume),
+    cleaningDurationMinutes,
     maxExtraDays: Number(process.env.RENTAL_MAX_EXTRA_DAYS || 30),
     days
   };
@@ -521,19 +722,25 @@ export async function getBookingGrid(id, { startDate, endDate, returnDate, retur
     "09:00",
     "10:00",
     "11:00",
+    "12:00",
     "13:00",
     "14:00",
     "15:00",
     "16:00",
     "17:00",
-    "18:00"
+    "18:00",
+    "19:00",
+    "20:00",
+    "21:00"
   ];
 
   const days = [];
   const current = new Date(start);
   const today = new Date();
-  const isRentable = rentableCostumeStatuses.includes(costume.status);
-  const items = isRentable ? await loadActiveOrderItems(id) : [];
+  const isRentable = isOperationallyActive(costume);
+  const cleaningDurationMinutes = cleaningMinutesFor(costume);
+  const scheduleState = await currentScheduleState(costume);
+  const items = isRentable ? await loadActiveOrderItems(id, null, null, cleaningDurationMinutes) : [];
 
   while (current <= end) {
     const dayText = formatLocalDate(current);
@@ -560,12 +767,12 @@ export async function getBookingGrid(id, { startDate, endDate, returnDate, retur
             slotReturnDateTime,
             item.order.rentalDate,
             effectiveOrderReturnDate(item.order),
-            RENTAL_TURNAROUND_MINUTES
+            cleaningDurationMinutes
           ))
         : [];
       const reservedQuantity = overlappingItems.reduce((sum, item) => sum + Number(item.quantity || 1), 0);
-      const blockedUntil = new Date(slotReturnDateTime.getTime() + RENTAL_TURNAROUND_MINUTES * 60 * 1000);
-      const displayConflict = selectDisplayConflict(slotRentalDateTime, overlappingItems);
+      const blockedUntil = new Date(slotReturnDateTime.getTime() + cleaningDurationMinutes * 60 * 1000);
+      const displayConflict = selectDisplayConflict(slotRentalDateTime, overlappingItems, cleaningDurationMinutes);
       const conflictOrder = displayConflict?.item?.order;
       const conflictType = displayConflict?.type || null;
       const availableQuantity = Math.max(0, totalQuantity - reservedQuantity);
@@ -613,7 +820,7 @@ export async function getBookingGrid(id, { startDate, endDate, returnDate, retur
           : null,
         conflictStartAt: conflictOrder?.rentalDate || null,
         conflictEndAt: conflictOrder ? effectiveOrderReturnDate(conflictOrder) : null,
-        conflictBlockedUntil: conflictOrder ? (conflictOrder.turnaroundUntil || new Date(new Date(effectiveOrderReturnDate(conflictOrder)).getTime() + RENTAL_TURNAROUND_MINUTES * 60 * 1000)) : null,
+        conflictBlockedUntil: conflictOrder ? new Date(new Date(effectiveOrderReturnDate(conflictOrder)).getTime() + cleaningDurationMinutes * 60 * 1000) : null,
         reservedQuantity,
         availableQuantity
       };
@@ -633,19 +840,32 @@ export async function getBookingGrid(id, { startDate, endDate, returnDate, retur
 
   return {
     costumeId: id,
+    ...scheduleState,
+    isBookable: isRentable,
     costumeStatus: costume.status,
+    operationalStatus: operationalStatusOf(costume),
     acceptsFutureBookings: isRentable,
     totalQuantity,
-    turnaroundMinutes: RENTAL_TURNAROUND_MINUTES,
+    cleaningDurationMinutes,
+    turnaroundMinutes: cleaningDurationMinutes,
     timeSlots,
     days
   };
 }
 
 export async function createCostume(payload) {
-  const data = await enrichCostumePayload(payload);
+  const data = await enrichCostumePayload(payload, { applyDefaults: true });
   const media = costumeImagePayload({ ...data, image: data.image || data.imageUrl });
-  return Costume.create({ ...data, ...media });
+  const costume = new Costume({ ...data, ...media });
+  if (!costume.skuCode?.trim()) {
+    costume.skuCode = generateCostumeSku({
+      id: costume._id,
+      categorySlug: data.categorySlug,
+      categoryName: data.categoryName
+    });
+  }
+  await costume.save();
+  return costume.populate(costumePopulate);
 }
 
 export async function updateCostume(id, payload) {
@@ -655,27 +875,34 @@ export async function updateCostume(id, payload) {
   const oldAssets = normalizeImageList(costume.imageAssets?.length ? costume.imageAssets : costume.images, { fallbackImage: costume.image, fallbackPublicId: costume.imagePublicId, max: 10 });
   const media = costumeImagePayload({ ...data, image: data.image || data.imageUrl }, costume);
   Object.assign(costume, data, media);
+  if (!costume.skuCode?.trim()) {
+    costume.skuCode = generateCostumeSku({
+      id: costume._id,
+      categorySlug: costume.categorySlug,
+      categoryName: costume.categoryName
+    });
+  }
   await costume.save();
   if (Object.prototype.hasOwnProperty.call(payload, "images") || Object.prototype.hasOwnProperty.call(payload, "imageAssets")) {
     const retained = new Set(media.imageAssets.map((asset) => asset.publicId).filter(Boolean));
     const removed = oldAssets.filter((asset) => asset.publicId && !retained.has(asset.publicId));
     await Promise.allSettled(removed.map((asset) => cloudinary.uploader.destroy(asset.publicId)));
   }
-  return costume;
+  return costume.populate(costumePopulate);
 }
 
 export function updateCostumeStatus(id, status) {
-  return updateCostume(id, { status });
+  return updateCostume(id, { operationalStatus: status });
 }
 
 export function hideCostume(id) {
-  return updateCostume(id, { status: "hidden" });
+  return updateCostume(id, { operationalStatus: "hidden" });
 }
 
 export async function toggleCostumeVisibility(id) {
   const costume = await Costume.findById(id);
   if (!costume) throw new ApiError(404, "Không tìm thấy trang phục.");
-  return updateCostume(id, { status: costume.status === "hidden" ? "available" : "hidden" });
+  return updateCostume(id, { operationalStatus: operationalStatusOf(costume) === "hidden" ? "active" : "hidden" });
 }
 
 export async function deleteCostume(id) {

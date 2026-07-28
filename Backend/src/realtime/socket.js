@@ -9,6 +9,12 @@ export function initializeSocket(server, corsOrigins = []) {
   io.use(async (socket, next) => {
     try {
       const token = socket.handshake.auth?.token || String(socket.handshake.headers.authorization || "").replace(/^Bearer\s+/i, "");
+      const guestSessionId = String(socket.handshake.auth?.guestSessionId || "").trim();
+      if (!token && /^[a-zA-Z0-9_-]{16,120}$/.test(guestSessionId)) {
+        socket.user = null;
+        socket.guestSessionId = guestSessionId;
+        return next();
+      }
       const payload = jwt.verify(token, process.env.JWT_SECRET || "dev-secret");
       const user = await User.findById(payload.id).select("_id role status");
       if (!user || user.status === "blocked") return next(new Error("Không có quyền kết nối."));
@@ -19,10 +25,61 @@ export function initializeSocket(server, corsOrigins = []) {
     }
   });
   io.on("connection", (socket) => {
-    socket.join(`user:${socket.user._id}`);
-    socket.join(`role:${socket.user.role}`);
+    if (socket.user?._id) {
+      socket.join(`user:${socket.user._id}`);
+      socket.join(`role:${socket.user.role}`);
+      if (["admin","staff","owner"].includes(socket.user.role)) socket.join("admin:support");
+    } else socket.join(`guest:${socket.guestSessionId}`);
+    socket.emit("presence:update",{online:true,serverTime:new Date().toISOString()});
+
+    socket.on("conversation:join",async(payload={},ack=()=>{})=>{
+      try{
+        const chat=await import("../services/chat.service.js");
+        const conversation=await chat.requireConversation(payload.conversationId,socket.user,socket.guestSessionId);
+        socket.join(`conversation:${conversation._id}`);
+        ack({ok:true,conversationId:String(conversation._id)});
+      }catch(error){ack({ok:false,error:error.message});}
+    });
+    socket.on("conversation:leave",(payload={},ack=()=>{})=>{if(payload.conversationId)socket.leave(`conversation:${payload.conversationId}`);ack({ok:true});});
+    socket.on("message:send",async(payload={},ack=()=>{})=>{
+      try{
+        const chat=await import("../services/chat.service.js");
+        const bot=await import("../services/chatBot.service.js");
+        const conversation=await chat.requireConversation(payload.conversationId,socket.user,socket.guestSessionId);
+        const admin=chat.isAdminUser(socket.user);
+        const message=admin
+          ?await chat.sendAdminMessage(conversation._id,socket.user,payload)
+          :await chat.sendCustomerMessage(conversation._id,socket.user,socket.guestSessionId,payload);
+        ack({ok:true,messageId:String(message._id),clientMessageId:message.clientMessageId,message});
+        emitChatMessage(conversation,message);
+        if(!admin){
+          const reply=await bot.respondToCustomer(conversation,message,socket.user,socket.guestSessionId);
+          if(reply)emitChatMessage(conversation,reply);
+        }
+      }catch(error){ack({ok:false,clientMessageId:payload.clientMessageId,error:error.message});socket.emit("message:failed",{clientMessageId:payload.clientMessageId,error:error.message});}
+    });
+    socket.on("message:read",async(payload={},ack=()=>{})=>{try{const chat=await import("../services/chat.service.js");const result=await chat.markRead(payload.conversationId,socket.user,socket.guestSessionId);io.to(`conversation:${payload.conversationId}`).emit("message:read_update",{conversationId:payload.conversationId,...result});ack({ok:true,...result});}catch(error){ack({ok:false,error:error.message});}});
+    socket.on("typing:start",(payload={})=>socket.to(`conversation:${payload.conversationId}`).emit("typing:start",{conversationId:payload.conversationId,userId:socket.user?._id||null}));
+    socket.on("typing:stop",(payload={})=>socket.to(`conversation:${payload.conversationId}`).emit("typing:stop",{conversationId:payload.conversationId,userId:socket.user?._id||null}));
   });
   return io;
+}
+
+export function emitChatMessage(conversation,message){
+  if(!io||!conversation||!message)return;
+  const payload=message.toObject?message.toObject():message;
+  if(message.type==="internal_note"){io.to("admin:support").emit("message:new",payload);return;}
+  io.to(`conversation:${conversation._id}`).emit("message:new",payload);
+  if(conversation.customerId)io.to(`user:${conversation.customerId}`).emit("conversation:update",{conversationId:String(conversation._id),lastMessage:payload});
+  else if(conversation.guestSessionId)io.to(`guest:${conversation.guestSessionId}`).emit("conversation:update",{conversationId:String(conversation._id),lastMessage:payload});
+  io.to("admin:support").emit("conversation:update",{conversationId:String(conversation._id),lastMessage:payload});
+}
+
+export function emitConversationUpdate(conversation){
+  if(!io||!conversation)return;
+  const payload=conversation.toObject?conversation.toObject():conversation;
+  io.to(`conversation:${conversation._id}`).emit("conversation:updated",payload);
+  io.to("admin:support").emit("conversation:updated",payload);
 }
 
 export function emitNotification(notification, unreadCount) {

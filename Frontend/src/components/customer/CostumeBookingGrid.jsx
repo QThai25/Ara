@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useRef } from "react";
 
 export function CostumeBookingGrid({
   days = [],
@@ -15,6 +15,11 @@ export function CostumeBookingGrid({
   loading = false
 }) {
   const visibleDays = days.filter((day) => !day.isPast);
+  const gridScrollRef = useRef(null);
+
+  useEffect(() => {
+    if (gridScrollRef.current) gridScrollRef.current.scrollLeft = 0;
+  }, [days, mode]);
 
   const slotClass = (slot) => {
     if (slot.status === "past") return "booking-slot-cell past";
@@ -90,7 +95,7 @@ export function CostumeBookingGrid({
         </span>
       </div>
 
-      <div className="booking-grid-wrap">
+      <div className="booking-grid-wrap" ref={gridScrollRef}>
         <table className="booking-grid-table">
           <thead>
             <tr>

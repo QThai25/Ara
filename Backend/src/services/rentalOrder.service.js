@@ -9,8 +9,7 @@ import { User } from "../models/User.js";
 import { ApiError } from "../utils/ApiError.js";
 import { calculateRentalReturnDate, isPastDate, parseLocalDateTime, rentalPriceBreakdown, RENTAL_TURNAROUND_MINUTES } from "../utils/date.js";
 import { runFinancialTransaction } from "../utils/financialTransaction.js";
-import { rentableCostumeStatuses } from "../utils/constants.js";
-import { assertNoScheduleConflict } from "./costume.service.js";
+import { assertNoScheduleConflict, operationalStatusOf } from "./costume.service.js";
 import { cancelActivePaymentsForOrder } from "./payment.service.js";
 import { calculateSettlement, getActivePayments, getSuccessfulPayments, summarizeSuccessfulPayments } from "./paymentQuote.service.js";
 import { createNotificationOnce, notifyAdmins } from "./notification.service.js";
@@ -23,6 +22,12 @@ import { Payment } from "../models/Payment.js";
 import { quote as quoteShipping } from "./shipping.service.js";
 import { ensureRefund } from "./refund.service.js";
 import { addCalendarDays, buildStandardRentalSchedule, resolveStandardPackagePrice } from "./rentalSchedule.service.js";
+import { storeConfig } from "../config/store.config.js";
+import { quoteRentalTimeline } from "./rentalTimeline.service.js";
+import { calculateRentalTransportTimeline } from "./transportTime.service.js";
+import { createRentalHold } from "./rentalAvailability.service.js";
+import { Reservation } from "../models/Reservation.js";
+import { TransportReservation } from "../models/TransportReservation.js";
 
 const DEFAULT_POLICY_VERSION = RENTAL_POLICY.policyVersion;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -165,9 +170,10 @@ function normalizeCreateOrderPayload(rawPayload) {
     throw new ApiError(400, "Dữ liệu tạo đơn không hợp lệ.");
   }
 
-  const standardSchedule = rawPayload.mainUseDate ? buildStandardRentalSchedule({ ...rawPayload, fulfillmentMethod: rawPayload.fulfillment?.fulfillmentMethod || rawPayload.fulfillmentMethod }, 0) : null;
-  const rentalDate = standardSchedule?.pickupAt || rawPayload.rentalDate;
-  const rentalDays = standardSchedule ? 2 + standardSchedule.extraDays : Number(rawPayload.rentalDays);
+  const canonicalRequest = Boolean(rawPayload.requestedStartAt || rawPayload.pickupMethod || rawPayload.returnMethod);
+  const standardSchedule = !canonicalRequest && rawPayload.mainUseDate ? buildStandardRentalSchedule({ ...rawPayload, fulfillmentMethod: rawPayload.fulfillment?.fulfillmentMethod || rawPayload.fulfillmentMethod }, 0) : null;
+  const rentalDate = standardSchedule?.pickupAt || rawPayload.requestedStartAt || rawPayload.rentalDate;
+  const rentalDays = standardSchedule ? 2 + standardSchedule.extraDays : Number(rawPayload.rentalDays || 1);
 
   if (!rentalDate) {
     throw new ApiError(400, "Vui lòng chọn ngày thuê.");
@@ -208,7 +214,9 @@ function normalizeCreateOrderPayload(rawPayload) {
     };
   });
 
-  const returnDate = standardSchedule?.expectedReturnAt || calculateRentalReturnDate(rentalDate, rentalDays);
+  const returnDate = standardSchedule?.expectedReturnAt || (canonicalRequest
+    ? new Date(parseLocalDateTime(rentalDate).getTime() + rentalDays * 24 * 3600000)
+    : calculateRentalReturnDate(rentalDate, rentalDays));
   validateRentalDates(rentalDate, returnDate);
 
   return {
@@ -514,7 +522,7 @@ export async function expirePendingOrders({ orderId = null, customerId = null } 
       // thanh toán ở trạng thái confirmed cũng phải hết hạn và nhả lịch.
       status: { $in: [...new Set([...canonicalStatuses(["pending"]), "confirmed"])] },
       $or: [
-        { paymentStatus: { $in: ["pending", "unpaid", "awaiting_payment", "awaiting_confirmation"] } },
+        { paymentStatus: { $in: ["pending", "unpaid", "awaiting_payment"] } },
         { paymentStatus: { $exists: false } }
       ],
       holdExpiresAt: { $ne: null, $lte: now }
@@ -524,10 +532,15 @@ export async function expirePendingOrders({ orderId = null, customerId = null } 
 
     const expiredOrder = await RentalOrder.findOneAndUpdate(
       filter,
-      { $set: { status: "expired", expiredAt: now } },
+      { $set: { status: "expired", bookingStatus: "cancelled", paymentStatus: "expired", expiredAt: now } },
       { new: true }
     );
     if (!expiredOrder) break;
+
+    await Promise.all([
+      Reservation.updateMany({ orderId: expiredOrder._id, status: "held" }, { $set: { status: "expired" } }),
+      TransportReservation.updateMany({ orderId: expiredOrder._id, status: "held" }, { $set: { status: "expired" } })
+    ]);
 
     await createNotificationOnce({
       recipientId: expiredOrder.customerId,
@@ -573,7 +586,55 @@ export async function decorateOrder(orderId) {
 
   return {
     ...order,
+    legacyPaymentStatus: order.paymentStatus,
+    paymentStatus: ({
+      unpaid: "unpaid",
+      pending: "pending",
+      awaiting_payment: "pending",
+      awaiting_confirmation: "awaiting_verification",
+      awaiting_verification: "awaiting_verification",
+      deposited: "partially_paid",
+      deposit_paid: "partially_paid",
+      partially_paid: "partially_paid",
+      paid: "paid",
+      fully_paid: "paid",
+      failed: "failed",
+      expired: "expired",
+      refunded: "refunded"
+    }[order.paymentStatus] || order.paymentStatus),
+    bookingStatus: order.bookingStatus || ({
+      pending: "payment_pending",
+      pending_confirmation: "payment_pending",
+      confirmed: "confirmed",
+      deposit_paid: "confirmed",
+      ready_to_pickup: "ready",
+      ready_for_pickup: "ready",
+      renting: "rented",
+      returned: "returned",
+      completed: "completed",
+      canceled: "cancelled",
+      cancelled: "cancelled",
+      expired: "cancelled",
+      rejected: "cancelled"
+    }[order.status] || "confirmed"),
     schedule: {
+      rentalDays: Number(order.rentalDays || order.totalHoldDays || 1),
+      rentalDurationHours: Number(order.rentalDurationHours || (order.rentalDays || order.totalHoldDays || 1) * 24),
+      pickupMethod: order.pickupMethod || "store_pickup",
+      returnMethod: order.returnMethod || "store_return",
+      plannedRentalStartAt: order.plannedRentalStartAt || order.rentalDate || null,
+      plannedRentalEndAt: order.plannedRentalEndAt || order.returnDate || null,
+      deliveryDispatchAt: order.deliveryDispatchAt || null,
+      expectedDeliveryAt: order.expectedDeliveryAt || null,
+      collectionAt: order.collectionAt || null,
+      expectedReturnedToStoreAt: order.expectedReturnedToStoreAt || order.returnDate || null,
+      customerPossessionStartAt: order.expectedDeliveryAt || order.plannedRentalStartAt || order.rentalDate || null,
+      customerPossessionEndAt: order.collectionAt || order.plannedRentalEndAt || order.returnDate || null,
+      blockedStartAt: order.blockedStartAt || order.blockedFrom || order.rentalDate || null,
+      blockedEndAt: order.blockedEndAt || order.blockedUntil || order.returnDate || null,
+      preparationMinutes: Number(order.preparationMinutes || 0),
+      inspectionMinutes: Number(order.inspectionMinutes || 0),
+      cleaningMinutes: Number(order.cleaningMinutes || 0),
       standardPackageDays: order.standardPackageDays || (order.mainUseDate ? 3 : null),
       standardPackageNights: order.standardPackageNights || (order.mainUseDate ? 2 : null),
       mainUseDate: order.mainUseDate || null,
@@ -596,6 +657,8 @@ export async function decorateOrder(orderId) {
       outboundFee: Number(shipping.outbound?.fee || order.shipping?.outboundFee || 0),
       returnFee: Number(shipping.returnTrip?.fee || order.shipping?.returnFee || 0),
       totalShippingFee: Number(shipping.totalFee || order.shipping?.totalFee || 0),
+      deliveryFee: Number(order.deliveryFee || shipping.outbound?.fee || order.shipping?.outboundFee || 0),
+      collectionFee: Number(order.collectionFee || shipping.returnTrip?.fee || order.shipping?.returnFee || 0),
       lateFee: Number(order.lateFee || 0),
       damageFee: Number(order.damageFee || 0),
       totalPenalty,
@@ -636,6 +699,10 @@ export async function createRentalOrder(userOrCustomerId, rawPayload) {
   try {
     if (mongoose.connection.$araTransactionsSupported === false) rentalTransactionsSupported = false;
     const payload = normalizeCreateOrderPayload(rawPayload);
+    if (payload.idempotencyKey) {
+      const existing = await RentalOrder.findOne({ idempotencyKey: payload.idempotencyKey });
+      if (existing) return decorateOrder(existing._id);
+    }
     const user =
       userOrCustomerId &&
         typeof userOrCustomerId === "object" &&
@@ -693,9 +760,37 @@ export async function createRentalOrder(userOrCustomerId, rawPayload) {
           }
 
           const customerId = resolvedCustomer.customer._id;
-          const shippingQuote = await quoteShipping(effectiveUser, payload.fulfillment || { fulfillmentMethod: "store_pickup" });
-          const rentalDate = parseLocalDateTime(payload.rentalDate);
-          const returnDate = parseLocalDateTime(payload.returnDate) || calculateRentalReturnDate(rentalDate, payload.rentalDays);
+          const shippingQuote = await quoteShipping(effectiveUser, {
+            ...(payload.fulfillment || {}),
+            pickupMethod: payload.pickupMethod || payload.fulfillment?.pickupMethod,
+            returnMethod: payload.returnMethod || payload.fulfillment?.returnMethod,
+            fulfillmentMethod: payload.fulfillment?.fulfillmentMethod || payload.fulfillmentMethod,
+            deliveryAddress: payload.deliveryAddress || payload.fulfillment?.deliveryAddress,
+            collectionAddress: payload.collectionAddress || payload.fulfillment?.collectionAddress,
+            collectionSameAsDelivery: payload.collectionSameAsDelivery ?? payload.fulfillment?.collectionSameAsDelivery
+          });
+          const resolvedTransportTimeline = shippingQuote.zone && (shippingQuote.pickupMethod === "home_delivery" || shippingQuote.returnMethod === "home_collection")
+            ? calculateRentalTransportTimeline({
+                ...payload,
+                pickupMethod: payload.pickupMethod || shippingQuote.pickupMethod,
+                returnMethod: payload.returnMethod || shippingQuote.returnMethod,
+                requestedPickupOrDeliveryAt: payload.requestedStartAt || payload.rentalDate,
+                zone: shippingQuote.zone
+              })
+            : null;
+          const canonicalTimeline = payload.requestedStartAt || payload.pickupMethod || payload.returnMethod
+            ? quoteRentalTimeline({
+                ...payload,
+                pickupMethod: payload.pickupMethod || shippingQuote.pickupMethod,
+                returnMethod: payload.returnMethod || shippingQuote.returnMethod,
+                requestedStartAt: payload.requestedStartAt || payload.rentalDate
+              }, {
+                outboundTransportMinutes: resolvedTransportTimeline?.outbound?.effectiveDurationMinutes || 0,
+                inboundTransportMinutes: resolvedTransportTimeline?.inbound?.effectiveDurationMinutes || 0
+              })
+            : null;
+          const rentalDate = canonicalTimeline?.plannedRentalStartAt || parseLocalDateTime(payload.rentalDate);
+          const returnDate = canonicalTimeline?.plannedRentalEndAt || parseLocalDateTime(payload.returnDate) || calculateRentalReturnDate(rentalDate, payload.rentalDays);
           validateRentalDates(rentalDate, returnDate);
 
           let totalRentalPrice = 0;
@@ -712,7 +807,7 @@ export async function createRentalOrder(userOrCustomerId, rawPayload) {
             if (!costume) {
               throw new ApiError(404, "Không tìm thấy trang phục.");
             }
-            if (!rentableCostumeStatuses.includes(costume.status)) {
+            if (operationalStatusOf(costume) !== "active") {
               throw new ApiError(
                 400,
                 `${costume.name} hiện không thể đặt thuê.`
@@ -721,8 +816,8 @@ export async function createRentalOrder(userOrCustomerId, rawPayload) {
 
             await assertNoScheduleConflict(
               costume._id,
-              payload.blockedFrom || rentalDate,
-              payload.availabilityUntil || returnDate,
+              canonicalTimeline?.blockedStartAt || payload.blockedFrom || rentalDate,
+              canonicalTimeline?.blockedEndAt || payload.availabilityUntil || returnDate,
               null,
               session,
               input.quantity
@@ -734,10 +829,7 @@ export async function createRentalOrder(userOrCustomerId, rawPayload) {
             });
           }
 
-          const holdMinutes = Math.max(
-            1,
-            Number(process.env.PENDING_HOLD_MINUTES || 60)
-          );
+          const holdMinutes = storeConfig.pendingPaymentMinutes;
           const holdExpiresAt = new Date(
             Date.now() + holdMinutes * 60 * 1000
           );
@@ -750,6 +842,49 @@ export async function createRentalOrder(userOrCustomerId, rawPayload) {
 
                 rentalDate,
                 returnDate,
+                rentalDays: payload.rentalDays,
+                rentalDurationHours: payload.rentalDays * 24,
+                pickupMethod: canonicalTimeline?.pickupMethod || shippingQuote.pickupMethod || "store_pickup",
+                returnMethod: canonicalTimeline?.returnMethod || shippingQuote.returnMethod || "store_return",
+                source: ["online", "walk_in", "admin"].includes(payload.source) ? payload.source : "online",
+                idempotencyKey: payload.idempotencyKey || null,
+                quoteId: payload.quoteId || canonicalTimeline?.quoteId || "",
+                quoteVersion: Number(payload.quoteVersion || canonicalTimeline?.quoteVersion || 1),
+                plannedRentalStartAt: canonicalTimeline?.plannedRentalStartAt || rentalDate,
+                plannedRentalEndAt: canonicalTimeline?.plannedRentalEndAt || returnDate,
+                deliveryDispatchAt: canonicalTimeline?.deliveryDispatchAt || null,
+                expectedDeliveryAt: canonicalTimeline?.expectedDeliveryAt || null,
+                collectionAt: canonicalTimeline?.collectionAt || null,
+                expectedReturnedToStoreAt: canonicalTimeline?.expectedReturnedToStoreAt || returnDate,
+                blockedStartAt: canonicalTimeline?.blockedStartAt || payload.blockedFrom || rentalDate,
+                blockedEndAt: canonicalTimeline?.blockedEndAt || payload.blockedUntil || returnDate,
+                preparationMinutes: canonicalTimeline?.preparationMinutes ?? storeConfig.preparationMinutes,
+                inspectionMinutes: canonicalTimeline?.inspectionMinutes ?? storeConfig.inspectionMinutes,
+                cleaningMinutes: canonicalTimeline?.cleaningMinutes ?? storeConfig.defaultCleaningMinutes,
+                outboundTransportMinutes: canonicalTimeline?.outboundTransportMinutes || 0,
+                inboundTransportMinutes: canonicalTimeline?.inboundTransportMinutes || 0,
+                transportZoneId: shippingQuote.zone?._id || null,
+                transportQuoteVersion: Number(shippingQuote.zone?.quoteVersion || 1),
+                transportQuoteSnapshot: shippingQuote.zone ? {
+                  zoneId: shippingQuote.zone._id,
+                  zoneVersion: shippingQuote.zone.version || shippingQuote.zone.quoteVersion || 1,
+                  deliveryFee: shippingQuote.outboundFee,
+                  collectionFee: shippingQuote.returnFee,
+                  outbound: resolvedTransportTimeline?.outbound ? {
+                    ...resolvedTransportTimeline.outbound,
+                    dispatchAt: resolvedTransportTimeline.deliveryDispatchAt,
+                    expectedDeliveryAt: resolvedTransportTimeline.expectedDeliveryAt
+                  } : null,
+                  inbound: resolvedTransportTimeline?.inbound ? {
+                    ...resolvedTransportTimeline.inbound,
+                    collectionAt: resolvedTransportTimeline.collectionAt,
+                    expectedReturnedToStoreAt: resolvedTransportTimeline.expectedReturnedToStoreAt
+                  } : null,
+                  calculatedAt: new Date(),
+                  expiresAt: holdExpiresAt
+                } : null,
+                deliveryFee: shippingQuote.outboundFee,
+                collectionFee: shippingQuote.returnFee,
                 mainUseDate: payload.mainUseDate || "",
                 extraDays: Number(payload.extraDays || 0),
                 standardPackageDays: payload.mainUseDate ? 3 : 0,
@@ -761,6 +896,7 @@ export async function createRentalOrder(userOrCustomerId, rawPayload) {
                 blockedUntil: payload.blockedUntil || payload.cleaningUntil || new Date(returnDate.getTime() + RENTAL_TURNAROUND_MINUTES * 60000),
                 legacySchedule: !payload.mainUseDate,
                 holdExpiresAt,
+                paymentExpiresAt: holdExpiresAt,
 
                 policyAccepted: payload.policyAccepted === true,
                 policyVersion:
@@ -768,10 +904,13 @@ export async function createRentalOrder(userOrCustomerId, rawPayload) {
                 policyAcceptedAt: new Date(),
 
                 status: "confirmed",
+                bookingStatus: "payment_pending",
+                paymentStatus: "unpaid",
                 approvalMode: "automatic",
                 approvedAt: new Date(),
                 approvedBy: null,
-                paymentPreference: ["cash", "bank_transfer"].includes(payload.paymentPreference) ? payload.paymentPreference : "cash",
+                paymentPreference: ["cash", "bank_transfer", "payos"].includes(payload.paymentPreference) ? payload.paymentPreference : "bank_transfer",
+                paymentMethod: ["cash", "bank_transfer", "payos"].includes(payload.paymentPreference) ? payload.paymentPreference : "bank_transfer",
                 shipping: { outboundFee: shippingQuote.outboundFee, returnFee: shippingQuote.returnFee, totalFee: shippingQuote.totalShippingFee },
                 fulfillment: {
                   method: shippingQuote.fulfillmentMethod,
@@ -818,10 +957,27 @@ export async function createRentalOrder(userOrCustomerId, rawPayload) {
             };
           });
 
-          await RentalOrderItem.insertMany(
+          const createdItems = await RentalOrderItem.insertMany(
             items,
             sessionOptions(session, { ordered: true })
           );
+
+          if (canonicalTimeline) {
+            await createRentalHold({
+              orderId: order._id,
+              orderItems: createdItems.map((item) => ({
+                orderItemId: item._id,
+                costumeId: item.costumeId,
+                quantity: item.quantity
+              })),
+              timeline: canonicalTimeline,
+              source: order.source,
+              expiresAt: holdExpiresAt,
+              staffId: order.source === "online" ? null : effectiveUser?._id,
+              zone: shippingQuote.zone,
+              session
+            });
+          }
 
           order.totalRentalPrice = totalRentalPrice;
           order.baseRentalAmount = preparedItems.reduce((sum, entry) => sum + resolveStandardPackagePrice(entry.costume) * entry.quantity, 0);
@@ -919,7 +1075,37 @@ export async function listMyOrders(customerId, params) {
 
 export async function listAdminOrders(params) {
   await expirePendingOrders();
-  return paginate(RentalOrder.find().sort({ createdAt: -1 }), params);
+  const filter = {};
+  if (params.status) filter.status = { $in: canonicalStatuses([params.status]) };
+  if (params.paymentStatus) filter.paymentStatus = params.paymentStatus;
+  if (params.pickupMethod) filter.pickupMethod = params.pickupMethod;
+  if (params.returnMethod) filter.returnMethod = params.returnMethod;
+  if (params.source) filter.source = params.source;
+  if (params.rentalDays) filter.rentalDays = Number(params.rentalDays);
+  if (String(params.overdue || "") === "true") filter.status = "overdue";
+  const rangeField = params.dateField === "return" ? "plannedRentalEndAt" : "plannedRentalStartAt";
+  if (params.dateFrom || params.dateTo) {
+    filter[rangeField] = {};
+    if (params.dateFrom) filter[rangeField].$gte = new Date(params.dateFrom);
+    if (params.dateTo) filter[rangeField].$lte = new Date(params.dateTo);
+  }
+  const search = String(params.search || "").trim();
+  if (search) {
+    const regex = new RegExp(escapeRegex(search), "i");
+    const [costumes, customers] = await Promise.all([
+      Costume.find({ name: regex }).select("_id"),
+      User.find({ $or: [{ name: regex }, { phone: regex }, { phoneNormalized: regex }] }).select("_id")
+    ]);
+    const orderIds = await RentalOrderItem.find({ costumeId: { $in: costumes.map((item) => item._id) } }).distinct("orderId");
+    filter.$or = [
+      { _id: { $in: orderIds } },
+      { customerId: { $in: customers.map((item) => item._id) } },
+      { orderCode: regex },
+      { "customerInfo.fullName": regex },
+      { "customerInfo.phone": regex }
+    ];
+  }
+  return paginate(RentalOrder.find(filter).sort({ createdAt: -1 }), params);
 }
 
 export async function getOrderForUser(orderId, user) {
@@ -957,6 +1143,10 @@ export async function cancelOrder(orderId, user) {
     }
     order.status = "canceled";
     await order.save(session ? { session } : {});
+    await Promise.all([
+      Reservation.updateMany({ orderId: order._id, status: { $nin: ["completed", "cancelled", "expired"] } }, { $set: { status: "cancelled" } }, session ? { session } : {}),
+      TransportReservation.updateMany({ orderId: order._id, status: { $nin: ["completed", "cancelled", "expired"] } }, { $set: { status: "cancelled" } }, session ? { session } : {})
+    ]);
     const byAdmin = ["admin", "staff", "owner"].includes(user.role);
     if (byAdmin) {
       await createNotificationOnce({
@@ -1041,6 +1231,10 @@ export async function rejectOrder(orderId, adminId, reason) {
     order.rejectedAt = new Date();
     order.rejectReason = reason || "Cửa hàng không thể nhận đơn trong thời gian này.";
     await order.save(session ? { session } : {});
+    await Promise.all([
+      Reservation.updateMany({ orderId: order._id, status: { $nin: ["completed", "cancelled", "expired"] } }, { $set: { status: "cancelled" } }, session ? { session } : {}),
+      TransportReservation.updateMany({ orderId: order._id, status: { $nin: ["completed", "cancelled", "expired"] } }, { $set: { status: "cancelled" } }, session ? { session } : {})
+    ]);
     await createNotificationOnce({
       recipientId: order.customerId,
       recipientRole: "customer",
@@ -1089,6 +1283,20 @@ export async function transitionOrder(orderId, action) {
     order.turnaroundUntil = new Date(returnedAt.getTime() + RENTAL_TURNAROUND_MINUTES * 60 * 1000);
   }
   await order.save();
+  const reservationStatus = action === "readyForPickup"
+    ? (order.pickupMethod === "home_delivery" ? "out_for_delivery" : "ready_for_pickup")
+    : action === "pickedUp" ? "active"
+      : action === "returned" ? "inspection" : null;
+  if (reservationStatus) {
+    await Reservation.updateMany(
+      { orderId: order._id, status: { $nin: ["completed", "cancelled", "expired"] } },
+      { $set: {
+        status: reservationStatus,
+        ...(action === "pickedUp" ? { actualRentalStartAt: order.pickedUpAt } : {}),
+        ...(action === "returned" ? { actualReturnedToStoreAt: order.returnedAt, billableRentalEndAt: order.returnedAt } : {})
+      } }
+    );
+  }
   emitOrderUpdated({ orderId: order._id, customerId: order.customerId, status: order.status, paymentStatus: order.paymentStatus, reason: action });
   if (action === "readyForPickup") {
     await createNotificationOnce({ recipientId: order.customerId, recipientRole: "customer", ...orderNotification("ready", order), eventKey: `order:${order._id}:ready_for_pickup:customer` });
@@ -1221,6 +1429,10 @@ export async function inspectReturn(orderId, payload, checkedBy) {
     const order = await RentalOrder.findById(orderId);
     await ensureRefund(order, inspection, checkedBy);
   }
+  await Reservation.updateMany(
+    { orderId, status: { $nin: ["completed", "cancelled", "expired"] } },
+    { $set: { status: inspection?.condition === "damaged" ? "maintenance" : "cleaning" } }
+  );
   return ReturnInspection.findById(inspectionId)
     .populate("costumeId")
     .populate("checkedBy", "-password");
@@ -1251,6 +1463,10 @@ export async function completeOrder(orderId) {
     order.status = "completed";
     order.completedAt = new Date();
     await order.save(session ? { session } : {});
+    await Promise.all([
+      Reservation.updateMany({ orderId: order._id }, { $set: { status: "completed" } }, session ? { session } : {}),
+      TransportReservation.updateMany({ orderId: order._id, status: { $nin: ["failed", "cancelled", "expired"] } }, { $set: { status: "completed" } }, session ? { session } : {})
+    ]);
     // Costume.status is an operational/admin state. Completing one order must
     // not overwrite maintenance, washing, hidden, or other intentional states.
     // Availability is derived from RentalOrderItem overlaps and quantity.

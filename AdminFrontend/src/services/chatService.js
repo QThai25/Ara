@@ -1,0 +1,13 @@
+import{apiClient}from"./apiClient.js";const unwrap=response=>response?.data??response;
+export const listChatConversations=async params=>unwrap(await apiClient.get("/admin/chat/conversations",{params}));
+export const getChatMessages=async(id,params={})=>unwrap(await apiClient.get(`/chat/conversations/${id}/messages`,{params}));
+export const markAdminChatRead=async id=>unwrap(await apiClient.post(`/chat/conversations/${id}/read`,{}));
+export const assignChat=async(id,adminId)=>unwrap(await apiClient.post(`/admin/chat/conversations/${id}/assign`,{adminId}));
+export const sendAdminChat=async(id,body)=>unwrap(await apiClient.post(`/admin/chat/conversations/${id}/messages`,body));
+export const toggleChatBot=async(id,enabled)=>unwrap(await apiClient.post(`/admin/chat/conversations/${id}/bot-toggle`,{enabled}));
+export const resolveChat=async id=>unwrap(await apiClient.post(`/admin/chat/conversations/${id}/resolve`));
+export const listKnowledge=async()=>unwrap(await apiClient.get("/admin/chat/knowledge"));
+export const createKnowledge=async body=>unwrap(await apiClient.post("/admin/chat/knowledge",body));
+export const updateKnowledge=async(id,body)=>unwrap(await apiClient.patch(`/admin/chat/knowledge/${id}`,body));
+export const deleteKnowledge=async id=>unwrap(await apiClient.delete(`/admin/chat/knowledge/${id}`));
+export const listCannedReplies=async()=>unwrap(await apiClient.get("/admin/chat/canned-replies"));

@@ -1,5 +1,5 @@
 export const NOTIFICATION_CATEGORIES = [
-  "rental_order", "payment", "costume_service", "promotion", "account_system", "inventory", "customer"
+  "rental_order", "payment", "costume_service", "promotion", "account_system", "consultation", "inventory", "customer"
 ];
 
 const TYPE_TAXONOMY = {
@@ -48,6 +48,7 @@ const TYPE_TAXONOMY = {
   voucher_new: ["promotion", "voucher_new"],
   voucher_expiring: ["promotion", "voucher_expiring"],
   customer_support: ["costume_service", "support_request"],
+  chat_message: ["consultation", "chat_message"],
   system: ["account_system", "system"]
 };
 

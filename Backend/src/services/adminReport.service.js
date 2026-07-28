@@ -472,7 +472,12 @@ export async function getCostumeAlerts() {
     { $limit: 12 },
     { $project: { orderId: "$order._id", costumeId: 1, status: "$order.status", name: "$costume.name", image: "$costume.image", returnDate: "$order.returnDate" } }
   ]);
-  const unavailable = await Costume.find({ status: { $in: ["washing", "laundry", "repairing", "maintenance", "unavailable"] } }).select("name status image").limit(12).lean();
+  const unavailable = await Costume.find({
+    $or: [
+      { operationalStatus: { $in: ["maintenance", "unavailable"] } },
+      { operationalStatus: { $exists: false }, status: { $in: ["washing", "laundry", "repairing", "maintenance", "unavailable"] } }
+    ]
+  }).select("name status operationalStatus image").limit(12).lean();
   return {
     items: [
       ...overdue.map((row) => ({ type: row.status === "overdue" ? "overdue" : "inspection", label: row.status === "overdue" ? "Đang quá hạn chưa trả" : "Cần kiểm tra sau trả", costumeName: row.name, orderId: row.orderId, costumeId: row.costumeId, image: row.image, href: row.status === "overdue" ? `/orders/${row.orderId}` : "/inspections" })),

@@ -4,10 +4,10 @@ import { buildStandardRentalSchedule, resolveStandardPackagePrice } from "../src
 
 test("standard package maps main use date to pickup and return calendar days", () => {
   const result = buildStandardRentalSchedule({ mainUseDate: "2030-07-15", pickupTime: "09:00", returnTime: "17:00", extraDays: 0 }, 500000);
-  assert.equal(result.pickupAt.toISOString(), "2030-07-14T02:00:00.000Z");
+  assert.equal(result.pickupAt.toISOString(), "2030-07-15T02:00:00.000Z");
   assert.equal(result.expectedReturnAt.toISOString(), "2030-07-16T10:00:00.000Z");
   assert.equal(result.pricing.totalRentalAmount, 500000);
-  assert.deepEqual(result.standardPackage, { days: 3, nights: 2 });
+  assert.deepEqual(result.standardPackage, { days: 1, nights: 1 });
 });
 
 test("planned extra day extends return and charges ten percent of package price", () => {

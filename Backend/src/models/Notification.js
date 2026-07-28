@@ -12,7 +12,7 @@ export const NOTIFICATION_TYPES = [
   "payment_expired", "payment_refunded", "rental_order_expired",
   "payment_deposit_completed", "payment_full_completed", "payment_rental_balance_completed",
   "payment_penalty_completed", "payment_refund_completed", "settlement_penalty_required",
-  "settlement_refund_pending", "settlement_completed", "system"
+  "settlement_refund_pending", "settlement_completed", "chat_message", "system"
 ];
 
 const notificationSchema = new mongoose.Schema({
@@ -26,7 +26,7 @@ const notificationSchema = new mongoose.Schema({
   title: { type: String, required: true, trim: true, maxlength: 180 },
   message: { type: String, trim: true, maxlength: 1200 },
   content: { type: String, trim: true, maxlength: 1200 },
-  entityType: { type: String, enum: ["rental_order", "payment", "return_inspection", "contact_request", "system"], default: "system" },
+  entityType: { type: String, enum: ["rental_order", "payment", "return_inspection", "contact_request", "chat_conversation", "system"], default: "system" },
   entityId: { type: mongoose.Schema.Types.ObjectId, default: null },
   targetId: { type: mongoose.Schema.Types.ObjectId, default: null },
   targetType: { type: String, default: "" },

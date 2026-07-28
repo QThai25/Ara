@@ -20,6 +20,6 @@ test("guest order token rejects a wrong signature and missing scope", () => {
   assert.throws(() => verifyGuestOrderAccessToken(access.token, "admin"), /hết hạn|không hợp lệ/i);
 });
 
-test("guest checkout exposes exactly payOS and manual bank transfer", () => {
-  assert.deepEqual(getPaymentMethods().options.map(item => item.method), ["payos", "bank_transfer"]);
+test("checkout exposes cash, configured bank transfer and optional payOS", () => {
+  assert.deepEqual(getPaymentMethods().options.map(item => item.method), ["bank_transfer", "cash", "payos"]);
 });

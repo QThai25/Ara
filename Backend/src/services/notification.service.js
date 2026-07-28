@@ -17,6 +17,7 @@ const escapeRegex = (value = "") => String(value).replace(/[.*+?^${}()|[\]\\]/g,
 function serialize(notification) {
   const value = notification?.toObject ? notification.toObject() : notification;
   const taxonomy = notificationTaxonomy(value.type, value.recipientRole);
+  const chatNotification = value.entityType === "chat_conversation" || value.targetType === "chat_conversation";
   const legacyTaxonomy = !value.category || !value.subtype;
   const entityId = value.entityId || value.targetId || value.orderId || value.paymentId;
   const adminRecipient = ["admin", "staff", "owner"].includes(value.recipientRole);
@@ -28,8 +29,8 @@ function serialize(notification) {
     ...value,
     recipientId: value.recipientId || value.userId,
     message: value.message || value.content,
-    category: value.category || taxonomy.category,
-    subtype: value.subtype || taxonomy.subtype,
+    category: chatNotification ? "consultation" : (value.category || taxonomy.category),
+    subtype: chatNotification ? "chat_message" : (value.subtype || taxonomy.subtype),
     requiresAction: legacyTaxonomy ? Boolean(value.requiresAction || taxonomy.requiresAction) : Boolean(value.requiresAction),
     actionUrl: deeplink,
     deeplink,
@@ -116,6 +117,9 @@ function buildFilter(recipientId, params = {}, { omitRead = false, omitAction = 
     else if (!params.subtype && params.category) taxonomyCondition.push({ category: params.category });
     else if (!params.category && concreteSubtype) taxonomyCondition.push({ subtype: params.subtype });
     if (types.length) taxonomyCondition.push({ type: { $in: types } });
+    if (params.category === "consultation" && (!params.subtype || params.subtype === "chat_message")) {
+      taxonomyCondition.push({ entityType: "chat_conversation" }, { targetType: "chat_conversation" });
+    }
     conditions.push({ $or: taxonomyCondition });
   }
   const from = dateBoundary(params.from);

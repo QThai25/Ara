@@ -1,5 +1,8 @@
 export const statusLabels = {
-  active: "Đang hiển thị",
+  active: "Hoạt động",
+  booked: "Đã có lịch",
+  cleaning: "Đang vệ sinh",
+  active: "Sẵn sàng đặt lịch",
   inactive: "Đã ẩn",
   blocked: "Đã khóa",
   expired: "Hết hiệu lực",
@@ -24,6 +27,8 @@ export const statusLabels = {
   unpaid: "Chưa thanh toán",
   awaiting_payment: "Chờ thanh toán",
   awaiting_confirmation: "Chờ cửa hàng xác nhận",
+  awaiting_verification: "Chờ xác minh chuyển khoản",
+  partially_paid: "Đã thanh toán một phần",
   fully_paid: "Đã thanh toán đủ",
   settlement_pending: "Chờ quyết toán",
   settled: "Đã quyết toán",
@@ -63,6 +68,7 @@ export const statusTone = {
   pending: "warning",
   awaiting_payment: "warning",
   awaiting_confirmation: "warning",
+  awaiting_verification: "warning",
   confirmed: "warning",
   deposit_paid: "warning",
   ready_to_pickup: "warning",
@@ -99,8 +105,7 @@ export const orderStatusOptions = [
 ];
 
 export const costumeStatusOptions = [
-  ["available", statusLabels.available],
-  ["laundry", statusLabels.laundry],
+  ["active", "Hoạt động"],
   ["maintenance", statusLabels.maintenance],
   ["unavailable", statusLabels.unavailable],
   ["hidden", statusLabels.hidden]

@@ -38,11 +38,61 @@ const styleSeeds = [
   { name: "Thanh lịch", slug: "elegant", icon: "elegant", sortOrder: 8 }
 ];
 
-async function seedFilterOptions() {
+export async function seedDefaultFilterOptions() {
   await Promise.all([
     ...occasionSeeds.map((item) => Occasion.updateOne({ slug: item.slug }, { $setOnInsert: { ...item, status: "active", isVisible: true } }, { upsert: true })),
     ...styleSeeds.map((item) => Style.updateOne({ slug: item.slug }, { $setOnInsert: { ...item, status: "active", isVisible: true } }, { upsert: true }))
   ]);
+}
+
+const categoryDefaultRules = {
+  "ao-dai": { occasions: ["festival", "party"], styles: ["traditional", "elegant"] },
+  "da-hoi": { occasions: ["gala", "party"], styles: ["elegant", "sexy"] },
+  "co-trang": { occasions: ["festival", "set"], styles: ["traditional", "princess"] }
+};
+
+export async function seedCategoryClassificationDefaults() {
+  const [styles, occasions, categories] = await Promise.all([
+    Style.find(),
+    Occasion.find(),
+    Category.find({
+      $or: [
+        { classificationDefaultsInitialized: { $ne: true } },
+        { multiClassificationDefaultsInitialized: { $ne: true } }
+      ]
+    })
+  ]);
+  const styleBySlug = new Map(styles.map((item) => [item.slug, item]));
+  const occasionBySlug = new Map(occasions.map((item) => [item.slug, item]));
+
+  await Promise.all(categories.map((category) => {
+    const rule = categoryDefaultRules[category.slug] || {
+      occasions: [category.defaultOccasionSlug, "party"].filter(Boolean),
+      styles: [category.defaultStyleSlug, "casual"].filter(Boolean)
+    };
+    const selectedStyles = [...new Set(rule.styles)].map((slug) => styleBySlug.get(slug)).filter(Boolean);
+    const selectedOccasions = [...new Set(rule.occasions)].map((slug) => occasionBySlug.get(slug)).filter(Boolean);
+    if (!category.defaultStyleIds?.length && selectedStyles.length) {
+      category.defaultStyleIds = selectedStyles.map((item) => item._id);
+      category.defaultStyleId = selectedStyles[0]._id;
+      category.defaultStyleSlug = selectedStyles[0].slug;
+      category.defaultStyleName = selectedStyles[0].name;
+    }
+    if (!category.defaultOccasionIds?.length && selectedOccasions.length) {
+      category.defaultOccasionIds = selectedOccasions.map((item) => item._id);
+      category.defaultOccasionId = selectedOccasions[0]._id;
+      category.defaultOccasionSlug = selectedOccasions[0].slug;
+      category.defaultOccasionName = selectedOccasions[0].name;
+    }
+    category.classificationDefaultsInitialized = true;
+    category.multiClassificationDefaultsInitialized = true;
+    return category.save();
+  }));
+}
+
+export async function seedCostumeTaxonomy() {
+  await seedDefaultFilterOptions();
+  await seedCategoryClassificationDefaults();
 }
 
 async function seedBrands() {
@@ -96,9 +146,8 @@ async function attachFilterOptionsToSampleCostumes() {
 }
 
 export async function seedDemoData() {
-  if (process.env.SEED_DEMO_DATA === "false") return;
-
-  await seedFilterOptions();
+  await seedCostumeTaxonomy();
+  if (process.env.SEED_DEMO_DATA !== "true") return;
   const brands = await seedBrands();
   const brandBySlug = new Map(brands.map((brand) => [brand.slug, brand]));
   await attachBrandsToExistingCostumes(brands);
@@ -183,4 +232,5 @@ export async function seedDemoData() {
       conditionNote: "Đang giặt sau đơn gần nhất"
     }
   ]);
+  await seedCategoryClassificationDefaults();
 }

@@ -16,7 +16,8 @@ import { StatusBadge } from "./StatusBadge.jsx";
 
 const LOCKED_PAYMENT_STATUSES = [
   "awaiting_payment",
-  "awaiting_confirmation"
+  "awaiting_confirmation",
+  "awaiting_verification"
 ];
 
 const DEPOSIT_PAID_STATUSES = [
@@ -28,10 +29,14 @@ const DEPOSIT_PAID_STATUSES = [
 
 function getPaymentMessage(paymentStatus) {
   switch (paymentStatus) {
+    case "pending":
+      return "Thanh toán chưa hoàn tất. Bạn có thể mở lại thông tin chuyển khoản để tiếp tục.";
+
     case "awaiting_payment":
       return "Giao dịch online đang chờ thanh toán.";
 
     case "awaiting_confirmation":
+    case "awaiting_verification":
       return "Khoản thanh toán đang chờ cửa hàng xác nhận.";
 
     case "deposit_paid":
@@ -47,6 +52,27 @@ function getPaymentMessage(paymentStatus) {
     default:
       return "";
   }
+}
+
+function getPaymentStatusLabel(paymentStatus) {
+  const labels = {
+    unpaid: "Chưa thanh toán",
+    pending: "Chờ thanh toán",
+    awaiting_payment: "Chờ thanh toán",
+    awaiting_confirmation: "Chờ cửa hàng xác nhận",
+    awaiting_verification: "Chờ cửa hàng xác nhận",
+    partially_paid: "Đã thanh toán một phần",
+    deposit_paid: "Đã thanh toán tiền cọc",
+    deposited: "Đã thanh toán tiền cọc",
+    paid: "Đã thanh toán toàn bộ",
+    fully_paid: "Đã thanh toán toàn bộ",
+    failed: "Thanh toán thất bại",
+    canceled: "Đã hủy thanh toán",
+    cancelled: "Đã hủy thanh toán",
+    expired: "Giao dịch đã hết hạn",
+    refunded: "Đã hoàn tiền"
+  };
+  return labels[paymentStatus] || "Đang cập nhật";
 }
 
 export function OrderDetail({
@@ -270,7 +296,7 @@ export function OrderDetail({
 
       <dl className="summary">
         <div><dt>Phương thức thanh toán</dt><dd>{isCashOnPickup ? "Tiền mặt khi nhận đồ" : "Chuyển khoản ngân hàng"}</dd></div>
-        <div><dt>Trạng thái thanh toán</dt><dd>{paymentStatus === "unpaid" ? "Chưa thanh toán" : paymentStatus === "awaiting_confirmation" ? "Chờ xác nhận chuyển khoản" : ["deposit_paid", "deposited"].includes(paymentStatus) ? "Đã thanh toán tiền cọc" : ["paid", "fully_paid"].includes(paymentStatus) ? "Đã thanh toán toàn bộ" : paymentStatus === "refunded" ? "Đã hoàn tiền" : paymentStatus}</dd></div>
+        <div><dt>Trạng thái thanh toán</dt><dd>{getPaymentStatusLabel(paymentStatus)}</dd></div>
         <div>
           <dt>Tiền thuê</dt>
           <dd>{money(order.totalRentalPrice)}</dd>
@@ -306,13 +332,13 @@ export function OrderDetail({
             <span>{paymentMessage}</span>
           </div>
 
-          {!readonly && paymentStatus === "awaiting_payment" && resumePayment && (
+          {!readonly && ["awaiting_payment", "awaiting_confirmation", "awaiting_verification", "pending"].includes(paymentStatus) && resumePayment && (
             <button
               type="button"
               className="payment-state-resume"
               onClick={() => resumePayment(order)}
             >
-              Tiếp tục thanh toán
+              {paymentStatus === "pending" ? "Mở lại thông tin chuyển khoản" : "Tiếp tục thanh toán"}
             </button>
           )}
         </div>

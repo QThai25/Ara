@@ -506,6 +506,38 @@
   animation: ariBunnySleepyEyes 1500ms ease-in-out 1 !important;
 }
 
+.ari-bunny-action-nod .ari-bunny-head-tracker {
+  animation: ariBunnyNod 1100ms ease-in-out 1;
+}
+
+.ari-bunny-action-twirl .ari-bunny-character {
+  animation: ariBunnyTwirl 1250ms cubic-bezier(0.34, 1.56, 0.64, 1) 1 !important;
+}
+
+.ari-bunny-action-twirl .ari-bunny-bow {
+  animation: ariBunnyBowParty 220ms ease-in-out infinite;
+}
+
+.ari-bunny-action-hop .ari-bunny-character {
+  animation: ariBunnyHappyHop 1150ms cubic-bezier(0.22, 1, 0.36, 1) 1 !important;
+}
+
+.ari-bunny-action-surprised .ari-bunny-head-tracker {
+  animation: ariBunnySurprised 1050ms cubic-bezier(0.16, 1, 0.3, 1) 1;
+}
+
+.ari-bunny-action-surprised .ari-bunny-eye {
+  transform: scale(1.13);
+}
+
+.ari-bunny-action-sniff .ari-bunny-head-tracker {
+  animation: ariBunnySniff 1300ms ease-in-out 1;
+}
+
+.ari-bunny-action-sniff .ari-bunny-iris {
+  animation: ariBunnySniffEyes 1300ms ease-in-out 1;
+}
+
 .ari-bunny-hearts {
   position: absolute;
   inset: -10px;
@@ -1057,6 +1089,49 @@
   76% {
     transform: translateY(2px) scaleY(0.28);
   }
+}
+
+@keyframes ariBunnyNod {
+  0%, 100% { transform: translateY(0) rotate(var(--ari-bunny-head-rotate)); }
+  24% { transform: translateY(3px) rotate(-2deg); }
+  46% { transform: translateY(-1px) rotate(1deg); }
+  68% { transform: translateY(2px) rotate(-1deg); }
+}
+
+@keyframes ariBunnyTwirl {
+  0%, 100% { transform: translateY(0) rotate(0deg) scaleX(1.035); }
+  20% { transform: translateY(-4px) rotate(-10deg) scaleX(1.02); }
+  48% { transform: translateY(-6px) rotate(12deg) scaleX(-1.035); }
+  72% { transform: translateY(-3px) rotate(-8deg) scaleX(-1.02); }
+}
+
+@keyframes ariBunnyHappyHop {
+  0%, 100% { transform: translateY(0) rotate(0deg) scaleX(1.035); }
+  18% { transform: translateY(-7px) rotate(-3deg) scaleX(1.04); }
+  34% { transform: translateY(1px) rotate(2deg) scaleX(1.06) scaleY(0.96); }
+  54% { transform: translateY(-5px) rotate(3deg) scaleX(1.04); }
+  72% { transform: translateY(1px) rotate(-1deg) scaleX(1.05) scaleY(0.97); }
+}
+
+@keyframes ariBunnySurprised {
+  0%, 100% { transform: translateY(0) scale(1) rotate(var(--ari-bunny-head-rotate)); }
+  18% { transform: translateY(-5px) scale(1.08) rotate(-2deg); }
+  42% { transform: translateY(-2px) scale(1.04) rotate(2deg); }
+  66% { transform: translateY(-3px) scale(1.06) rotate(-1deg); }
+}
+
+@keyframes ariBunnySniff {
+  0%, 100% { transform: translate(0, 0) rotate(var(--ari-bunny-head-rotate)); }
+  20% { transform: translate(-2px, 2px) rotate(-4deg); }
+  38% { transform: translate(2px, 1px) rotate(3deg); }
+  56% { transform: translate(-1px, 2px) rotate(-3deg); }
+  74% { transform: translate(2px, 0) rotate(2deg); }
+}
+
+@keyframes ariBunnySniffEyes {
+  0%, 100% { transform: translate(var(--ari-bunny-look-x), var(--ari-bunny-look-y)); }
+  24%, 58% { transform: translate(-2px, 2px) scaleY(0.8); }
+  40%, 74% { transform: translate(2px, 1px) scaleY(0.92); }
 }
 
 @keyframes ariBunnyHeartFloat {

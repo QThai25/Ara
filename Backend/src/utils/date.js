@@ -15,7 +15,7 @@ function getNonNegativeNumber(
 export const RENTAL_TURNAROUND_MINUTES =
   getNonNegativeNumber(
     process.env.RENTAL_TURNAROUND_MINUTES,
-    120
+    180
   );
 export function dateOnly(value) {
   if (!value) return "";
