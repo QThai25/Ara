@@ -1,1 +1,10 @@
-import{api}from"./api.js";export const listShippingZones=()=>api.get("/admin/shipping-zones");export const createShippingZone=body=>api.post("/admin/shipping-zones",body);export const deleteShippingZone=id=>api.delete(`/admin/shipping-zones/${id}`);export const listRefunds=params=>api.get("/admin/refunds",{params});export const startRefund=id=>api.patch(`/admin/refunds/${id}/start`);export const completeRefund=(id,body)=>api.patch(`/admin/refunds/${id}/complete`,body);
+import { api } from "./api.js";
+export const listShippingZones = () => api.get("/admin/shipping-zones");
+export const getShippingZone = (id) => api.get(`/admin/shipping-zones/${id}`);
+export const createShippingZone = (body) => api.post("/admin/shipping-zones", body);
+export const updateShippingZone = (id, body) => api.patch(`/admin/shipping-zones/${id}`, body);
+export const previewShippingDuration = (id, body) => api.post(`/admin/shipping-zones/${id}/preview-duration`, body);
+export const deleteShippingZone = (id) => api.delete(`/admin/shipping-zones/${id}`);
+export const listRefunds = (params) => api.get("/admin/refunds", { params });
+export const startRefund = (id) => api.patch(`/admin/refunds/${id}/start`);
+export const completeRefund = (id, body) => api.patch(`/admin/refunds/${id}/complete`, body);

@@ -13,7 +13,9 @@ async function serializeGuestOrder(order) {
     orderId: String(order._id), orderCode: order.orderCode || `ARA-${String(order._id).slice(-6).toUpperCase()}`,
     status: order.status, paymentStatus: order.paymentStatus, rentalDate: order.rentalDate, returnDate: order.returnDate,
     mainUseDate: order.mainUseDate || null, extraDays: order.extraDays || 0,
-    standardPackage: order.mainUseDate ? { days: order.standardPackageDays || 3, nights: order.standardPackageNights || 2 } : null,
+    standardPackage: { days: order.rentalDays || order.totalHoldDays || 1, hours: order.rentalDurationHours || (order.rentalDays || order.totalHoldDays || 1) * 24 },
+    rentalDays: order.rentalDays || order.totalHoldDays || 1,
+    rentalDurationHours: order.rentalDurationHours || (order.rentalDays || order.totalHoldDays || 1) * 24,
     baseRentalAmount: order.baseRentalAmount || order.totalRentalPrice, plannedExtraDayFee: order.plannedExtraDayFee || 0,
     cleaningUntil: order.cleaningUntil || null, totalRentalPrice: order.totalRentalPrice, totalDepositAmount: order.totalDepositAmount,
     fulfillment: order.fulfillment ? { method: order.fulfillment.method, outbound: { status: order.fulfillment.outbound?.status }, returnTrip: { status: order.fulfillment.returnTrip?.status } } : null,
@@ -26,13 +28,13 @@ export async function lookupPublicRentalOrder({ phone, orderCode }) {
   const normalizedCode = normalizeOrderCode(orderCode);
   const phoneNormalized = normalizePhone(phone);
   let order = await RentalOrder.findOne({ orderCode: normalizedCode, "customerInfo.phoneNormalized": phoneNormalized })
-    .select("orderCode status paymentStatus rentalDate returnDate mainUseDate extraDays standardPackageDays standardPackageNights baseRentalAmount plannedExtraDayFee cleaningUntil totalRentalPrice totalDepositAmount customerInfo.fullName customerInfo.phone");
+    .select("orderCode status paymentStatus rentalDate returnDate plannedRentalStartAt plannedRentalEndAt rentalDays rentalDurationHours pickupMethod returnMethod mainUseDate extraDays standardPackageDays standardPackageNights totalHoldDays baseRentalAmount plannedExtraDayFee cleaningUntil totalRentalPrice totalDepositAmount customerInfo.fullName customerInfo.phone");
   // Đơn legacy từng hiển thị 6 ký tự cuối của Mongo _id. Chỉ fallback
   // trong tập đơn khớp chính xác số điện thoại để không mở lookup hàng loạt.
   if (!order) {
     const legacySuffix = normalizedCode.replace(/^ARA-/, "");
     const candidates = await RentalOrder.find({ "customerInfo.phoneNormalized": phoneNormalized })
-      .select("orderCode status paymentStatus rentalDate returnDate mainUseDate extraDays standardPackageDays standardPackageNights baseRentalAmount plannedExtraDayFee cleaningUntil totalRentalPrice totalDepositAmount customerInfo.fullName customerInfo.phone")
+      .select("orderCode status paymentStatus rentalDate returnDate plannedRentalStartAt plannedRentalEndAt rentalDays rentalDurationHours pickupMethod returnMethod mainUseDate extraDays standardPackageDays standardPackageNights totalHoldDays baseRentalAmount plannedExtraDayFee cleaningUntil totalRentalPrice totalDepositAmount customerInfo.fullName customerInfo.phone")
       .sort({ createdAt: -1 }).limit(100);
     order = candidates.find(candidate => String(candidate._id).slice(-6).toUpperCase() === legacySuffix) || null;
   }
@@ -48,7 +50,7 @@ export async function getGuestOrderSession(orderCode, token) {
   const normalizedCode = normalizeOrderCode(orderCode);
   if (payload.orderCode !== normalizedCode) throw new ApiError(403, "Phiên truy cập không thuộc đơn thuê này.");
   const order = await RentalOrder.findOne({ _id: payload.orderId, orderCode: normalizedCode })
-    .select("orderCode status paymentStatus rentalDate returnDate mainUseDate extraDays standardPackageDays standardPackageNights baseRentalAmount plannedExtraDayFee cleaningUntil totalRentalPrice totalDepositAmount customerInfo.fullName customerInfo.phone fulfillment");
+    .select("orderCode status paymentStatus rentalDate returnDate plannedRentalStartAt plannedRentalEndAt rentalDays rentalDurationHours pickupMethod returnMethod mainUseDate extraDays standardPackageDays standardPackageNights totalHoldDays baseRentalAmount plannedExtraDayFee cleaningUntil totalRentalPrice totalDepositAmount customerInfo.fullName customerInfo.phone fulfillment");
   if (!order) throw new ApiError(403, "Phiên truy cập không thuộc đơn thuê này.");
   return serializeGuestOrder(order);
 }

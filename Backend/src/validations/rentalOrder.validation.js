@@ -14,6 +14,11 @@ export const createRentalOrderValidation = [
     .isInt({ min: 1, max: 30 })
     .withMessage("Số ngày thuê phải từ 1 đến 30.")
     .toInt(),
+  body("pickupMethod").optional().isIn(["store_pickup", "home_delivery"]).withMessage("Cách nhận đồ không hợp lệ."),
+  body("returnMethod").optional().isIn(["store_return", "home_collection"]).withMessage("Cách trả đồ không hợp lệ."),
+  body("requestedStartAt").optional().isISO8601().withMessage("Thời điểm nhận đồ không hợp lệ."),
+  body("source").optional().isIn(["online", "walk_in", "admin"]).withMessage("Nguồn đơn không hợp lệ."),
+  body("idempotencyKey").optional().isString().trim().isLength({ min: 8, max: 120 }).withMessage("Idempotency key không hợp lệ."),
 
   body("items")
     .isArray({ min: 1 })

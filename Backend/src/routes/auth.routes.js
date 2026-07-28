@@ -9,13 +9,19 @@ import {
   requestPhoneOtpValidation,
   verifyPhoneOtpValidation
 } from "../validations/auth.validation.js";
+import {
+  loginRateLimit,
+  registerRateLimit,
+  requestOtpRateLimit,
+  verifyOtpRateLimit
+} from "../middlewares/authRateLimit.middleware.js";
 
 export const authRoutes = Router();
 
-authRoutes.post("/register", registerValidation, validate, controller.register);
-authRoutes.post("/login", loginValidation, validate, controller.login);
-authRoutes.post("/phone/login", phoneLoginValidation, validate, controller.phoneLogin);
-authRoutes.post("/phone/request-otp", requestPhoneOtpValidation, validate, controller.requestPhoneOtp);
-authRoutes.post("/phone/verify-otp", verifyPhoneOtpValidation, validate, controller.verifyPhoneOtp);
+authRoutes.post("/register", registerRateLimit, registerValidation, validate, controller.register);
+authRoutes.post("/login", loginRateLimit, loginValidation, validate, controller.login);
+authRoutes.post("/phone/login", loginRateLimit, phoneLoginValidation, validate, controller.phoneLogin);
+authRoutes.post("/phone/request-otp", requestOtpRateLimit, requestPhoneOtpValidation, validate, controller.requestPhoneOtp);
+authRoutes.post("/phone/verify-otp", verifyOtpRateLimit, verifyPhoneOtpValidation, validate, controller.verifyPhoneOtp);
 authRoutes.post("/logout", auth, controller.logout);
 authRoutes.get("/me", auth, controller.me);

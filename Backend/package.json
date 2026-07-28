@@ -4,6 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "migrate:shipping-times": "node scripts/migrate-shipping-transport-times.js",
+    "migrate:shipping-times:dry-run": "node scripts/migrate-shipping-transport-times.js --dry-run",
+    "seed:locations": "node scripts/seed-administrative-units.js",
+    "migrate:shipping-locations": "node scripts/migrate-shipping-zone-locations.js",
     "dev": "node --watch server.js",
     "start": "node server.js",
     "check": "node --check server.js",
@@ -15,22 +19,29 @@
     "migrate:costume-status": "node scripts/migrate-costume-operational-status.js",
     "migrate:costume-images": "node scripts/migrate-costume-images.js",
     "migrate:rental-order-codes": "node scripts/backfillRentalOrderCodes.js",
+    "migrate:rental-checkout": "node scripts/migrate-rental-checkout-statuses.js",
+    "migrate:rental-timeline": "node scripts/migrate-rental-timeline-24h.js",
     "migrate:user-login-indexes": "node scripts/migrateUserLoginIndexes.js",
+    "seed:costume-taxonomy": "node scripts/seed-style-occasion.js",
+    "seed:chat-knowledge": "node scripts/seed-chat-knowledge.js",
+    "migrate:costume-classifications": "node scripts/migrate-costume-classifications.js",
     "payos:webhook": "node src/scripts/registerPayosWebhook.js"
   },
   "dependencies": {
     "@payos/node": "^2.0.5",
     "bcryptjs": "^2.4.3",
-    "cloudinary": "^1.41.3",
+    "cloudinary": "^2.10.0",
+    "compression": "^1.8.1",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "express-validator": "^7.2.1",
-    "googleapis": "^144.0.0",
+    "helmet": "^8.3.0",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.9.2",
     "multer": "^2.2.0",
-    "multer-storage-cloudinary": "^4.0.0",
-    "socket.io": "^4.8.3"
+    "nodemailer": "^9.0.3",
+    "socket.io": "^4.8.3",
+    "vietnam-address-database": "^1.0.0"
   }
 }

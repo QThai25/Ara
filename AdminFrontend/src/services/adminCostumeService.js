@@ -14,5 +14,5 @@ export async function getById(id) {
 export const create = (payload) => apiClient.post("/admin/costumes", payload);
 export const update = (id, payload) => apiClient.patch(`/admin/costumes/${id}`, payload);
 export const remove = (id) => apiClient.delete(`/admin/costumes/${id}`);
-export const updateStatus = (id, status) => apiClient.patch(`/admin/costumes/${id}/status`, { status });
+export const updateStatus = (id, operationalStatus) => apiClient.patch(`/admin/costumes/${id}/status`, { operationalStatus });
 export const toggleVisibility = (id) => apiClient.patch(`/admin/costumes/${id}/toggle-visibility`);

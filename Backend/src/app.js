@@ -1,25 +1,26 @@
 import express from "express";
 import cors from "cors";
-import dotenv from "dotenv";
+import compression from "compression";
+import helmet from "helmet";
+import mongoose from "mongoose";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { apiRoutes } from "./routes/index.js";
 import { errorHandler } from "./middlewares/error.middleware.js";
-
-dotenv.config();
+import { env } from "./config/env.js";
+import { mongoHealth } from "./config/database.js";
+import { requestLogger } from "./middlewares/requestLogger.middleware.js";
 
 export const app = express();
+app.set("trust proxy", 1);
+app.disable("x-powered-by");
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const allowedOrigins = (process.env.CLIENT_URLS || process.env.CLIENT_URL || "http://localhost:5173,http://localhost:5174,http://localhost:5175,http://127.0.0.1:5173,http://127.0.0.1:5174,http://127.0.0.1:5175")
-  .split(",")
-  .map((origin) => origin.trim())
-  .filter(Boolean);
-
+app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
 app.use(cors({
   origin(origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) {
+    if (!origin || env.corsOrigins.includes(origin)) {
       callback(null, true);
       return;
     }
@@ -27,12 +28,21 @@ app.use(cors({
   },
   credentials: true
 }));
+app.use(compression({ threshold: 1024 }));
+app.use(requestLogger);
 app.use(express.json({ limit: "2mb" }));
+app.use(express.urlencoded({ extended: false, limit: "256kb" }));
 app.use("/uploads", express.static(path.resolve(__dirname, "../public/uploads")));
 
-app.get("/api/health", (req, res) => {
-  res.json({ success: true, message: "Backend đang hoạt động.", data: { service: "ara-backend" } });
-});
+const health = async (req, res) => {
+  const database = mongoHealth();
+  if (database.ready) {
+    try { await mongoose.connection.db.admin().ping(); } catch { database.ready = false; database.status = "unavailable"; }
+  }
+  res.status(database.ready ? 200 : 503).json({ status: database.ready ? "ok" : "degraded", timestamp: new Date().toISOString(), database: database.status });
+};
+app.get("/health", health);
+app.get("/api/health", health);
 
 app.use("/api", (req, res, next) => {
   res.setHeader("Content-Type", "application/json; charset=utf-8");

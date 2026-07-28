@@ -29,7 +29,7 @@ export function PublicRentalOrderDetailPage() {
           <article><CalendarDays /><span>Ngày nhận</span><strong>{formatDate(order.rentalDate)}</strong></article>
           {order.mainUseDate && <article><CalendarDays /><span>Ngày mặc chính</span><strong>{formatDate(order.mainUseDate)}</strong></article>}
           <article><CalendarDays /><span>Ngày trả</span><strong>{formatDate(order.returnDate)}</strong></article>
-          {order.standardPackage && <article><CalendarDays /><span>Gói thuê</span><strong>3 ngày 2 đêm{order.extraDays ? ` · giữ thêm ${order.extraDays} ngày` : ""}</strong></article>}
+          <article><CalendarDays /><span>Gói thuê</span><strong>{Number(order.rentalDays||1)} ngày ({Number(order.rentalDurationHours||(order.rentalDays||1)*24)} giờ)</strong></article>
           <article><UserRound /><span>Khách hàng</span><strong>{order.customer?.fullName || "-"}</strong></article>
           <article><Phone /><span>Số điện thoại</span><strong>{order.customer?.phone || "-"}</strong></article>
           <article><CreditCard /><span>Tiền thuê</span><strong>{money(order.totalRentalPrice)}</strong></article>

@@ -1,6 +1,6 @@
 # Fulfillment và hoàn cọc ARA
 
-- Nhận/trả: `store_pickup`, `delivery_store_return`, `two_way_delivery`. Địa chỉ cửa hàng: 55 Đào Duy Anh, TP.HCM.
+- Nhận/trả: `store_pickup`, `delivery_store_return`, `two_way_delivery`. Địa chỉ cửa hàng: 41/1 Nguyễn Bỉnh Khiêm, Phường Đa Kao, Quận 1, Thành phố Hồ Chí Minh
 - ShippingZone được tạo trong admin hoặc `POST /api/admin/shipping-zones`; quote qua `POST /api/shipping/quote`. Backend luôn tính lại phí khi tạo đơn.
 - Vận chuyển lưu snapshot địa chỉ, phí và trạng thái riêng cho chiều giao/nhận.
 - Inspection tính phí box 50.000đ/box, phí giặt thực tế trừ hỗ trợ shop; trạng thái đang giặt giữ cọc và chưa tạo refund.

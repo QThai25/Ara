@@ -72,7 +72,7 @@ const getCustomer = (order) => ({
   email: order?.customerInfo?.email || order?.customer?.email || order?.customerId?.email || ""
 });
 
-const paymentPreferenceLabel = value => !value ? "Tiền mặt khi nhận đồ" : ({ cash: "Tiền mặt khi nhận đồ", bank_transfer: "Chuyển khoản ngân hàng", momo: "MoMo", vnpay: "VNPay", payos: "QR ngân hàng", bank_gateway: "Cổng ngân hàng" }[value] || value);
+const paymentPreferenceLabel = value => !value ? "Tiền mặt khi nhận đồ" : ({ cash: "Tiền mặt khi nhận đồ", bank_transfer: "Chuyển khoản ngân hàng", momo: "MoMo", vnpay: "VNPay", payos: "PayOS", bank_gateway: "Cổng ngân hàng" }[value] || value);
 
 const normalizeStatus = (status) =>
   STATUS_ALIASES[status] || status || "";
@@ -618,7 +618,7 @@ export function AdminRentalOrderDetailPage({ notify }) {
               <OrderSummaryItem
                 icon={<ClipboardCheck size={18} />}
                 label="Lịch thuê"
-                value={legacySchedule ? "Lịch thuê phiên bản cũ" : `${schedule.totalHoldDays} ngày ${schedule.totalHoldNights} đêm`}
+                value={legacySchedule ? "Lịch thuê phiên bản cũ · cần kiểm tra" : `${Number(order.rentalDays || schedule.totalHoldDays || 1)} ngày (${Number(order.rentalDurationHours || (order.rentalDays || schedule.totalHoldDays || 1) * 24)} giờ)`}
               />
 
               <OrderSummaryItem
@@ -728,7 +728,7 @@ export function AdminRentalOrderDetailPage({ notify }) {
 
                   <Info
                     label="Gói thuê"
-                    value={legacySchedule ? "Đơn theo cách tính lịch cũ" : `${schedule.standardPackageDays} ngày ${schedule.standardPackageNights} đêm`}
+                    value={legacySchedule ? "Đơn theo cách tính lịch cũ" : `${Number(order.rentalDays || 1)} ngày (${Number(order.rentalDurationHours || (order.rentalDays || 1) * 24)} giờ)`}
                   />
 
                   <Info
@@ -739,7 +739,7 @@ export function AdminRentalOrderDetailPage({ notify }) {
                   <Info label="Ngày mặc chính" value={schedule.mainUseDate ? formatDate(schedule.mainUseDate) : "Không có dữ liệu"} />
                   <Info label="Ngày trả dự kiến" value={formatDateTime(schedule.expectedReturnAt || order.returnDate)} />
                   <Info label="Số ngày giữ thêm" value={schedule.extraDays > 0 ? `Giữ thêm ${schedule.extraDays} ngày` : "Không có ngày ngoài gói"} />
-                  <Info label="Tổng thời gian giữ" value={schedule.totalHoldDays ? `${schedule.totalHoldDays} ngày ${schedule.totalHoldNights} đêm` : "Không có dữ liệu"} />
+                  <Info label="Thời gian tính thuê" value={`${Number(order.rentalDurationHours || (order.rentalDays || 1) * 24)} giờ liên tục`} />
 
                   <Info
                     label="Ngày xác nhận"
@@ -797,7 +797,7 @@ export function AdminRentalOrderDetailPage({ notify }) {
 
               <AdminDetailSection icon={<CalendarClock />} title="Lịch thuê và tình trạng giữ chỗ">
                 <div className="admin-rental-schedule-badges">
-                  <span className={legacySchedule ? "legacy" : "standard"}>{legacySchedule ? "Lịch thuê phiên bản cũ" : "Gói tiêu chuẩn 3 ngày 2 đêm"}</span>
+                  <span className={legacySchedule ? "legacy" : "standard"}>{legacySchedule ? "Lịch thuê phiên bản cũ" : `Gói ${Number(order.rentalDays || 1)} ngày · ${Number(order.rentalDurationHours || (order.rentalDays || 1) * 24)} giờ`}</span>
                   <span>{schedule.extraDays > 0 ? `Giữ thêm ${schedule.extraDays} ngày` : "Không có ngày ngoài gói"}</span>
                 </div>
                 <div className="admin-rental-schedule-timeline">
@@ -820,10 +820,20 @@ export function AdminRentalOrderDetailPage({ notify }) {
                   <Info label="Phương thức" value={({store_pickup:"Nhận/trả tại cửa hàng",delivery_store_return:"ARA giao – khách trả tại cửa hàng",two_way_delivery:"ARA giao và nhận lại"})[order.fulfillment?.method]||"Nhận/trả tại cửa hàng"}/>
                   <Info label="Người nhận" value={order.fulfillment?.receiverSnapshot?.fullName||order.customerInfo?.fullName}/>
                   <Info label="Điện thoại" value={order.fulfillment?.receiverSnapshot?.phone||order.customerInfo?.phone}/>
-                  <Info label="Địa chỉ" value={[order.fulfillment?.deliveryAddressSnapshot?.addressLine,order.fulfillment?.deliveryAddressSnapshot?.wardName,order.fulfillment?.deliveryAddressSnapshot?.districtName,order.fulfillment?.deliveryAddressSnapshot?.provinceName].filter(Boolean).join(", ")||"55 Đào Duy Anh, TP. Hồ Chí Minh"} wide/>
+                  <Info label="Địa chỉ" value={[order.fulfillment?.deliveryAddressSnapshot?.addressLine,order.fulfillment?.deliveryAddressSnapshot?.wardName,order.fulfillment?.deliveryAddressSnapshot?.districtName,order.fulfillment?.deliveryAddressSnapshot?.provinceName].filter(Boolean).join(", ")||"41/1 Nguyễn Bỉnh Khiêm, Phường Đa Kao, Quận 1, Thành phố Hồ Chí Minh"} wide/>
                   <Info label="Chiều giao" value={`${({pending:"Chờ xử lý",scheduled:"Đã lên lịch",in_transit:"Đang giao",completed:"Đã giao",not_required:"Không áp dụng"})[order.fulfillment?.outbound?.status]||order.fulfillment?.outbound?.status||"Không áp dụng"} · ${money(order.fulfillment?.outbound?.fee||0)}`}/>
                   <Info label="Chiều nhận lại" value={`${({pending:"Chờ xử lý",scheduled:"Đã lên lịch",in_transit:"Đang nhận",completed:"Đã nhận",not_required:"Không áp dụng"})[order.fulfillment?.returnTrip?.status]||order.fulfillment?.returnTrip?.status||"Không áp dụng"} · ${money(order.fulfillment?.returnTrip?.fee||0)}`}/>
                   <Info label="Tổng vận chuyển" value={money(order.fulfillment?.totalFee||order.shipping?.totalFee||0)}/>
+                  {order.transportQuoteSnapshot?.outbound&&<>
+                    <Info label="Quy tắc giao đi" value={order.transportQuoteSnapshot.outbound.matchedRuleId?`Rule ${order.transportQuoteSnapshot.outbound.timeBucket||""}`:"Thời gian mặc định của khu vực"}/>
+                    <Info label="Thời gian giao đi" value={`${order.transportQuoteSnapshot.outbound.baseMinutes} phút + ${order.transportQuoteSnapshot.outbound.safetyBufferMinutes} phút dự phòng = ${order.transportQuoteSnapshot.outbound.effectiveDurationMinutes} phút`}/>
+                    <Info label="Nguồn / độ tin cậy" value={`${order.transportQuoteSnapshot.outbound.source} · ${order.transportQuoteSnapshot.outbound.confidence}`}/>
+                  </>}
+                  {order.transportQuoteSnapshot?.inbound&&<>
+                    <Info label="Quy tắc nhận lại" value={order.transportQuoteSnapshot.inbound.matchedRuleId?`Rule ${order.transportQuoteSnapshot.inbound.timeBucket||""}`:"Thời gian mặc định của khu vực"}/>
+                    <Info label="Thời gian nhận về" value={`${order.transportQuoteSnapshot.inbound.baseMinutes} phút + ${order.transportQuoteSnapshot.inbound.safetyBufferMinutes} phút dự phòng = ${order.transportQuoteSnapshot.inbound.effectiveDurationMinutes} phút`}/>
+                    <Info label="Nguồn / độ tin cậy" value={`${order.transportQuoteSnapshot.inbound.source} · ${order.transportQuoteSnapshot.inbound.confidence}`}/>
+                  </>}
                 </div>
               </AdminDetailSection>
 

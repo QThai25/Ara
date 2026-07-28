@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { normalizePhone } from "../utils/phone.js";
 
 const userSchema = new mongoose.Schema(
   {
@@ -15,6 +16,11 @@ const userSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+userSchema.pre("validate", function populateNormalizedPhone(next) {
+  if (!this.phoneNormalized && this.phone) this.phoneNormalized = normalizePhone(this.phone);
+  next();
+});
 
 userSchema.index(
   { email: 1 },

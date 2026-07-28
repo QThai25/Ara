@@ -111,11 +111,13 @@ export function AdminCostumeDetailPage() {
   );
 
   const occasionName = getRelationName(
+    item?.occasions?.map((entry) => entry.name).filter(Boolean).join(", "),
     item?.occasionName,
     item?.occasion
   );
 
   const styleName = getRelationName(
+    item?.styles?.map((entry) => entry.name).filter(Boolean).join(", "),
     item?.styleName,
     item?.style
   );

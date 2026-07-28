@@ -13,6 +13,7 @@ const rentalOrderItemSchema = new mongoose.Schema(
 );
 
 rentalOrderItemSchema.index({ costumeId: 1, orderId: 1 });
+rentalOrderItemSchema.index({ orderId: 1 });
 
 rentalOrderItemSchema.set("toJSON", {
   virtuals: true,

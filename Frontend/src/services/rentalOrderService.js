@@ -1,9 +1,30 @@
 import { apiClient } from "./apiClient.js";
 import { normalizeOrder } from "../utils/format.js";
+import { createTimedRequestCache, throwIfAborted } from "../utils/timedRequestCache.js";
+
+const rentalQuoteCache = createTimedRequestCache();
 
 export async function createRentalOrder(payload) {
   const response = await apiClient.post("/rental-orders", payload);
   return response?.data || response;
+}
+
+export async function quoteRentalOrder(payload, config = {}) {
+  const { cache = false, ...requestConfig } = config;
+  if (!cache) {
+    const response = await apiClient.post("/rental-orders/quote", payload, requestConfig);
+    return response?.data || response;
+  }
+
+  const cacheKey = rentalQuoteCache.key(["rental-order-quote", payload]);
+  const cached = rentalQuoteCache.get(cacheKey);
+  if (cached !== undefined) {
+    throwIfAborted(requestConfig.signal);
+    return cached;
+  }
+
+  const response = await apiClient.post("/rental-orders/quote", payload, requestConfig);
+  return rentalQuoteCache.set(cacheKey, response?.data || response);
 }
 
 export async function getMyRentalOrders(params = {}, config = {}) {

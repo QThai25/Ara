@@ -14,6 +14,7 @@ import { AdminOccasionPage } from "../pages/AdminOccasionPage.jsx";
 import { AdminStylePage } from "../pages/AdminStylePage.jsx";
 import { AdminRentalOrderListPage } from "../pages/AdminRentalOrderListPage.jsx";
 import { AdminRentalOrderDetailPage } from "../pages/AdminRentalOrderDetailPage.jsx";
+import { AdminCreateRentalOrderPage } from "../pages/AdminCreateRentalOrderPage.jsx";
 import { AdminPaymentPage } from "../pages/AdminPaymentPage.jsx";
 import { AdminCustomerPage } from "../pages/AdminCustomerPage.jsx";
 import { AdminCustomerDetailPage } from "../pages/AdminCustomerDetailPage.jsx";
@@ -62,6 +63,7 @@ export function AdminRoutes({ toast, notify }) {
       <Route path="/occasions" element={<ProtectedPage toast={toast}><AdminOccasionPage notify={notify} /></ProtectedPage>} />
       <Route path="/styles" element={<ProtectedPage toast={toast}><AdminStylePage notify={notify} /></ProtectedPage>} />
       <Route path="/orders" element={<ProtectedPage toast={toast}><AdminRentalOrderListPage notify={notify} /></ProtectedPage>} />
+      <Route path="/orders/create" element={<ProtectedPage toast={toast}><AdminCreateRentalOrderPage notify={notify} /></ProtectedPage>} />
       <Route path="/orders/:id" element={<ProtectedPage toast={toast}><AdminRentalOrderDetailPage notify={notify} /></ProtectedPage>} />
       <Route path="/rentals" element={<Navigate to="/orders" replace />} />
       <Route path="/rentals/:id" element={<RentalDetailRedirect />} />

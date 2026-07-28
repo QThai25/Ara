@@ -13,6 +13,7 @@ import {
   paymentQuoteValidation,
   paymentQuoteParamValidation,
   paymentIdValidation,
+  reportTransferValidation,
   rejectPaymentValidation
 } from "../validations/payment.validation.js";
 
@@ -72,6 +73,7 @@ paymentRoutes.get(
 
 paymentRoutes.get("/:id/status", ...optionalPaymentAuth, paymentIdValidation, validate, controller.getPaymentStatus);
 paymentRoutes.patch("/:id/cancel", ...optionalPaymentAuth, paymentIdValidation, validate, controller.cancelPayment);
+paymentRoutes.patch("/:id/report-transfer", ...optionalPaymentAuth, reportTransferValidation, validate, controller.reportTransfer);
 paymentRoutes.patch("/orders/:orderId/preference", auth, controller.changeOrderPaymentPreference);
 
 paymentRoutes.get(

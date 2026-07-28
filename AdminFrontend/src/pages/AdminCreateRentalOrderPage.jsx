@@ -1,0 +1,29 @@
+import React,{useEffect,useState}from"react";
+import{ArrowLeft,CalendarClock,Plus,ShoppingBag}from"lucide-react";
+import{useNavigate}from"react-router-dom";
+import{AdminPageHeader}from"../components/common/AdminUI.jsx";
+import{getCostumes}from"../services/costumeService.js";
+import{getAdminCustomers}from"../services/customerService.js";
+import{createWalkInRentalOrder}from"../services/rentalOrderService.js";
+
+const rows=value=>value?.items||value?.data?.items||value?.data||value||[];
+export function AdminCreateRentalOrderPage({notify}){
+ const navigate=useNavigate(),[customers,setCustomers]=useState([]),[costumes,setCostumes]=useState([]),[busy,setBusy]=useState(false);
+ const[form,setForm]=useState({customerId:"",costumeId:"",quantity:1,rentalDays:1,date:"",time:"09:00",pickupMethod:"store_pickup",returnMethod:"store_return",paymentPreference:"cash",addressLine:"",wardName:"",districtName:"",provinceName:"",note:""});
+ const change=field=>event=>setForm(current=>({...current,[field]:event.target.value}));
+ useEffect(()=>{Promise.all([getAdminCustomers(),getCostumes("?limit=100")]).then(([a,b])=>{setCustomers(rows(a));setCostumes(rows(b))}).catch(error=>notify?.(error.message,"error"))},[notify]);
+ const transport=form.pickupMethod==="home_delivery"||form.returnMethod==="home_collection";
+ const submit=async event=>{event.preventDefault();setBusy(true);try{const address=transport?{addressLine:form.addressLine,wardName:form.wardName,districtName:form.districtName,provinceName:form.provinceName}:undefined;const order=await createWalkInRentalOrder({customerId:form.customerId,policyAccepted:true,source:"walk_in",requestedStartAt:`${form.date}T${form.time}:00+07:00`,rentalDays:Number(form.rentalDays),pickupMethod:form.pickupMethod,returnMethod:form.returnMethod,paymentPreference:form.paymentPreference,idempotencyKey:crypto.randomUUID(),items:[{costumeId:form.costumeId,quantity:Number(form.quantity)}],fulfillment:{pickupMethod:form.pickupMethod,returnMethod:form.returnMethod,deliveryAddress:form.pickupMethod==="home_delivery"?{address}:undefined,collectionAddress:form.returnMethod==="home_collection"?{address}:undefined,collectionSameAsDelivery:true},note:form.note});notify?.("Đã tạo và giữ lịch cho đơn tại quầy.","success");navigate(`/orders/${order._id||order.id}`,{replace:true})}catch(error){notify?.(error.message,"error")}finally{setBusy(false)}};
+ return <main className="admin-walkin-page"><AdminPageHeader eyebrow="ARA COUNTER" title="Tạo đơn tại quầy" description="Kiểm tra lịch, giữ tồn kho 5 phút và chuyển thẳng đến chi tiết đơn." action={<button className="admin-walkin-back" onClick={()=>navigate("/orders")}><ArrowLeft size={16}/>Danh sách đơn</button>}/><form className="admin-walkin-form" onSubmit={submit}>
+  <section><header><span><ShoppingBag size={18}/></span><div><h2>Khách hàng & trang phục</h2><p>Chọn đúng khách và mẫu trước khi giữ lịch.</p></div></header><div className="admin-walkin-grid">
+   <label>Khách hàng<select required value={form.customerId} onChange={change("customerId")}><option value="">Chọn khách hàng</option>{customers.map(item=><option key={item._id||item.id} value={item._id||item.id}>{item.name||item.fullName} · {item.phone}</option>)}</select></label>
+   <label>Trang phục<select required value={form.costumeId} onChange={change("costumeId")}><option value="">Chọn trang phục</option>{costumes.map(item=><option key={item._id||item.id} value={item._id||item.id}>{item.name} · còn {item.quantity||0}</option>)}</select></label>
+   <label>Số lượng<input type="number" min="1" max="20" value={form.quantity} onChange={change("quantity")}/></label><label>Thanh toán<select value={form.paymentPreference} onChange={change("paymentPreference")}><option value="cash">Tiền mặt tại quầy</option><option value="bank_transfer">Chuyển khoản</option><option value="payos">PayOS</option></select></label>
+  </div></section>
+  <section><header><span><CalendarClock size={18}/></span><div><h2>Timeline thuê 24 giờ</h2><p>Backend kiểm tra chuẩn bị, thuê, vận chuyển và vệ sinh.</p></div></header><div className="admin-walkin-grid">
+   <label>Ngày bắt đầu<input required type="date" value={form.date} onChange={change("date")}/></label><label>Giờ bắt đầu<input required type="time" min="08:00" max="21:00" step="1800" value={form.time} onChange={change("time")}/></label><label>Số ngày thuê<input required type="number" min="1" max="30" value={form.rentalDays} onChange={change("rentalDays")}/><small>{Number(form.rentalDays||1)*24} giờ liên tục</small></label>
+   <label>Cách nhận<select value={form.pickupMethod} onChange={change("pickupMethod")}><option value="store_pickup">Tự nhận tại cửa hàng</option><option value="home_delivery">Giao tận nơi</option></select></label><label>Cách trả<select value={form.returnMethod} onChange={change("returnMethod")}><option value="store_return">Tự trả tại cửa hàng</option><option value="home_collection">Cửa hàng đến nhận lại</option></select></label>
+  </div>{transport&&<div className="admin-walkin-grid address"><label className="wide">Số nhà, tên đường<input required value={form.addressLine} onChange={change("addressLine")}/></label><label>Phường/xã<input required value={form.wardName} onChange={change("wardName")}/></label><label>Quận/huyện<input required value={form.districtName} onChange={change("districtName")}/></label><label>Tỉnh/thành phố<input required value={form.provinceName} onChange={change("provinceName")}/></label></div>}<label className="admin-walkin-note">Ghi chú<textarea rows="4" value={form.note} onChange={change("note")}/></label></section>
+  <footer><button type="button" onClick={()=>navigate("/orders")}>Hủy</button><button className="primary" disabled={busy}><Plus size={17}/>{busy?"Đang giữ lịch...":"Tạo đơn và mở chi tiết"}</button></footer>
+ </form></main>
+}

@@ -1,4 +1,4 @@
-import { CalendarClock, CheckCircle2, Eye, PackageCheck, Timer, XCircle } from "lucide-react";
+import { CalendarClock, CheckCircle2, Eye, PackageCheck, Plus, Timer, XCircle } from "lucide-react";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { AdminDataTable, AdminFilterBar, AdminPageHeader, AdminSelectFilter, AdminStatCard, AdminStatusBadge } from "../components/common/AdminUI.jsx";
@@ -91,7 +91,7 @@ export function AdminRentalOrderListPage() {
 
   return (
     <>
-      <AdminPageHeader title="Danh sách đơn thuê" description="Duyệt, lọc và theo dõi đơn thuê theo một bảng thống nhất." />
+      <AdminPageHeader title="Danh sách đơn thuê" description="Duyệt, lọc và theo dõi đơn thuê theo một bảng thống nhất." action={<button className="admin-create-order-link" onClick={() => navigate("/orders/create")}><Plus size={16}/>Tạo đơn tại quầy</button>} />
       <div className="admin-stat-grid">
         <AdminStatCard icon={<PackageCheck />} label="Tổng đơn" value={stats.total} />
         <AdminStatCard icon={<Timer />} label="Chờ xác nhận" value={stats.pending} />
@@ -119,7 +119,7 @@ export function AdminRentalOrderListPage() {
           columns={[
             { key: "code", label: "Mã đơn", render: (order) => <strong>#{shortId(order)}</strong> },
             { key: "customer", label: "Khách hàng", render: (order) => <span>{customerName(order)}<small>{customerPhone(order)}</small></span> },
-            { key: "package", label: "Gói thuê", render: (order) => order.mainUseDate ? <span>3 ngày 2 đêm<small>{Number(order.extraDays || 0) ? `Giữ thêm ${order.extraDays} ngày` : "Không ngoài gói"}</small></span> : <span>Lịch cũ</span> },
+            { key: "package", label: "Gói thuê", render: (order) => <span>{Number(order.rentalDays || order.totalHoldDays || 1)} ngày ({Number(order.rentalDurationHours || (order.rentalDays || order.totalHoldDays || 1) * 24)} giờ)<small>{Number(order.rentalDays || 1) > 1 ? `Thuê thêm ${Number(order.rentalDays || 1) - 1} ngày` : "Gói 24 giờ"}</small></span> },
             { key: "date", label: "Lịch nhận / mặc / trả", render: (order) => <span>{dateText(order.rentalDate)}<small>{dateText(order.mainUseDate)} · {dateText(order.returnDate)}</small></span> },
             { key: "amount", label: "Tiền thuê", className: "money-cell", render: (order) => money(order.totalRentalPrice || 0) },
             { key: "payment", label: "Thanh toán", render: (order) => <AdminStatusBadge value={order.paymentStatus || "pending"} /> },

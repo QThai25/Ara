@@ -29,6 +29,11 @@ export async function createPayosPayment({ providerOrderCode, amount, descriptio
     };
   } catch (error) {
     if (error instanceof ApiError) throw error;
+    console.error("[payos:create]", {
+      status: error?.status || null,
+      code: error?.code || null,
+      description: error?.desc || error?.message || "Unknown payOS error"
+    });
     throw new ApiError(502, "Không thể tạo mã QR ngân hàng. Vui lòng thử lại sau.");
   }
 }

@@ -34,7 +34,8 @@ import {
   createPayment,
   getMyPayments,
   getPaymentQuote,
-  getPaymentStatus
+  getPaymentStatus,
+  reportManualTransfer
 } from "../../services/paymentService.js";
 import {
   formatDateTime,
@@ -69,6 +70,31 @@ const PAYMENT_METHOD_LABELS = {
   vnpay: "VNPay",
   payos: "QR ngân hàng",
   bank_gateway: "Cổng ngân hàng"
+};
+
+const FULFILLMENT_METHOD_LABELS = {
+  store_pickup: "Nhận/trả tại cửa hàng",
+  delivery_store_return: "ARA giao – khách trả tại cửa hàng",
+  two_way_delivery: "ARA giao và nhận lại"
+};
+
+const TRIP_STATUS_LABELS = {
+  not_required: "Không áp dụng",
+  pending: "Chờ xử lý",
+  scheduled: "Đã lên lịch",
+  in_transit: "Đang vận chuyển",
+  completed: "Hoàn tất",
+  failed: "Thất bại",
+  canceled: "Đã hủy"
+};
+
+const REFUND_STATUS_LABELS = {
+  pending: "Chờ xử lý",
+  processing: "Đang xử lý",
+  completed: "Đã hoàn tiền",
+  success: "Đã hoàn tiền",
+  failed: "Hoàn tiền thất bại",
+  rejected: "Đã từ chối"
 };
 
 const PAYMENT_METHODS = [
@@ -151,13 +177,15 @@ export function MyOrderDetailPage({
 
   const requestRef = useRef(0);
 
-  const load = async (signal) => {
+  const load = async (signal, { silent = false } = {}) => {
     const requestId =
       requestRef.current + 1;
 
     requestRef.current = requestId;
-    setLoading(true);
-    setError("");
+    if (!silent) {
+      setLoading(true);
+      setError("");
+    }
 
     try {
       const [
@@ -225,16 +253,18 @@ export function MyOrderDetailPage({
         return;
       }
 
-      setError(
-        err.message ||
-          "Không tìm thấy đơn thuê."
-      );
+      if (!silent) {
+        setError(
+          err.message ||
+            "Không tìm thấy đơn thuê."
+        );
+      }
     } finally {
       if (
         requestRef.current ===
         requestId
       ) {
-        setLoading(false);
+        if (!silent) setLoading(false);
       }
     }
   };
@@ -321,7 +351,7 @@ export function MyOrderDetailPage({
         if (stopped) return;
         setPaymentDraft((current) => current ? { ...current, createdPayment: { ...current.createdPayment, ...latest } } : current);
         if (["success", "failed", "canceled", "expired"].includes(latest.status)) {
-          if (latest.status === "success") notify?.("payOS đã xác nhận thanh toán thành công.", "success");
+          if (latest.status === "success") notify?.("Đã xác nhận thanh toán thành công.", "success");
           await load();
           if (latest.status === "success") {
             setPaymentDraft(null);
@@ -405,23 +435,37 @@ export function MyOrderDetailPage({
 
   const resumePendingPayment = async (targetOrder) => {
     const pendingPayment = payments.find((payment) =>
-      payment.method === "payos" &&
-      ["pending", "awaiting_payment"].includes(payment.status)
+      ["payos", "bank_transfer"].includes(payment.method) &&
+      ["pending", "awaiting_payment", "awaiting_confirmation"].includes(payment.status)
     );
 
     if (!pendingPayment) {
-      notify?.("Không tìm thấy giao dịch payOS đang chờ thanh toán.", "error");
+      const payableEntry = QUOTE_TYPES
+        .map((paymentType) => [paymentType, paymentQuotes[paymentType]])
+        .find(([, quote]) => quote?.canPay && Number(quote?.payableAmount || 0) > 0);
+      if (payableEntry) {
+        openPaymentModal(targetOrder, payableEntry[0], payableEntry[1]);
+        return;
+      }
+      notify?.("Đơn hiện không có khoản thanh toán nào có thể thực hiện.", "error");
       return;
     }
 
     try {
       const latest = await getPaymentStatus(pendingPayment.id || pendingPayment._id);
       const paymentType = latest.paymentType || pendingPayment.paymentType || "full";
+      if (["expired", "failed", "canceled", "cancelled", "rejected"].includes(latest.status)) {
+        const quote = await getPaymentQuote({ orderId: targetOrder.id || targetOrder._id, paymentType });
+        if (quote?.canPay && Number(quote?.payableAmount || 0) > 0) {
+          openPaymentModal(targetOrder, paymentType, quote);
+          return;
+        }
+      }
       setPaymentDraft({
         order: targetOrder,
         paymentType,
         quote: paymentQuotes[paymentType],
-        selectedMethod: PAYMENT_METHODS.find((option) => option.method === "payos"),
+        selectedMethod: PAYMENT_METHODS.find((option) => option.method === latest.method),
         idempotencyKey: newIdempotencyKey(),
         createdPayment: { ...pendingPayment, ...latest }
       });
@@ -651,7 +695,47 @@ export function MyOrderDetailPage({
 
             <section className="panel ara-order-note-card"><span className="ara-order-note-card__eyebrow">ARA CARE GUIDE</span><h2>Hướng dẫn sử dụng và hoàn trả</h2><div className="ara-order-note-card__grid"><p><strong>01 · Chăm sóc trang phục</strong>Tuyệt đối không ủi bằng bàn ủi thường. Chỉ dùng bàn ủi hơi nước ở chế độ nhẹ; tránh làm cháy, khét hoặc hỏng chất liệu cao cấp.</p><p><strong>02 · Khi hoàn trả</strong>Trang phục cần khô ráo, đúng hạn và đầy đủ phụ kiện, túi bọc, box/hộp đi kèm.</p></div></section>
             <section className="panel ara-order-deposit-card"><header><div><span className="ara-order-note-card__eyebrow">DEPOSIT & DELIVERY</span><h2>Cọc và vận chuyển</h2></div><strong className="ara-order-deposit-card__amount">{money(order.totalDepositAmount || order.deposit?.amount || 0)}</strong></header><div className="ara-order-deposit-card__stats"><div><span>Tiền cọc yêu cầu</span><strong>{money(order.totalDepositAmount || 0)}</strong></div><div><span>Tiền cọc đã nhận</span><strong>{money(order.deposit?.amount || 0)}</strong></div><div><span>Hình thức</span><strong>{order.deposit?.method || "Chờ thanh toán"}</strong></div><div><span>Tổng vận chuyển</span><strong>{money(order.shipping?.totalFee || 0)}</strong></div></div><footer><span>Giao đồ {money(order.shipping?.outboundFee || 0)}</span><span>Nhận trả {money(order.shipping?.returnFee || 0)}</span><span>Chính sách {order.policyVersion || "Chưa ghi nhận"}</span></footer></section>
-            <section className="panel ara-fulfillment-detail"><span className="ara-order-note-card__eyebrow">FULFILLMENT</span><h2>Nhận, trả và hoàn cọc</h2><div><p><span>Phương thức</span><strong>{({store_pickup:"Nhận/trả tại cửa hàng",delivery_store_return:"ARA giao – khách trả tại cửa hàng",two_way_delivery:"ARA giao và nhận lại"})[order.fulfillment?.method]||"Nhận/trả tại cửa hàng"}</strong></p><p><span>Chiều giao</span><strong>{order.fulfillment?.outbound?.status||"not_required"}</strong></p><p><span>Chiều nhận lại</span><strong>{order.fulfillment?.returnTrip?.status||"not_required"}</strong></p><p><span>Khấu trừ cọc</span><strong>{money(order.depositDeduction||0)}</strong></p><p><span>Được hoàn</span><strong>{money(refund?.amount||order.refundAmount||0)}</strong></p><p><span>Trạng thái hoàn</span><strong>{refund?.status||"Không phát sinh"}</strong></p></div></section>
+            <section className="panel ara-fulfillment-detail">
+              <header className="ara-fulfillment-detail__header">
+                <div>
+                  <span className="ara-order-note-card__eyebrow">FULFILLMENT</span>
+                  <h2>Nhận, trả và hoàn cọc</h2>
+                </div>
+                <span className="ara-fulfillment-detail__method">
+                  {FULFILLMENT_METHOD_LABELS[order.fulfillment?.method] || FULFILLMENT_METHOD_LABELS.store_pickup}
+                </span>
+              </header>
+
+              <div className="ara-fulfillment-detail__grid">
+                <article>
+                  <span>Chiều giao</span>
+                  <strong className="ara-fulfillment-detail__badge">
+                    {TRIP_STATUS_LABELS[order.fulfillment?.outbound?.status || "not_required"] || "Không áp dụng"}
+                  </strong>
+                </article>
+                <article>
+                  <span>Chiều nhận lại</span>
+                  <strong className="ara-fulfillment-detail__badge">
+                    {TRIP_STATUS_LABELS[order.fulfillment?.returnTrip?.status || "not_required"] || "Không áp dụng"}
+                  </strong>
+                </article>
+                <article>
+                  <span>Khấu trừ cọc</span>
+                  <strong>{money(order.depositDeduction || 0)}</strong>
+                </article>
+                <article className="is-highlighted">
+                  <span>Được hoàn</span>
+                  <strong>{money(refund?.amount || order.refundAmount || 0)}</strong>
+                </article>
+              </div>
+
+              <footer className="ara-fulfillment-detail__footer">
+                <span>Trạng thái hoàn cọc</span>
+                <strong className={`ara-fulfillment-detail__refund-status is-${refund?.status || "none"}`}>
+                  {REFUND_STATUS_LABELS[refund?.status] || "Không phát sinh"}
+                </strong>
+              </footer>
+            </section>
             <PickupIssueForm order={order} notify={notify} />
 
             <section className="ara-payment-history">
@@ -984,9 +1068,9 @@ export function MyOrderDetailPage({
                   </span>
 
                   <div>
-                        <strong>{created.status === "success" ? "Thanh toán thành công" : "Đang chờ payOS xác nhận"}</strong>
+                        <strong>{created.status === "success" ? "Thanh toán thành công" : "Đang chờ xác nhận"}</strong>
 
-                        <p>{created.status === "success" ? "Giao dịch đã được ngân hàng và payOS ghi nhận." : "Modal sẽ tự cập nhật ngay khi ngân hàng báo tiền về."}</p>
+                        <p>{created.status === "success" ? "Giao dịch đã được ngân hàng ghi nhận." : "Modal sẽ tự cập nhật ngay khi ngân hàng báo tiền về."}</p>
                   </div>
                 </div>
 
@@ -1135,6 +1219,35 @@ export function MyOrderDetailPage({
                   <button type="button" className="ara-payment-created__open" onClick={() => window.open(created.payUrl, "_blank", "noopener,noreferrer")}>Mở trang thanh toán</button>
                 )}
 
+                {created.method === "bank_transfer" && ["pending", "awaiting_confirmation"].includes(created.status) && (
+                  <button
+                    type="button"
+                    className="ara-payment-created__open"
+                    disabled={submittingPayment}
+                    onClick={async () => {
+                      try {
+                        setSubmittingPayment(true);
+                        const updated = await reportManualTransfer(created.id || created._id);
+                        setPayments((current) => current.map((payment) =>
+                          String(payment.id || payment._id) === String(updated.id || updated._id)
+                            ? { ...payment, ...updated }
+                            : payment
+                        ));
+                        setOrder((current) => current ? { ...current, paymentStatus: "awaiting_confirmation" } : current);
+                        setPaymentDraft(null);
+                        notify?.("Đã báo chuyển khoản. ARA sẽ kiểm tra và xác nhận.", "success");
+                        void load(undefined, { silent: true });
+                      } catch (error) {
+                        notify?.(error?.response?.data?.message || error.message, "error");
+                      } finally {
+                        setSubmittingPayment(false);
+                      }
+                    }}
+                  >
+                    {submittingPayment ? "Đang gửi..." : "Tôi đã chuyển khoản"}
+                  </button>
+                )}
+
                 {["pending", "awaiting_payment"].includes(created.status) && (
                   <button
                     type="button"
@@ -1186,6 +1299,7 @@ export function MyOrderDetailPage({
               <div><dt>Thanh toán lúc</dt><dd>{selectedPayment.paidAt ? formatDateTime(selectedPayment.paidAt) : "Chưa thanh toán"}</dd></div>
               <div><dt>Mã giao dịch ngân hàng</dt><dd>{selectedPayment.providerTransactionId || "Chưa có"}</dd></div>
               <div><dt>Mã liên kết payOS</dt><dd>{selectedPayment.providerOrderId || "-"}</dd></div>
+              <div><dt>Minh chứng thanh toán</dt><dd>{selectedPayment.proofUrl ? <a href={selectedPayment.proofUrl} target="_blank" rel="noreferrer">Xem minh chứng</a> : "Chưa tải lên"}</dd></div>
             </dl>
             <div className="ara-payment-receipt__actions">
               {selectedPayment.payUrl && <button type="button" onClick={() => window.open(selectedPayment.payUrl, "_blank", "noopener,noreferrer")}>Mở trang giao dịch payOS</button>}

@@ -21,6 +21,11 @@ export const getPaymentMethods = asyncHandler(async (req, res) => sendSuccess(re
 export const getPaymentStatus = asyncHandler(async (req, res) => sendSuccess(res, "Lấy trạng thái thanh toán thành công.", await paymentService.getPaymentStatus(req.params.id, req.paymentActor || req.user)));
 export const cancelPayment = asyncHandler(async (req, res) => sendSuccess(res, "Đã hủy giao dịch.", await paymentService.cancelPayment(req.params.id, req.paymentActor || req.user)));
 export const changeOrderPaymentPreference = asyncHandler(async (req, res) => sendSuccess(res, "Đã đổi phương thức thanh toán.", await paymentService.changeOrderPaymentPreference(req.params.orderId, req.body.method, req.user)));
+export const reportTransfer = asyncHandler(async (req, res) => sendSuccess(
+  res,
+  "Đã ghi nhận thông báo chuyển khoản và chuyển sang chờ xác minh.",
+  await paymentService.reportManualTransfer(req.params.id, req.paymentActor || req.user, req.body)
+));
 export const momoIpn = asyncHandler(async (req, res) => res.json(await paymentService.handleMomoIpn(req.body)));
 export const vnpayIpn = asyncHandler(async (req, res) => res.json(await paymentService.handleVnpayIpn(req.query)));
 export const payosWebhook = asyncHandler(async (req, res) => res.status(200).json(await paymentService.handlePayosWebhook(req.body)));

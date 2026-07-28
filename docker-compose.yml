@@ -1,0 +1,15 @@
+services:
+  backend:
+    build:
+      context: ./Backend
+    restart: unless-stopped
+    env_file:
+      - ./Backend/.env.production
+    ports:
+      - "127.0.0.1:4000:4000"
+    init: true
+    stop_grace_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 512M

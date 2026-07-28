@@ -1,7 +1,9 @@
-import React, { useState } from "react";
-import { BarChart3, Bell, Boxes, ChevronLeft, CreditCard, Gift, Image, LayoutDashboard, Menu, MessageSquareText, PackageCheck, Shirt, Sparkles, Tags, Users, X, Truck } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { io } from "socket.io-client";
+import { BarChart3, Bell, Boxes, ChevronDown, ChevronLeft, CreditCard, Gift, Image, LayoutDashboard, Menu, MessageSquareText, PackageCheck, Shirt, Sparkles, Tags, Users, X, Truck } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
 import { AdminNotificationBell } from "../components/common/AdminNotificationBell.jsx";
+import { listChatConversations } from "../services/chatService.js";
 
 const navItems = [
   { to: "/dashboard", label: "Tổng quan", icon: LayoutDashboard, end: true },
@@ -22,11 +24,55 @@ const navItems = [
   { to: "/inspections", label: "Kiểm tra trả đồ", icon: Boxes }
 ];
 
+const navGroups = [
+  { id: "overview", label: "Tổng quan", items: navItems.slice(0, 1) },
+  { id: "operations", label: "Vận hành", items: [...navItems.slice(6, 10), navItems[15]] },
+  { id: "catalog", label: "Kho & danh mục", items: navItems.slice(1, 6) },
+  { id: "customers", label: "Khách hàng & nội dung", items: navItems.slice(10, 14) },
+  { id: "analytics", label: "Phân tích", items: navItems.slice(14, 15) }
+];
+
+function groupForPath(pathname) {
+  return navGroups.find((group) => group.items.some((item) => item.end ? pathname === item.to : pathname.startsWith(item.to)))?.id;
+}
+
 export function AdminLayout({ user, logout, toast, children }) {
   const [open, setOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  const [waitingChats, setWaitingChats] = useState(0);
   const location = useLocation();
+  const [expandedGroups, setExpandedGroups] = useState(() => new Set([groupForPath(location.pathname) || "overview"]));
   const activeItem = [...navItems].reverse().find((item) => item.end ? location.pathname === item.to : location.pathname.startsWith(item.to));
+
+  useEffect(() => {
+    const activeGroup = groupForPath(location.pathname);
+    if (activeGroup) setExpandedGroups(new Set([activeGroup]));
+  }, [location.pathname]);
+
+  const toggleGroup = (groupId) => {
+    setExpandedGroups((current) => {
+      return current.has(groupId) ? new Set() : new Set([groupId]);
+    });
+  };
+
+  useEffect(() => {
+    let active = true;
+    const refresh = () => listChatConversations({ status: "waiting_admin" })
+      .then((items) => { if (active) setWaitingChats((items || []).length); })
+      .catch(() => {});
+    refresh();
+    const base = (import.meta.env.VITE_API_URL || "http://localhost:4000/api").replace(/\/api\/?$/, "");
+    const socket = io(base, { auth: { token: localStorage.getItem("ara_admin_token") } });
+    socket.on("conversation:update", refresh);
+    socket.on("conversation:updated", refresh);
+    socket.on("message:new", refresh);
+    const timer = window.setInterval(refresh, 60000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      socket.disconnect();
+    };
+  }, []);
 
   return (
     <div className={`admin-shell ${collapsed ? "collapsed" : ""}`}>
@@ -36,12 +82,27 @@ export function AdminLayout({ user, logout, toast, children }) {
           <span>QUẢN TRỊ CỬA HÀNG</span>
         </div>
         <button className="admin-collapse-btn" onClick={() => setCollapsed((value) => !value)}><ChevronLeft size={17} /></button>
-        <nav>
-          {navItems.map(({ to, label, icon: Icon, end }) => (
-            <NavLink key={to} to={to} end={end} className={({ isActive }) => isActive ? "active" : ""} onClick={() => setOpen(false)}>
-              <Icon size={18} /> {label}
-            </NavLink>
-          ))}
+        <nav aria-label="Điều hướng quản trị">
+          {navGroups.map((group) => {
+            const expanded = expandedGroups.has(group.id) || collapsed;
+            const containsActiveItem = group.items.some((item) => item.end ? location.pathname === item.to : location.pathname.startsWith(item.to));
+            return (
+              <section className={`admin-nav-group ${containsActiveItem ? "is-active" : ""}`} key={group.id}>
+                <button type="button" className="admin-nav-group__toggle" aria-expanded={expanded} aria-controls={`admin-nav-${group.id}`} onClick={() => toggleGroup(group.id)} title={collapsed ? group.label : undefined}>
+                  <span>{group.label}</span>
+                  <ChevronDown size={15} />
+                </button>
+                <div className="admin-nav-group__items" id={`admin-nav-${group.id}`} hidden={!expanded}>
+                  {group.items.map(({ to, label, icon: Icon, end }) => (
+                    <NavLink key={to} to={to} end={end} title={collapsed ? label : undefined} className={({ isActive }) => `${isActive ? "active" : ""}${to === "/contact-requests" && waitingChats > 0 ? " has-waiting-chat" : ""}`} onClick={() => setOpen(false)}>
+                      <Icon size={18} /> <span>{label}</span>
+                      {to === "/contact-requests" && waitingChats > 0 && <b className="admin-chat-nav-count" aria-label={`${waitingChats} hội thoại đang chờ`}>{waitingChats > 99 ? "99+" : waitingChats}</b>}
+                    </NavLink>
+                  ))}
+                </div>
+              </section>
+            );
+          })}
         </nav>
       </aside>
       <div className="admin-main">

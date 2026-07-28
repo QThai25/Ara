@@ -18,9 +18,11 @@ const costumeSchema = new mongoose.Schema(
     size: { type: String, required: true, trim: true },
     color: { type: String, required: true, trim: true },
     occasion: { type: String, default: "", trim: true },
+    occasionIds: [{ type: mongoose.Schema.Types.ObjectId, ref: "Occasion" }],
     occasionSlug: { type: String, default: "", trim: true, lowercase: true },
     occasionName: { type: String, default: "", trim: true },
     style: { type: String, default: "", trim: true },
+    styleIds: [{ type: mongoose.Schema.Types.ObjectId, ref: "Style" }],
     styleSlug: { type: String, default: "", trim: true, lowercase: true },
     styleName: { type: String, default: "", trim: true },
     categorySlug: { type: String, default: "", trim: true, lowercase: true },
@@ -32,6 +34,8 @@ const costumeSchema = new mongoose.Schema(
     memberPrice: { type: Number, default: 0, min: 0 },
     depositAmount: { type: Number, required: true, min: 0 },
     status: { type: String, enum: ["available", "washing", "laundry", "repairing", "maintenance", "unavailable", "hidden"], default: "available" },
+    operationalStatus: { type: String, enum: ["active", "maintenance", "unavailable", "hidden"], default: "active", index: true },
+    cleaningDurationMinutes: { type: Number, default: 180, min: 0 },
     image: { type: String, default: "" },
     imagePublicId: { type: String, default: "" },
     images: [{ type: String }],
@@ -47,6 +51,26 @@ const costumeSchema = new mongoose.Schema(
 
 costumeSchema.virtual("rentalPrice").get(function rentalPrice() {
   return this.rentalPricePerDay;
+});
+
+costumeSchema.index({ operationalStatus: 1, createdAt: -1 });
+costumeSchema.index({ categoryId: 1, operationalStatus: 1, createdAt: -1 });
+
+function classificationValues(values = []) {
+  return values.map((item) => ({
+    id: item?._id || item,
+    _id: item?._id || item,
+    name: item?.name || "",
+    slug: item?.slug || ""
+  }));
+}
+
+costumeSchema.virtual("styles").get(function styles() {
+  return classificationValues(this.styleIds);
+});
+
+costumeSchema.virtual("occasions").get(function occasions() {
+  return classificationValues(this.occasionIds);
 });
 
 costumeSchema.set("toJSON", { virtuals: true });

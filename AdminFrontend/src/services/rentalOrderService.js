@@ -14,6 +14,10 @@ export async function getAdminRentalOrder(id, config = {}) {
   const response = await apiClient.get(`/admin/rental-orders/${id}`, config);
   return normalizeOrder(response.data);
 }
+export async function createWalkInRentalOrder(payload) {
+  const response = await apiClient.post("/admin/rental-orders", payload);
+  return response.data || response;
+}
 export const approveRentalOrder = (id) => apiClient.patch(`/admin/rental-orders/${id}/approve`);
 export const rejectRentalOrder = (id, reason) => apiClient.patch(`/admin/rental-orders/${id}/reject`, { reason });
 export const markRentalOrderReady = (id) => apiClient.patch(`/admin/rental-orders/${id}/ready-for-pickup`);

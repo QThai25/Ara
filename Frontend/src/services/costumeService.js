@@ -1,5 +1,8 @@
 import { apiClient } from "./apiClient.js";
 import { normalizeCostume } from "../utils/format.js";
+import { createTimedRequestCache, throwIfAborted } from "../utils/timedRequestCache.js";
+
+const availabilityCache = createTimedRequestCache();
 
 export async function getCostumes(query = "", config = {}) {
   const response = await apiClient.get(
@@ -74,27 +77,38 @@ export async function checkCostumeAvailability(
 }
 
 export async function quoteCostumeRental(id, input, config = {}) {
+  const cacheKey = availabilityCache.key(["availability", id, input]);
+  const cached = availabilityCache.get(cacheKey);
+  if (cached !== undefined) {
+    throwIfAborted(config.signal);
+    return cached;
+  }
   const response = await apiClient.get(`/costumes/${id}/availability`, { params: input, signal: config.signal });
-  return response.data || response;
+  return availabilityCache.set(cacheKey, response.data || response);
 }
 
 export async function getCostumeBookingGrid(
   id,
-  { startDate, endDate, rentalDays, quantity = 1 }
+  { startDate, endDate, rentalDays, quantity = 1 },
+  config = {}
 ) {
+  const params = { startDate, endDate, rentalDays, quantity };
+  const cacheKey = availabilityCache.key(["booking-grid", id, params]);
+  const cached = availabilityCache.get(cacheKey);
+  if (cached !== undefined) {
+    throwIfAborted(config.signal);
+    return cached;
+  }
+
   const response = await apiClient.get(
     `/costumes/${id}/booking-grid`,
     {
-      params: {
-        startDate,
-        endDate,
-        rentalDays,
-        quantity
-      }
+      params,
+      signal: config.signal
     }
   );
 
-  return response.data?.data || response.data || response;
+  return availabilityCache.set(cacheKey, response.data?.data || response.data || response);
 }
 export async function getCostumeAvailabilityCalendar(
   id,
@@ -103,6 +117,18 @@ export async function getCostumeAvailabilityCalendar(
   options = {},
   config = {}
 ) {
+  const cacheKey = availabilityCache.key([
+    "availability-calendar",
+    id,
+    startDate,
+    endDate,
+    options
+  ]);
+  const cached = availabilityCache.get(cacheKey);
+  if (cached !== undefined) {
+    throwIfAborted(config.signal);
+    return cached;
+  }
   const response = await apiClient.get(
     `/costumes/${id}/availability-calendar`,
     {
@@ -117,5 +143,9 @@ export async function getCostumeAvailabilityCalendar(
     }
   );
 
-  return response.data;
+  return availabilityCache.set(cacheKey, response.data);
+}
+
+export function clearCostumeAvailabilityCache() {
+  availabilityCache.clear();
 }

@@ -5,7 +5,8 @@ import { readFile } from "node:fs/promises";
 import {
   bookingRangesOverlap,
   calculateRentalReturnDate,
-  combineVietnamDateTime
+  combineVietnamDateTime,
+  RENTAL_TURNAROUND_MINUTES
 } from "../src/utils/date.js";
 import { rentableCostumeStatuses } from "../src/utils/constants.js";
 import { hasSufficientQuantity, isOrderHoldingSchedule } from "../src/services/costume.service.js";
@@ -14,10 +15,19 @@ import { withCostumeLocks } from "../src/services/rentalOrder.service.js";
 const at = (day, time) => combineVietnamDateTime(`2026-07-${day}`, time);
 
 test("costume operational status is independent from current rental orders", () => {
+  assert.equal(rentableCostumeStatuses.includes("active"), true);
   assert.equal(rentableCostumeStatuses.includes("available"), true);
   assert.equal(rentableCostumeStatuses.includes("rented"), false);
   assert.equal(rentableCostumeStatuses.includes("reserved"), false);
   assert.equal(rentableCostumeStatuses.includes("maintenance"), false);
+});
+
+test("costume schema stores operational status and a three-hour cleaning buffer", async () => {
+  const source = await readFile(new URL("../src/models/Costume.js", import.meta.url), "utf8");
+  assert.match(source, /operationalStatus:\s*\{/);
+  assert.match(source, /enum:\s*\["active",\s*"maintenance",\s*"unavailable",\s*"hidden"\]/);
+  assert.match(source, /cleaningDurationMinutes:\s*\{[\s\S]*?default:\s*180/);
+  assert.equal(RENTAL_TURNAROUND_MINUTES, 180);
 });
 
 test("pickup and completion do not mutate Costume.status from rental lifecycle", async () => {
@@ -42,7 +52,7 @@ test("accepts touching half-open ranges when buffer is zero", () => {
 });
 
 test("rejects touching ranges when turnaround buffer is enabled", () => {
-  assert.equal(bookingRangesOverlap(at("11", "09:00"), at("12", "08:00"), at("12", "08:00"), at("13", "08:00"), 120), true);
+  assert.equal(bookingRangesOverlap(at("11", "09:00"), at("12", "08:00"), at("12", "08:00"), at("13", "08:00"), 180), true);
 });
 
 test("rejects a range fully inside an existing rental", () => {
@@ -137,31 +147,31 @@ test("concurrent requests for the same costume enter the critical section sequen
 
 test("blocks 11/07 09:00 for one day when another booking starts 11/07 18:00", () => {
   const newReturn = calculateRentalReturnDate("2026-07-11T09:00:00+07:00", 1);
-  assert.equal(bookingRangesOverlap(at("11", "09:00"), newReturn, at("11", "18:00"), at("12", "18:00"), 120), true);
+  assert.equal(bookingRangesOverlap(at("11", "09:00"), newReturn, at("11", "18:00"), at("12", "18:00"), RENTAL_TURNAROUND_MINUTES), true);
 });
 
-test("blocks a booking starting during the two-hour turnaround window", () => {
+test("blocks a booking starting during the three-hour cleaning window", () => {
   const newReturn = calculateRentalReturnDate("2026-07-11T09:00:00+07:00", 1);
-  assert.equal(bookingRangesOverlap(at("11", "09:00"), newReturn, at("12", "10:00"), at("13", "10:00"), 120), true);
+  assert.equal(bookingRangesOverlap(at("11", "09:00"), newReturn, at("12", "11:00"), at("13", "11:00"), RENTAL_TURNAROUND_MINUTES), true);
 });
 
 test("allows another booking exactly when blockedUntil ends", () => {
   const newReturn = calculateRentalReturnDate("2026-07-11T09:00:00+07:00", 1);
-  assert.equal(bookingRangesOverlap(at("11", "09:00"), newReturn, at("12", "11:00"), at("13", "11:00"), 120), false);
+  assert.equal(bookingRangesOverlap(at("11", "09:00"), newReturn, at("12", "12:00"), at("13", "12:00"), RENTAL_TURNAROUND_MINUTES), false);
 });
 
 test("increasing rentalDays can turn an available slot into a conflict", () => {
   const start = at("11", "09:00");
   const existingStart = at("13", "08:00");
   const existingEnd = at("14", "08:00");
-  assert.equal(bookingRangesOverlap(start, calculateRentalReturnDate(start, 1), existingStart, existingEnd, 120), false);
-  assert.equal(bookingRangesOverlap(start, calculateRentalReturnDate(start, 2), existingStart, existingEnd, 120), true);
+  assert.equal(bookingRangesOverlap(start, calculateRentalReturnDate(start, 1), existingStart, existingEnd, RENTAL_TURNAROUND_MINUTES), false);
+  assert.equal(bookingRangesOverlap(start, calculateRentalReturnDate(start, 2), existingStart, existingEnd, RENTAL_TURNAROUND_MINUTES), true);
 });
 
 test("blocks 09:00 candidate when an existing booking starts at 15:00 the same day", () => {
   const start = at("11", "09:00");
   const end = calculateRentalReturnDate(start, 1);
-  assert.equal(bookingRangesOverlap(start, end, at("11", "15:00"), at("12", "15:00"), 120), true);
+  assert.equal(bookingRangesOverlap(start, end, at("11", "15:00"), at("12", "15:00"), RENTAL_TURNAROUND_MINUTES), true);
 });
 
 test("returned and completed orders hold only until turnaroundUntil", () => {

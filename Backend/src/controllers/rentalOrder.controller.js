@@ -4,6 +4,76 @@ import { sendSuccess } from "../utils/apiResponse.js";
 import * as policyService from "../services/rentalPolicy.service.js";
 import { createGuestBankTransfer, getGuestOrderSession, lookupPublicRentalOrder } from "../services/publicRentalOrder.service.js";
 import { createGuestOrderAccessToken } from "../utils/guestOrderAccessToken.js";
+import { quote as quoteShipping } from "../services/shipping.service.js";
+import { quoteAndCheck } from "../services/rentalAvailability.service.js";
+import { Costume } from "../models/Costume.js";
+import { ApiError } from "../utils/ApiError.js";
+import { zonedParts } from "../services/rentalTimeline.service.js";
+import { getBookingGrid } from "../services/costume.service.js";
+
+const bookingTimes = ["08:00", "09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00", "20:00", "21:00"];
+
+function calendarDate(parts, dayOffset = 0) {
+  const value = new Date(Date.UTC(parts.year, parts.month - 1, parts.day + dayOffset));
+  return value.toISOString().slice(0, 10);
+}
+
+async function findNearestBookable(input, options) {
+  const requested = new Date(input.requestedStartAt || input.rentalDate);
+  const parts = zonedParts(requested);
+  const requestedClock = `${String(parts.hour).padStart(2, "0")}:${String(parts.minute).padStart(2, "0")}`;
+  const firstDate = calendarDate(parts);
+  const lastDate = calendarDate(parts, 31);
+  let inventoryCandidates = null;
+  try {
+    const grids = await Promise.all((options.items || []).map((item) => getBookingGrid(String(item.costumeId), {
+      startDate: firstDate,
+      endDate: lastDate,
+      rentalDays: input.rentalDays,
+      quantity: item.quantity
+    })));
+    if (grids.length) {
+      inventoryCandidates = grids
+        .map((grid) => new Set(grid.days.flatMap((day) => day.slots.filter((slot) => slot.available).map((slot) => `${day.date}|${slot.time}`))))
+        .reduce((common, current) => new Set([...common].filter((key) => current.has(key))));
+    }
+  } catch {
+    // Fall back to the canonical checks below if the batch inventory preview fails.
+  }
+  for (let dayOffset = 0; dayOffset <= 31; dayOffset += 1) {
+    const date = calendarDate(parts, dayOffset);
+    const candidateTimes = bookingTimes.filter((time) => (
+      (dayOffset !== 0 || time >= requestedClock)
+      && (!inventoryCandidates || inventoryCandidates.has(`${date}|${time}`))
+    ));
+    if (!candidateTimes.length) continue;
+    const candidates = await Promise.all(candidateTimes.map(async (time) => {
+      try {
+        const quote = await quoteAndCheck({
+          ...input,
+          requestedStartAt: `${date}T${time}:00+07:00`
+        }, options);
+        if (quote.isBookable) {
+          return {
+            requestedStartAt: `${date}T${time}:00+07:00`,
+            plannedRentalStartAt: quote.plannedRentalStartAt,
+            plannedRentalEndAt: quote.plannedRentalEndAt,
+            expectedDeliveryAt: quote.expectedDeliveryAt,
+            collectionAt: quote.collectionAt,
+            outboundTransportMinutes: quote.outboundTransportMinutes,
+            inboundTransportMinutes: quote.inboundTransportMinutes
+          };
+        }
+      } catch {
+        // This customer-visible slot is not valid.
+      }
+      return null;
+    }));
+    const firstBookable = candidates.find(Boolean);
+    if (firstBookable) return firstBookable;
+  }
+  return null;
+}
 
 const messages = {
   create: "Tạo đơn thuê thành công.",
@@ -35,6 +105,52 @@ export const createRentalOrder = asyncHandler(async (req, res) => {
     order: { id: String(result._id), orderCode: result.orderCode }
   };
   return sendSuccess(res, messages.create, data, 201);
+});
+export const createAdminRentalOrder = asyncHandler(async (req, res) => {
+  const result = await rentalOrderService.createRentalOrder(req.body.customerId, {
+    ...req.body,
+    source: req.body.source === "admin" ? "admin" : "walk_in",
+    policyAccepted: true
+  });
+  sendSuccess(res, "Tạo đơn tại quầy thành công.", result, 201);
+});
+export const quoteRental = asyncHandler(async (req, res) => {
+  const items = Array.isArray(req.body.items) ? req.body.items : [];
+  const costumes = items.length
+    ? await Costume.find({ _id: { $in: items.map((item) => item.costumeId) } })
+    : [];
+  const byId = new Map(costumes.map((costume) => [String(costume._id), costume]));
+  const shipping = await quoteShipping(req.user || null, req.body);
+  const baseRentalPrice = items.reduce((sum, item) => sum + Number(byId.get(String(item.costumeId))?.rentalPricePerDay || 0) * Number(item.quantity || 1), 0);
+  const deposit = items.reduce((sum, item) => sum + Number(byId.get(String(item.costumeId))?.depositAmount || 0) * Number(item.quantity || 1), 0);
+  const quoteOptions = {
+    items,
+    zone: shipping.zone,
+    pricing: { baseRentalPrice, extraDayPrice: baseRentalPrice, deposit }
+  };
+  const includeNearest = req.body.includeNearest !== false;
+  if (req.body.nearestOnly === true) {
+    return sendSuccess(res, "Tìm lịch thuê phù hợp thành công.", {
+      nearestBookable: await findNearestBookable(req.body, quoteOptions)
+    });
+  }
+  let result;
+  try {
+    result = await quoteAndCheck(req.body, quoteOptions);
+    if (!result.isBookable && includeNearest) {
+      result.nearestBookable = await findNearestBookable(req.body, quoteOptions);
+    }
+  } catch (error) {
+    if (!(error instanceof ApiError)) throw error;
+    if (includeNearest) {
+      error.data = {
+        ...(error.data || {}),
+        nearestBookable: await findNearestBookable(req.body, quoteOptions)
+      };
+    }
+    throw error;
+  }
+  sendSuccess(res, "Báo lịch thuê thành công.", result, 201);
 });
 export const listMyOrders = asyncHandler(async (req, res) => sendSuccess(res, messages.listMine, await rentalOrderService.listMyOrders(req.user._id, req.query)));
 export const getOrder = asyncHandler(async (req, res) => sendSuccess(res, messages.detail, await rentalOrderService.getOrderForUser(req.params.id, req.user)));

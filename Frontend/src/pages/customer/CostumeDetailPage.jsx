@@ -6,11 +6,13 @@ import React, {
 } from "react";
 import {
   CalendarDays,
+  Check,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   Clock3,
   Heart,
+  MapPin,
   Minus,
   Plus,
   ShoppingBag
@@ -24,12 +26,16 @@ import { ProductCarousel } from "../../components/customer/ProductCarousel.jsx";
 import { CostumeBookingGrid } from "../../components/customer/CostumeBookingGrid.jsx";
 import { CostumeAvailabilityCalendar } from "../../components/customer/CostumeAvailabilityCalendar.jsx";
 import { CostumeImageCarousel } from "../../components/customer/CostumeImageCarousel.jsx";
+import { AddressLocationFields } from "../../components/customer/AddressLocationFields.jsx";
 import { StateMessage } from "../../components/common/StateMessage.jsx";
 import { StatusBadge } from "../../components/common/StatusBadge.jsx";
 
 import { addToRentalCart } from "../../services/rentalCartService.js";
+import { listAddresses } from "../../services/accountService.js";
+import { quoteRentalOrder } from "../../services/rentalOrderService.js";
 import {
   checkCostumeAvailability,
+  clearCostumeAvailabilityCache,
   getCostume,
   getCostumeBookingGrid,
   getCostumeAvailabilityCalendar,
@@ -114,10 +120,43 @@ const LUXURY_PRODUCT_INFO_STYLES = `
   }
 
   .mei-detail-page:has(.luxury-product-panel) .mei-detail-media {
+    position: relative !important;
+    top: auto !important;
+    align-self: start;
     display: grid;
     min-width: 0;
     gap: 12px;
     align-content: start;
+    margin-top: 0 !important;
+    transform: none !important;
+  }
+
+  .detail-wishlist-button {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    z-index: 8;
+    width: 46px;
+    height: 46px;
+    display: grid;
+    place-items: center;
+    padding: 0;
+    border: 1px solid rgba(255, 255, 255, 0.78);
+    border-radius: 50%;
+    background: rgba(255, 253, 249, 0.92);
+    color: #513c23;
+    box-shadow: 0 10px 28px rgba(48, 31, 21, 0.16);
+    backdrop-filter: blur(8px);
+  }
+
+  .detail-wishlist-button:hover {
+    color: #9b3329;
+    transform: translateY(-2px);
+  }
+
+  .detail-wishlist-button.is-wished {
+    background: #9b3329;
+    color: #fff;
   }
 
   .mei-detail-page:has(.luxury-product-panel) .detail-main-image {
@@ -358,8 +397,46 @@ const LUXURY_PRODUCT_INFO_STYLES = `
   }
 
   .luxury-product-status-row > *:first-child {
-    font-size: 12px !important;
-    font-weight: 700 !important;
+    position: relative;
+    min-height: 34px;
+    padding: 0 14px 0 30px;
+    overflow: hidden;
+    border: 1px solid rgba(151, 107, 76, 0.2);
+    border-radius: 999px;
+    background:
+      linear-gradient(135deg, rgba(255, 253, 249, 0.98), rgba(241, 226, 208, 0.72));
+    box-shadow:
+      0 8px 22px rgba(83, 54, 37, 0.08),
+      inset 0 0 0 1px rgba(255, 255, 255, 0.72);
+    color: #684737;
+    font-family: inherit;
+    font-size: 11px !important;
+    font-weight: 800 !important;
+    letter-spacing: 0.075em;
+    line-height: 32px;
+    text-transform: uppercase;
+  }
+
+  .luxury-product-status-row > *:first-child::before {
+    position: absolute;
+    top: 50%;
+    left: 13px;
+    width: 8px;
+    height: 8px;
+    border: 3px solid rgba(255, 255, 255, 0.9);
+    border-radius: 50%;
+    background: #759176;
+    box-shadow: 0 0 0 1px rgba(75, 109, 77, 0.22);
+    content: "";
+    transform: translateY(-50%);
+  }
+
+  .luxury-product-status-row > *:first-child.tone-warning::before {
+    background: #bd8b4c;
+  }
+
+  .luxury-product-status-row > *:first-child.tone-danger::before {
+    background: #a85d54;
   }
 
   .luxury-product-brand-mark {
@@ -655,7 +732,7 @@ function formatBookingDate(value) {
   return `${day}/${month}/${year}`;
 }
 
-function BookingDateField({ label, value, min, placeholder, onChange }) {
+function BookingDateField({ label, value, min, placeholder, onChange, availabilityDays = [], loadingAvailability = false, onViewMonthChange }) {
   const controlRef = useRef(null);
   const [open, setOpen] = useState(false);
   const [viewMonth, setViewMonth] = useState(() => {
@@ -696,6 +773,13 @@ function BookingDateField({ label, value, min, placeholder, onChange }) {
     date.setDate(calendarStart.getDate() + index);
     return date;
   });
+  const availabilityByDate = new Map(availabilityDays.map((day) => [day.date, day]));
+
+  const changeViewMonth = (offset) => {
+    const next = new Date(viewMonth.getFullYear(), viewMonth.getMonth() + offset, 1);
+    setViewMonth(next);
+    onViewMonthChange?.(formatDateInput(next));
+  };
 
   const chooseDate = (dateValue) => {
     onChange(dateValue);
@@ -723,10 +807,10 @@ function BookingDateField({ label, value, min, placeholder, onChange }) {
           <div className="booking-date-popover-head">
             <strong>Tháng {viewMonth.getMonth() + 1}, {viewMonth.getFullYear()}</strong>
             <div>
-              <button type="button" onClick={() => setViewMonth(new Date(viewMonth.getFullYear(), viewMonth.getMonth() - 1, 1))} aria-label="Tháng trước">
+              <button type="button" onClick={() => changeViewMonth(-1)} aria-label="Tháng trước">
                 <ChevronLeft size={18} />
               </button>
-              <button type="button" onClick={() => setViewMonth(new Date(viewMonth.getFullYear(), viewMonth.getMonth() + 1, 1))} aria-label="Tháng sau">
+              <button type="button" onClick={() => changeViewMonth(1)} aria-label="Tháng sau">
                 <ChevronRight size={18} />
               </button>
             </div>
@@ -738,7 +822,10 @@ function BookingDateField({ label, value, min, placeholder, onChange }) {
             {calendarDays.map((date) => {
               const dateValue = formatDateInput(date);
               const outside = date.getMonth() !== viewMonth.getMonth();
-              const disabled = Boolean(min && dateValue < min);
+              const availability = availabilityByDate.get(dateValue);
+              const unavailable = availability?.available === false;
+              const waitingForAvailability = loadingAvailability && !outside;
+              const disabled = Boolean((min && dateValue < min) || unavailable || waitingForAvailability);
               const selected = dateValue === value;
               const today = dateValue === todayPlus(0);
               return (
@@ -746,8 +833,9 @@ function BookingDateField({ label, value, min, placeholder, onChange }) {
                   type="button"
                   key={dateValue}
                   disabled={disabled}
-                  className={`${outside ? "outside" : ""} ${selected ? "selected" : ""} ${today ? "today" : ""}`.trim()}
+                  className={`${outside ? "outside" : ""} ${selected ? "selected" : ""} ${today ? "today" : ""} ${unavailable ? "unavailable" : ""} ${waitingForAvailability ? "checking" : ""}`.trim()}
                   onClick={() => chooseDate(dateValue)}
+                  title={unavailable ? "Ngày này không còn đủ lịch cho gói thuê" : undefined}
                 >
                   {date.getDate()}
                 </button>
@@ -814,18 +902,78 @@ function BookingTimeField({ label, value, options, onChange }) {
   );
 }
 
+function SavedAddressSelect({ addresses, value, onChange }) {
+  const rootRef = useRef(null);
+  const [open, setOpen] = useState(false);
+  const selected = addresses.find((item) => String(item._id) === String(value));
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const close = (event) => {
+      if (!rootRef.current?.contains(event.target)) setOpen(false);
+    };
+    const closeOnEscape = (event) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", close);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [open]);
+
+  const labelOf = (address) =>
+    `${address.isDefault ? "Mặc định · " : ""}${address.label || "Địa chỉ"} — ${address.addressLine}, ${address.districtName}`;
+
+  return (
+    <div className="booking-address-select" ref={rootRef}>
+      <span>Địa chỉ đã lưu</span>
+      <button type="button" aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen((current) => !current)}>
+        <MapPin size={17}/>
+        <strong>{selected ? labelOf(selected) : "Nhập địa chỉ khác"}</strong>
+        <ChevronDown className={open ? "is-open" : ""} size={17}/>
+      </button>
+      {open && (
+        <div className="booking-address-select-menu" role="listbox">
+          {addresses.map((address) => (
+            <button
+              type="button"
+              role="option"
+              aria-selected={String(address._id) === String(value)}
+              className={String(address._id) === String(value) ? "is-selected" : ""}
+              key={address._id}
+              onClick={() => {
+                onChange(address);
+                setOpen(false);
+              }}
+            >
+              <span><strong>{address.isDefault ? "Địa chỉ mặc định" : address.label || "Địa chỉ đã lưu"}</strong><small>{address.addressLine}, {address.wardName}, {address.districtName}</small></span>
+              {String(address._id) === String(value) && <Check size={16}/>}
+            </button>
+          ))}
+          <button type="button" role="option" aria-selected={!value} className={!value ? "is-selected" : ""} onClick={() => { onChange(null); setOpen(false); }}>
+            <span><strong>Nhập địa chỉ khác</strong><small>Điền địa chỉ giao nhận mới cho đơn này</small></span>
+            {!value && <Check size={16}/>}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function BookingDurationField({ value, onChange, max = 30 }) {
-  const safeMax = Math.max(0, Number(max) || 0);
-  const safeValue = Math.min(safeMax, Math.max(0, Number(value) || 0));
+  const safeMax = Math.max(1, Number(max) || 1);
+  const safeValue = Math.min(safeMax, Math.max(1, Number(value) || 1));
   return (
     <div className="booking-date-control booking-duration-control">
-      <span className="booking-date-control-label">Số ngày giữ thêm</span>
+      <span className="booking-date-control-label">Số ngày thuê</span>
       <div className="booking-duration-stepper">
-        <button type="button" onClick={() => onChange(Math.max(0, safeValue - 1))} disabled={safeValue <= 0} aria-label="Giảm số ngày giữ thêm">
+        <button type="button" onClick={() => onChange(Math.max(1, safeValue - 1))} disabled={safeValue <= 1} aria-label="Giảm số ngày thuê">
           <Minus size={17} />
         </button>
-        <strong>{safeValue} ngày ngoài gói</strong>
-        <button type="button" onClick={() => onChange(Math.min(safeMax, safeValue + 1))} disabled={safeValue >= safeMax} aria-label="Tăng số ngày giữ thêm">
+        <strong>{safeValue} ngày · {safeValue * 24} giờ</strong>
+        <button type="button" onClick={() => onChange(Math.min(safeMax, safeValue + 1))} disabled={safeValue >= safeMax} aria-label="Tăng số ngày thuê">
           <Plus size={17} />
         </button>
       </div>
@@ -833,7 +981,14 @@ function BookingDurationField({ value, onChange, max = 30 }) {
   );
 }
 
-function getBookingStatusText(product) {
+function getBookingStatusText(product, nearestAvailableAt = null, gridLoaded = false) {
+  const nearestText = nearestAvailableAt ? ` – lịch trống gần nhất ${formatDateTime(nearestAvailableAt)}` : "";
+  if (product.currentDisplayStatus === "cleaning") {
+    return `Đang vệ sinh${nearestText || (gridLoaded ? " – chưa có khung giờ phù hợp trong lịch đang xem" : "")}`;
+  }
+  if (["rented", "booked"].includes(product.currentDisplayStatus)) {
+    return `Đang có lịch thuê${nearestText || (gridLoaded ? " – chưa có khung giờ phù hợp trong lịch đang xem" : "")}`;
+  }
   return product.bookingStatusLabel
     || (product.acceptsFutureBookings ? "Sẵn sàng cho lịch thuê mới" : getStatusLabel(product.bookingStatus || product.status));
 }
@@ -843,13 +998,31 @@ const PICKUP_TIME_SLOTS = [
   "09:00",
   "10:00",
   "11:00",
+  "12:00",
   "13:00",
   "14:00",
   "15:00",
   "16:00",
   "17:00",
-  "18:00"
+  "18:00",
+  "19:00",
+  "20:00",
+  "21:00"
 ];
+
+function takeScheduleAdjustmentNotice() {
+  const message = sessionStorage.getItem("ara_schedule_adjustment_notice") || "";
+  sessionStorage.removeItem("ara_schedule_adjustment_notice");
+  return message;
+}
+
+function readScheduleFulfillment() {
+  try {
+    return JSON.parse(sessionStorage.getItem("ara_schedule_fulfillment") || "{}");
+  } catch {
+    return {};
+  }
+}
 
 function getAvailabilityText(available) {
   if (available === true) {
@@ -866,6 +1039,33 @@ function getAvailabilityText(available) {
 function combineDateAndTime(date, time) {
   if (!date || !time) return "";
   return `${date}T${time}:00+07:00`;
+}
+
+function transportMinutesFromNearest(nearest, fallback = 0) {
+  const explicit = Number(nearest?.outboundTransportMinutes || fallback || 0);
+  if (explicit > 0) return explicit;
+  const receivedAt = new Date(nearest?.expectedDeliveryAt || nearest?.requestedStartAt);
+  const departedAt = new Date(nearest?.plannedRentalStartAt);
+  const inferred = Math.round((receivedAt - departedAt) / 60000);
+  return Number.isFinite(inferred) && inferred > 0 ? inferred : 0;
+}
+
+function localClockFromDate(date) {
+  return new Date(date).toLocaleTimeString("vi-VN", {
+    timeZone: "Asia/Ho_Chi_Minh",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
+
+function explainFulfillmentError({ error, pickupMethod, pickupTime, mainUseDate, nearest, fallbackMinutes }) {
+  if (!error || pickupMethod !== "home_delivery" || !nearest?.requestedStartAt) return error;
+  const minutes = transportMinutesFromNearest(nearest, fallbackMinutes);
+  if (!minutes) return error;
+  const selectedAt = new Date(combineDateAndTime(mainUseDate, pickupTime));
+  const requiredDepartureAt = new Date(selectedAt.getTime() - minutes * 60000);
+  const nearestTime = localClockFromDate(nearest.requestedStartAt);
+  return `Bạn chọn nhận lúc ${pickupTime}. ARA cần khoảng ${minutes} phút di chuyển nên phải xuất phát lúc ${localClockFromDate(requiredDepartureAt)}, trước giờ giao nhận mở cửa 08:00. Khung nhận sớm nhất phù hợp là ${nearestTime}.`;
 }
 
 function isValidDateInput(value) {
@@ -934,6 +1134,7 @@ export function CostumeDetailPage({
 }) {
   const { id } = useParams();
   const navigate = useNavigate();
+  const initialFulfillment = useMemo(readScheduleFulfillment, []);
 
   const [product, setProduct] =
     useState(null);
@@ -956,6 +1157,8 @@ export function CostumeDetailPage({
     useState(null);
   const [dateError, setDateError] =
     useState("");
+  const [scheduleAdjustmentNotice, setScheduleAdjustmentNotice] =
+    useState(takeScheduleAdjustmentNotice);
   const [wishlistVersion, setWishlistVersion] =
     useState(0);
   const [lightboxImage, setLightboxImage] =
@@ -965,7 +1168,7 @@ export function CostumeDetailPage({
   const [bookingStartDate, setBookingStartDate] =
     useState(getWeekStart(todayPlus(0)));
   const [bookingGrid, setBookingGrid] =
-    useState({ days: [], timeSlots: PICKUP_TIME_SLOTS });
+    useState({ days: [], timeSlots: PICKUP_TIME_SLOTS, nextAvailableAt: null });
   const [loadingBookingGrid, setLoadingBookingGrid] =
     useState(false);
   const [bookingError, setBookingError] =
@@ -979,19 +1182,130 @@ export function CostumeDetailPage({
   const [pickupTime, setPickupTime] =
     useState("09:00");
   const [returnTime, setReturnTime] = useState("17:00");
-  const [rentalDays, setRentalDays] = useState(0);
+  const [rentalDays, setRentalDays] = useState(1);
   const [rentalQuote, setRentalQuote] = useState(null);
+  const [pickupMethod, setPickupMethod] = useState(initialFulfillment.pickupMethod || "store_pickup");
+  const [returnMethod, setReturnMethod] = useState(initialFulfillment.returnMethod || "store_return");
+  const [savedAddresses, setSavedAddresses] = useState([]);
+  const [deliveryAddressId, setDeliveryAddressId] = useState(initialFulfillment.deliveryAddressId || "");
+  const [deliveryAddress, setDeliveryAddress] = useState({
+    addressLine: initialFulfillment.deliveryAddress?.addressLine || "",
+    communeCode: initialFulfillment.deliveryAddress?.communeCode || initialFulfillment.deliveryAddress?.wardCode || "",
+    wardName: initialFulfillment.deliveryAddress?.wardName || "",
+    districtCode: initialFulfillment.deliveryAddress?.districtCode || "",
+    districtName: initialFulfillment.deliveryAddress?.districtName || "",
+    provinceName: initialFulfillment.deliveryAddress?.provinceName || "",
+    provinceCode: initialFulfillment.deliveryAddress?.provinceCode || ""
+  });
+  const [fulfillmentError, setFulfillmentError] = useState("");
+  const [fulfillmentQuote, setFulfillmentQuote] = useState(null);
+  const [nearestBookable, setNearestBookable] = useState(null);
+  const [checkingFulfillment, setCheckingFulfillment] = useState(false);
   const [calendarDays, setCalendarDays] = useState([]);
   const [loadingCalendar, setLoadingCalendar] = useState(false);
+  const [monthCalendarOpen, setMonthCalendarOpen] = useState(false);
   const [detailScheduleOpen, setDetailScheduleOpen] = useState(false);
 
   useEffect(() => {
+    if (!user) return;
+    let active = true;
+    listAddresses()
+      .then((rows) => {
+        if (!active) return;
+        const addresses = (Array.isArray(rows) ? rows : []).filter((item) => item.isEnabled !== false);
+        setSavedAddresses(addresses);
+        const requested = addresses.find((item) => item._id === initialFulfillment.deliveryAddressId);
+        const preferred = requested || addresses.find((item) => item.isDefault) || addresses[0];
+        if (preferred) {
+          setDeliveryAddressId(preferred._id);
+          setDeliveryAddress({
+            addressLine: preferred.addressLine || "",
+            communeCode: preferred.communeCode || preferred.wardCode || "",
+            wardName: preferred.wardName || "",
+            districtCode: preferred.districtCode || "",
+            districtName: preferred.districtName || "",
+            provinceName: preferred.provinceName || "",
+            provinceCode: preferred.provinceCode || ""
+          });
+        } else {
+          setDeliveryAddressId("");
+        }
+      })
+      .catch(() => setSavedAddresses([]));
+    return () => { active = false; };
+  }, [user, initialFulfillment.deliveryAddressId]);
+
+  useEffect(() => {
+    if (!id || !product || !mainUseDate || !pickupTime) return undefined;
+    const needsAddress = pickupMethod === "home_delivery" || returnMethod === "home_collection";
+    if (needsAddress && (!deliveryAddress.addressLine || !deliveryAddress.provinceCode || !deliveryAddress.districtCode || !deliveryAddress.communeCode)) {
+      setFulfillmentError("Vui lòng chọn hoặc nhập địa chỉ giao nhận để hệ thống tính giờ vận chuyển.");
+      return undefined;
+    }
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      const addressInput = deliveryAddressId
+        ? { addressId: deliveryAddressId }
+        : { address: deliveryAddress };
+      const quotePayload = {
+        pickupMethod,
+        returnMethod,
+        requestedStartAt: combineDateAndTime(mainUseDate, pickupTime),
+        rentalDays,
+        items: [{ costumeId: id, quantity: 1 }],
+        deliveryAddress: pickupMethod === "home_delivery" ? addressInput : undefined,
+        collectionSameAsDelivery: true,
+        collectionAddress: returnMethod === "home_collection" && pickupMethod !== "home_delivery"
+          ? addressInput
+          : undefined
+      };
+      let shouldFindNearest = false;
+      try {
+        setCheckingFulfillment(true);
+        const quote = await quoteRentalOrder(
+          { ...quotePayload, includeNearest: false },
+          { signal: controller.signal, cache: true }
+        );
+        setFulfillmentQuote(quote);
+        shouldFindNearest = quote?.isBookable === false;
+        if (!shouldFindNearest) setNearestBookable(null);
+        setFulfillmentError(quote?.isBookable === false ? "Khung giờ này đã có lịch thuê hoặc đã hết công suất giao nhận." : "");
+      } catch (err) {
+        if (err?.name !== "CanceledError" && err?.name !== "AbortError") {
+          setFulfillmentQuote(null);
+          shouldFindNearest = true;
+          setFulfillmentError(err?.response?.data?.message || err.message || "Lịch giao nhận chưa phù hợp.");
+        }
+      } finally {
+        if (!controller.signal.aborted) setCheckingFulfillment(false);
+      }
+      if (shouldFindNearest && !controller.signal.aborted) {
+        try {
+          const nearest = await quoteRentalOrder(
+            { ...quotePayload, includeNearest: false, nearestOnly: true },
+            { signal: controller.signal, cache: true }
+          );
+          if (!controller.signal.aborted) setNearestBookable(nearest?.nearestBookable || null);
+        } catch (err) {
+          // Giữ gợi ý gần nhất hiện tại nếu request mới lỗi hoặc bị gián đoạn.
+          // Kết quả hợp lệ tiếp theo sẽ thay thế hoặc xóa nó.
+        }
+      }
+    }, 300);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [id, product, mainUseDate, pickupTime, rentalDays, pickupMethod, returnMethod, deliveryAddressId, deliveryAddress]);
+
+  useEffect(() => {
     if (!isValidDateInput(mainUseDate)) return;
-    setRentalDate(addDays(mainUseDate, -1));
-    setReturnDate(addDays(mainUseDate, 1 + rentalDays));
+    setRentalDate(mainUseDate);
+    setReturnDate(addDays(mainUseDate, rentalDays));
+    setReturnTime(pickupTime);
     setAvailable(null);
     setDateError("");
-  }, [mainUseDate, rentalDays]);
+  }, [mainUseDate, rentalDays, pickupTime]);
 
   useEffect(() => {
     if (!id) return undefined;
@@ -1004,7 +1318,7 @@ export function CostumeDetailPage({
         const response = await getCostumeAvailabilityCalendar(id, monthStart, monthEnd, {
           pickupTime,
           returnTime,
-          extraDays: rentalDays,
+          extraDays: Math.max(0, rentalDays - 1),
           fulfillmentMethod: "store_pickup",
           quantity: 1
         }, { signal: controller.signal });
@@ -1013,7 +1327,6 @@ export function CostumeDetailPage({
         if (selected && selected.available === false && available !== null) {
           setAvailable(null);
           setRentalQuote(null);
-          notify?.("Khoảng giờ đã chọn không còn đủ cho toàn bộ gói thuê. Vui lòng chọn lại.", "error");
         }
       } catch (err) {
         if (err?.name !== "CanceledError" && err?.name !== "AbortError") setBookingError(err.message || "Không thể tải lịch tháng.");
@@ -1036,7 +1349,7 @@ export function CostumeDetailPage({
           mainUseDate,
           pickupTime,
           returnTime,
-          extraDays: rentalDays,
+          extraDays: Math.max(0, rentalDays - 1),
           fulfillmentMethod: "store_pickup",
           quantity: 1
         }, { signal: controller.signal });
@@ -1157,7 +1470,7 @@ export function CostumeDetailPage({
       setAvailable(null);
 
       const response = useDateTime
-        ? await quoteCostumeRental(id, { mainUseDate, pickupTime, returnTime, extraDays: rentalDays, fulfillmentMethod: "store_pickup", quantity: 1 })
+        ? await quoteCostumeRental(id, { mainUseDate, pickupTime, returnTime, extraDays: Math.max(0, rentalDays - 1), fulfillmentMethod: "store_pickup", quantity: 1 })
         : await checkCostumeAvailability(id, rentalDate, returnDate);
 
       const isAvailable =
@@ -1197,6 +1510,7 @@ export function CostumeDetailPage({
   useEffect(() => {
     const requestId = bookingRequestIdRef.current + 1;
     bookingRequestIdRef.current = requestId;
+    const controller = new AbortController();
     let disposed = false;
     const loadBookingGrid = async () => {
       if (!id) return;
@@ -1214,7 +1528,7 @@ export function CostumeDetailPage({
             : getMonthEnd(start);
 
       if (![start, end].every(isValidDateInput)) {
-        setBookingGrid({ days: [], timeSlots: PICKUP_TIME_SLOTS });
+        setBookingGrid({ days: [], timeSlots: PICKUP_TIME_SLOTS, nextAvailableAt: null });
         setBookingError("");
         setLoadingBookingGrid(false);
         return;
@@ -1227,22 +1541,24 @@ export function CostumeDetailPage({
         const response = await getCostumeBookingGrid(id, {
           startDate: start,
           endDate: end,
-          rentalDays: 2 + rentalDays,
+          rentalDays,
           quantity: 1
-        });
+        }, { signal: controller.signal });
 
         if (disposed || requestId !== bookingRequestIdRef.current) return;
         setBookingGrid({
           days: response.days || [],
           timeSlots:
-            response.timeSlots || PICKUP_TIME_SLOTS
+            response.timeSlots || PICKUP_TIME_SLOTS,
+          nextAvailableAt: response.nextAvailableAt || null
         });
       } catch (err) {
         if (disposed || requestId !== bookingRequestIdRef.current) return;
+        if (err?.name === "CanceledError" || err?.name === "AbortError") return;
         setBookingError(
           err.message || "Không thể tải bảng booking."
         );
-        setBookingGrid({ days: [], timeSlots: PICKUP_TIME_SLOTS });
+        setBookingGrid({ days: [], timeSlots: PICKUP_TIME_SLOTS, nextAvailableAt: null });
       } finally {
         if (!disposed && requestId === bookingRequestIdRef.current) setLoadingBookingGrid(false);
       }
@@ -1251,6 +1567,7 @@ export function CostumeDetailPage({
     loadBookingGrid();
     return () => {
       disposed = true;
+      controller.abort();
     };
   }, [id, bookingMode, bookingStartDate, rentalDays, bookingRefreshVersion]);
 
@@ -1323,7 +1640,7 @@ export function CostumeDetailPage({
     const slotKey = `${day.date}-${slot.time}`;
     const candidateRentalDateTime = combineDateAndTime(day.date, slot.time);
     const candidateReturnDateTime = combineDateAndTime(
-      addDays(day.date, 2 + rentalDays),
+      addDays(day.date, rentalDays),
       returnTime
     );
 
@@ -1337,15 +1654,17 @@ export function CostumeDetailPage({
 
       if (!latestAvailability.available) {
         notify?.(
-          `Không thể chọn lịch này: gói 3 ngày 2 đêm${rentalDays ? ` và ${rentalDays} ngày giữ thêm` : ""} bị trùng với lịch của khách khác.`,
+          `Không thể chọn lịch này: toàn bộ gói ${rentalDays} ngày (${rentalDays * 24} giờ) bị trùng với lịch khác.`,
           "error"
         );
+        clearCostumeAvailabilityCache();
         setBookingRefreshVersion((version) => version + 1);
         return;
       }
 
-      setMainUseDate(addDays(day.date, 1));
+      setMainUseDate(day.date);
       setPickupTime(slot.time);
+      setScheduleAdjustmentNotice("");
       setAvailable(null);
       setDateError("");
     } catch (err) {
@@ -1409,6 +1728,14 @@ export function CostumeDetailPage({
       return;
     }
 
+    if (checkingFulfillment || fulfillmentError) {
+      const message = checkingFulfillment
+        ? "ARA đang kiểm tra lịch giao nhận. Vui lòng chờ một chút."
+        : fulfillmentError;
+      notify?.(message, "error");
+      return;
+    }
+
     const isAvailable = await check({
       silent: true,
       useDateTime: true
@@ -1422,6 +1749,17 @@ export function CostumeDetailPage({
       return;
     }
 
+    const selectedFulfillment = {
+      pickupMethod,
+      returnMethod,
+      deliveryAddressId,
+      deliveryAddress
+    };
+    sessionStorage.setItem(
+      "ara_schedule_fulfillment",
+      JSON.stringify(selectedFulfillment)
+    );
+
     addToRentalCart(
       product,
       combineDateAndTime(rentalDate, pickupTime),
@@ -1430,10 +1768,11 @@ export function CostumeDetailPage({
       {
         pickupTime,
         returnTime,
-        rentalDays: 2 + rentalDays,
+        rentalDays,
         mainUseDate,
-        extraDays: rentalDays,
-        quote: rentalQuote
+        extraDays: Math.max(0, rentalDays - 1),
+        quote: rentalQuote,
+        fulfillment: selectedFulfillment
       }
     );
 
@@ -1446,6 +1785,7 @@ export function CostumeDetailPage({
 
   const handleRentalDateChange = (value) => {
     setMainUseDate(value);
+    setScheduleAdjustmentNotice("");
     if (isValidDateInput(value)) {
       setBookingStartDate(
         bookingMode === "week"
@@ -1497,7 +1837,15 @@ export function CostumeDetailPage({
     product
   ).replace("Chất liệu: ", "");
 
-  const stockAvailable = product.acceptsFutureBookings ?? product.status === "available";
+  const operationalStatus = product.operationalStatus
+    || (["repairing", "maintenance"].includes(product.status)
+      ? "maintenance"
+      : product.status === "hidden"
+        ? "hidden"
+        : product.status === "unavailable"
+          ? "unavailable"
+          : "active");
+  const stockAvailable = operationalStatus === "active";
   const estimatedPricing = rentalQuote?.pricing || null;
 
   return (
@@ -1506,6 +1854,16 @@ export function CostumeDetailPage({
 
       <section className="mei-detail-page">
         <div className="mei-detail-media">
+          <button
+            type="button"
+            className={`detail-wishlist-button ${wished ? "is-wished" : ""}`}
+            onClick={() => wishlist(product)}
+            aria-label={wished ? "Bỏ khỏi yêu thích" : "Thêm vào yêu thích"}
+            title={wished ? "Đã yêu thích" : "Yêu thích"}
+          >
+            <Heart size={20} fill={wished ? "currentColor" : "none"} />
+          </button>
+
           <CostumeImageCarousel
             className="detail-main-image"
             images={gallery}
@@ -1561,7 +1919,7 @@ export function CostumeDetailPage({
             <div className="luxury-product-status-row">
               <StatusBadge
                 type="costume"
-                value={product.bookingStatus || product.status}
+                value={product.currentDisplayStatus || operationalStatus}
               />
 
               <span className="luxury-product-brand-mark">
@@ -1616,7 +1974,7 @@ export function CostumeDetailPage({
             />
             <DetailItem
               label="Khả năng đặt lịch"
-              value={getBookingStatusText(product)}
+              value={getBookingStatusText(product, bookingGrid.nextAvailableAt, !loadingBookingGrid && bookingGrid.days.length > 0)}
             />
             <DetailItem
               label="Mã SKU"
@@ -1665,38 +2023,108 @@ export function CostumeDetailPage({
       </section>
 
       <section className="costume-booking-section">
+        {["cleaning", "rented", "booked"].includes(product.currentDisplayStatus) && (
+          <p className="booking-status-notice">{getBookingStatusText(product)}</p>
+        )}
         <div className="costume-booking-section-head">
           <div>
             <h2>Chọn lịch thuê</h2>
           </div>
-          <p>Chọn ngày mặc chính và khung giờ nhận, trả đồ. Gói tiêu chuẩn gồm 3 ngày 2 đêm; bạn có thể chọn thêm ngày nếu muốn giữ trang phục lâu hơn.</p>
+          <p>Mỗi ngày thuê là đúng 24 giờ. Chọn thời điểm bắt đầu và số ngày; hạn trả giữ nguyên giờ bắt đầu.</p>
         </div>
+
+        <div className="booking-fulfillment-panel">
+          <div className="booking-fulfillment-heading">
+            <div>
+              <span>GIAO NHẬN</span>
+              <h3>Chọn cách nhận và trả đồ</h3>
+            </div>
+            <p>
+              {pickupMethod === "home_delivery"
+                ? "Giờ bạn chọn là giờ muốn nhận đồ. ARA cần xuất phát sớm hơn theo thời gian di chuyển, nên giờ nhận sớm nhất sẽ muộn hơn giờ mở cửa."
+                : "Giờ bạn chọn là giờ đến lấy đồ tại cửa hàng. Nếu chọn giao tận nơi, hệ thống sẽ cộng thêm thời gian vận chuyển."}
+            </p>
+          </div>
+
+          <div className="booking-fulfillment-columns">
+            <div>
+              <strong>Cách nhận đồ</strong>
+              <div className="ara-fulfillment-options">
+                {[["store_pickup","Tự nhận tại cửa hàng","Nhận trực tiếp tại ARA"],["home_delivery","Giao tận nơi","ARA giao đến địa chỉ của bạn"]].map(([value,title,copy]) => (
+                  <label className={pickupMethod === value ? "is-selected" : ""} key={value}>
+                    <input type="radio" className="ara-visually-hidden-input" name="detailPickupMethod" value={value} checked={pickupMethod === value} onChange={() => setPickupMethod(value)}/>
+                    <span><strong>{title}</strong><small>{copy}</small></span><i/>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div>
+              <strong>Cách trả đồ</strong>
+              <div className="ara-fulfillment-options">
+                {[["store_return","Tự trả tại cửa hàng","Mang đồ về ARA đúng hạn"],["home_collection","ARA đến nhận lại","Nhân viên đến địa chỉ của bạn"]].map(([value,title,copy]) => (
+                  <label className={returnMethod === value ? "is-selected" : ""} key={value}>
+                    <input type="radio" className="ara-visually-hidden-input" name="detailReturnMethod" value={value} checked={returnMethod === value} onChange={() => setReturnMethod(value)}/>
+                    <span><strong>{title}</strong><small>{copy}</small></span><i/>
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        {nearestBookable?.requestedStartAt && (
+          <div className="booking-nearest-slot">
+            <CalendarDays size={20}/>
+            <span>
+              <small>LỊCH PHÙ HỢP GẦN NHẤT</small>
+              <strong>
+                {new Date(nearestBookable.requestedStartAt).toLocaleString("vi-VN", {
+                  timeZone: "Asia/Ho_Chi_Minh",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  day: "2-digit",
+                  month: "2-digit",
+                  year: "numeric"
+                })}
+              </strong>
+              <em>{pickupMethod === "home_delivery"
+                ? `Khung bạn chọn chưa đủ thời gian giao. Với khoảng ${transportMinutesFromNearest(nearestBookable, fulfillmentQuote?.transport?.outboundMinutes)} phút di chuyển, ARA có thể giao sớm nhất vào giờ này.`
+                : "Đây là giờ bạn đến nhận trực tiếp tại cửa hàng ARA."}</em>
+            </span>
+            <button type="button" onClick={() => {
+              const value = String(nearestBookable.requestedStartAt);
+              setMainUseDate(value.slice(0, 10));
+              setPickupTime(value.slice(11, 16));
+              setScheduleAdjustmentNotice("");
+            }}>
+              Chọn lịch này
+            </button>
+          </div>
+        )}
 
         <div className="booking-date-form">
           <BookingDateField
-            label="Ngày mặc chính"
+            label="Ngày bắt đầu thuê"
             value={mainUseDate}
             min={todayPlus(1)}
-            placeholder="Chọn ngày mặc"
+            placeholder="Chọn ngày bắt đầu"
             onChange={handleRentalDateChange}
+            availabilityDays={calendarDays}
+            loadingAvailability={loadingCalendar}
+            onViewMonthChange={setBookingStartDate}
           />
 
           <BookingTimeField
-            label="Giờ lấy đồ"
+            label={pickupMethod === "home_delivery" ? "Giờ muốn nhận đồ" : "Giờ lấy đồ tại cửa hàng"}
             value={pickupTime}
             options={PICKUP_TIME_SLOTS}
             onChange={(time) => {
               setPickupTime(time);
+              setScheduleAdjustmentNotice("");
               setAvailable(null);
               setDateError("");
             }}
-          />
-
-          <BookingTimeField
-            label="Giờ trả đồ"
-            value={returnTime}
-            options={PICKUP_TIME_SLOTS}
-            onChange={(time) => { setReturnTime(time); setAvailable(null); setRentalQuote(null); }}
           />
 
           <BookingDurationField
@@ -1706,18 +2134,93 @@ export function CostumeDetailPage({
           />
         </div>
 
+        {scheduleAdjustmentNotice && (
+          <p className="booking-form-error" role="alert">
+            {scheduleAdjustmentNotice}
+          </p>
+        )}
         {dateError && <p className="booking-form-error">{dateError}</p>}
 
-          <CostumeAvailabilityCalendar
-            days={calendarDays}
-            mode="month"
-            rentalDate={rentalDate}
-            returnDate={returnDate}
-            loading={loadingCalendar}
-            onSelectDate={(day) => handleRentalDateChange(day.date)}
-            onPrev={() => setBookingStartDate(getPreviousMonthStart(bookingStartDate))}
-            onNext={() => setBookingStartDate(getNextMonthStart(bookingStartDate))}
-          />
+        <div className="booking-fulfillment-after-schedule">
+          {(pickupMethod === "home_delivery" || returnMethod === "home_collection") && (
+            <div className="booking-delivery-address">
+              <div className="booking-delivery-address-title">
+                <MapPin size={18}/>
+                <span><strong>Địa chỉ giao nhận</strong><small>Chọn địa chỉ để hệ thống lọc các khung giờ giao nhận phù hợp.</small></span>
+              </div>
+              {savedAddresses.length > 0 && (
+                <SavedAddressSelect
+                  addresses={savedAddresses}
+                  value={deliveryAddressId}
+                  onChange={(selected) => {
+                    setDeliveryAddressId(selected?._id || "");
+                    if (selected) setDeliveryAddress({
+                      addressLine:selected.addressLine || "",
+                      communeCode:selected.communeCode || selected.wardCode || "",
+                      wardName:selected.wardName || "",
+                      districtCode:selected.districtCode || "",
+                      districtName:selected.districtName || "",
+                      provinceName:selected.provinceName || "",
+                      provinceCode:selected.provinceCode || ""
+                    });
+                  }}
+                />
+              )}
+              {!deliveryAddressId && (
+                <div className="booking-address-grid">
+                  <AddressLocationFields provinceCode={deliveryAddress.provinceCode} districtCode={deliveryAddress.districtCode} communeCode={deliveryAddress.communeCode} onChange={(next) => setDeliveryAddress((current) => ({
+                    ...current,
+                    ...next,
+                    wardCode: next.communeCode ?? current.wardCode,
+                    wardName: next.communeName ?? current.wardName,
+                    districtCode: next.districtCode ?? current.districtCode,
+                    districtName: next.districtName ?? current.districtName
+                  }))}/>
+                  <label><span>Số nhà, tên đường *</span><input value={deliveryAddress.addressLine} onChange={(event) => setDeliveryAddress((current) => ({...current,addressLine:event.target.value}))}/></label>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className={`booking-fulfillment-status ${fulfillmentError ? "is-error" : "is-valid"}`}>
+            <CalendarDays size={17}/>
+            <span>
+              <strong>{checkingFulfillment ? "Đang tính lịch giao nhận…" : fulfillmentError ? "Thời gian chưa phù hợp" : "Lịch giao nhận phù hợp"}</strong>
+              <small>
+                {checkingFulfillment
+                  ? "ARA đang kiểm tra giờ cửa hàng và thời gian di chuyển."
+                  : explainFulfillmentError({
+                      error: fulfillmentError,
+                      pickupMethod,
+                      pickupTime,
+                      mainUseDate,
+                      nearest: nearestBookable,
+                      fallbackMinutes: fulfillmentQuote?.transport?.outboundMinutes
+                    }) || (pickupMethod === "home_delivery"
+                    ? `Bạn nhận đồ lúc ${pickupTime}. ARA xuất phát trước đó khoảng ${Number(fulfillmentQuote?.transport?.outboundMinutes || 0)} phút. ${returnMethod === "home_collection" ? `Khi hết ${rentalDays * 24} giờ thuê, ARA đến nhận sớm hơn khoảng ${Number(fulfillmentQuote?.transport?.inboundMinutes || 0)} phút để đồ về cửa hàng đúng hạn.` : `Bạn tự trả tại cửa hàng sau đúng ${rentalDays * 24} giờ tính từ lúc ARA xuất phát.`}`
+                    : `Bạn lấy đồ tại cửa hàng lúc ${pickupTime}. ${returnMethod === "home_collection" ? `Khi hết ${rentalDays * 24} giờ thuê, ARA sẽ đến nhận sớm hơn khoảng ${Number(fulfillmentQuote?.transport?.inboundMinutes || 0)} phút để đồ về cửa hàng đúng hạn.` : `Bạn trả tại cửa hàng sau đúng ${rentalDays * 24} giờ.`}`)}
+              </small>
+            </span>
+          </div>
+        </div>
+
+          <button type="button" className="booking-action-btn" onClick={() => setMonthCalendarOpen((open) => !open)}>
+            <CalendarDays size={16} />
+            {monthCalendarOpen ? "Đóng lịch trống theo tháng" : "Xem lịch trống theo tháng"}
+          </button>
+
+          {monthCalendarOpen && (
+            <CostumeAvailabilityCalendar
+              days={calendarDays}
+              mode="month"
+              rentalDate={rentalDate}
+              returnDate={returnDate}
+              loading={loadingCalendar}
+              onSelectDate={(day) => handleRentalDateChange(day.date)}
+              onPrev={() => setBookingStartDate(getPreviousMonthStart(bookingStartDate))}
+              onNext={() => setBookingStartDate(getNextMonthStart(bookingStartDate))}
+            />
+          )}
 
           <button type="button" className="booking-action-btn" onClick={() => setDetailScheduleOpen((open) => !open)}>
             <CalendarDays size={16} />
@@ -1771,66 +2274,55 @@ export function CostumeDetailPage({
           )}
 
           <div className="booking-summary-bar ara-standard-package-summary">
-            <div><span>Gói thuê của bạn</span><strong>3 ngày 2 đêm</strong></div>
-            <div><span>Tổng thời gian giữ</span><strong>{3 + rentalDays} ngày {2 + rentalDays} đêm</strong></div>
+            <div><span>Gói thuê của bạn</span><strong>{rentalDays} ngày ({rentalDays * 24} giờ)</strong></div>
+            <div><span>Thời gian tính thuê</span><strong>{rentalDays * 24} giờ liên tục</strong></div>
             <div>
               <span>Nhận đồ</span>
-              <strong>{rentalQuote?.pickupAt ? `${formatBookingDate(String(rentalQuote.pickupAt).slice(0,10))} · ${pickupTime}` : `${formatBookingDate(rentalDate)} · ${pickupTime}`}</strong>
-            </div>
-            <div>
-              <span>Ngày mặc chính</span>
-              <strong>{formatBookingDate(mainUseDate)}</strong>
+              <strong>{`${formatBookingDate(rentalDate)} · ${pickupTime}`}</strong>
             </div>
             <div>
               <span>Trả đồ dự kiến</span>
               <strong>{returnDate ? `${formatBookingDate(returnDate)} · ${returnTime}` : "Chưa chọn"}</strong>
             </div>
             <div>
-              <span>Phí giữ thêm</span>
+              <span>Phí ngày thuê thêm</span>
               <strong>
                 {estimatedPricing ? money(estimatedPricing.extraDayFee) : "-"}
               </strong>
-              <small>{rentalDays} ngày ngoài gói</small>
+              <small>{Math.max(0, rentalDays - 1)} ngày thuê thêm</small>
             </div>
             {rentalQuote?.cleaningUntil && <div><span>Vệ sinh dự kiến đến</span><strong>{formatDateTime(rentalQuote.cleaningUntil)}</strong></div>}
             <div><span>Tổng tiền thuê</span><strong>{estimatedPricing ? money(estimatedPricing.totalRentalAmount) : money(product.rentalPricePerDay)}</strong></div>
           </div>
 
           <p className="booking-pricing-note">
-            Giá hiển thị là giá trọn gói 3 ngày 2 đêm. Ngày giữ thêm có báo trước được tính 10% giá gói cho mỗi ngày.
+            Một ngày thuê bằng đúng 24 giờ. Chuẩn bị và vệ sinh có khóa lịch tồn kho nhưng không tính vào tiền thuê.
           </p>
 
           <div className="booking-actions">
             <button
               type="button"
               className="booking-action-btn"
-              onClick={() => check({ useDateTime: true })}
-              disabled={checkingAvailability || loadingBookingGrid || selectedScheduleConflict}
+              onClick={() => {
+                if (selectedScheduleConflict) {
+                  setDetailScheduleOpen(true);
+                  window.requestAnimationFrame(() => {
+                    document.querySelector(".booking-grid-wrap")?.scrollIntoView({ behavior: "smooth", block: "center" });
+                  });
+                  return;
+                }
+                check({ useDateTime: true });
+              }}
+              disabled={checkingAvailability || loadingBookingGrid}
             >
               <CalendarDays size={16} />
               {checkingAvailability
                 ? "Đang kiểm tra..."
-                : "Kiểm tra lịch trống"}
-            </button>
-
-            <button
-              type="button"
-              className="booking-action-btn"
-              onClick={() =>
-                wishlist(product)
-              }
-            >
-              <Heart
-                size={16}
-                fill={
-                  wished
-                    ? "currentColor"
-                    : "none"
-                }
-              />
-              {wished
-                ? "Đã yêu thích"
-                : "Yêu thích"}
+                : selectedScheduleConflict
+                  ? "Chọn lịch khác"
+                  : available === true
+                    ? "Kiểm tra lại lịch"
+                    : "Kiểm tra lịch trống"}
             </button>
 
             <button
@@ -1840,6 +2332,8 @@ export function CostumeDetailPage({
               disabled={
                 !stockAvailable ||
                 checkingAvailability ||
+                checkingFulfillment ||
+                Boolean(fulfillmentError) ||
                 loadingBookingGrid ||
                 selectedScheduleConflict
               }
@@ -1855,6 +2349,8 @@ export function CostumeDetailPage({
               disabled={
                 !stockAvailable ||
                 checkingAvailability ||
+                checkingFulfillment ||
+                Boolean(fulfillmentError) ||
                 loadingBookingGrid ||
                 selectedScheduleConflict
               }

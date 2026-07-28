@@ -55,6 +55,30 @@ const CLICK_REACTIONS = [
     mood: "curious",
     sparkle: false,
     action: "peek"
+  },
+  {
+    message: "Ari g\u1eadt \u0111\u1ea7u: \u0111\u1ec3 Ari lo nha!",
+    mood: "happy",
+    sparkle: false,
+    action: "nod"
+  },
+  {
+    message: "Ari xoay m\u1ed9t v\u00f2ng khoe n\u01a1 n\u00e8 \u2728",
+    mood: "excited",
+    sparkle: true,
+    action: "twirl"
+  },
+  {
+    message: "Ari nh\u1ea3y ch\u00e2n s\u00e1o ch\u00e0o b\u1ea1n!",
+    mood: "happy",
+    sparkle: true,
+    action: "hop"
+  },
+  {
+    message: "\u00d4i, b\u1ea1n l\u00e0m Ari b\u1ea5t ng\u1edd \u0111\u00f3 \ud83d\udc40",
+    mood: "curious",
+    sparkle: true,
+    action: "surprised"
   }
 ];
 
@@ -62,7 +86,10 @@ const IDLE_ACTIONS = [
   "ear-twitch",
   "peek",
   "sleepy",
-  "hello"
+  "hello",
+  "nod",
+  "hop",
+  "sniff"
 ];
 
 function clamp(value, min, max) {
@@ -429,6 +456,14 @@ export function AriBunny({
         } else if (nextAction === "hello") {
           triggerAction("hello", 1150);
           triggerBounce();
+        } else if (nextAction === "nod") {
+          triggerAction("nod", 1200);
+          triggerMood("happy", 1200);
+        } else if (nextAction === "hop") {
+          triggerAction("hop", 1250);
+        } else if (nextAction === "sniff") {
+          triggerAction("sniff", 1350);
+          triggerMood("curious", 1350);
         } else {
           triggerAction("ear-twitch", 950);
         }

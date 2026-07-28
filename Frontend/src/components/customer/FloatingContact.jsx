@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { AriBunny } from "../petAra/AriBunny.jsx";
 import { useAriMascot } from "../../context/AriMascotContext.jsx";
+import { AraChatWidget } from "./AraChatWidget.jsx";
 
 function emitMascotEvent(name, detail) {
   if (typeof window === "undefined") {
@@ -93,8 +94,11 @@ function ContactLink({
   );
 }
 
-export function FloatingContact({ interaction, message }) {
+export function FloatingContact({ interaction, message, user }) {
+  const [chatOpen,setChatOpen]=React.useState(()=>new URLSearchParams(window.location.search).has("chat"));
+  const [unread,setUnread]=React.useState(0);
   return (
+    <>
     <aside
       className="floating-contact"
       aria-label="Liên hệ nhanh"
@@ -103,7 +107,10 @@ export function FloatingContact({ interaction, message }) {
         <AriBunny
           interaction={interaction}
           message={message}
+          onClick={()=>setChatOpen(true)}
         />
+        {unread>0&&<span className="ara-chat-unread" aria-label={`${unread} tin chưa đọc`}>{unread>9?"9+":unread}</span>}
+        <span className="ara-chat-online-dot" aria-hidden="true"/>
       </div>
 
       <ContactLink
@@ -132,5 +139,7 @@ export function FloatingContact({ interaction, message }) {
         <Facebook size={18} />
       </ContactLink>
     </aside>
+    <AraChatWidget open={chatOpen} onOpenChange={setChatOpen} user={user} unread={unread} onUnreadChange={setUnread}/>
+    </>
   );
 }

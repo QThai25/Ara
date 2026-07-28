@@ -8,10 +8,11 @@ const paymentSequenceSchema = new mongoose.Schema({
 export const PaymentSequence = mongoose.model("PaymentSequence", paymentSequenceSchema);
 
 export async function nextPayosOrderCode() {
+  const timeFloor = Date.now();
   const sequence = await PaymentSequence.findOneAndUpdate(
     { _id: "payos_order_code" },
-    { $inc: { value: 1 } },
-    { upsert: true, new: true, setDefaultsOnInsert: true }
+    [{ $set: { value: { $add: [{ $max: [{ $ifNull: ["$value", 0] }, timeFloor] }, 1] } } }],
+    { upsert: true, new: true }
   );
   return sequence.value;
 }

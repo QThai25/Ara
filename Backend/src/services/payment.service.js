@@ -22,6 +22,8 @@ import { emitOrderUpdated, emitPaymentUpdated } from "../realtime/socket.js";
 import { DepositRefund } from "../models/DepositRefund.js";
 import { RefundDestination } from "../models/RefundDestination.js";
 import { adminDestination } from "./accountAsset.service.js";
+import { AuditLog } from "../models/AuditLog.js";
+import { storeBusinessStatus, storeConfig } from "../config/store.config.js";
 
 const ADMIN_ROLES = ["admin", "staff", "owner"];
 const TERMINAL_PAYMENT_STATUSES = ["success", "failed", "canceled", "expired", "refunded"];
@@ -80,10 +82,9 @@ function paymentTypeCode(paymentType) {
   }[paymentType] || "PAY";
 }
 
-function createPaymentReference(orderId, paymentType) {
-  const orderCode = String(orderId).slice(-6).toUpperCase();
-  const nonce = crypto.randomBytes(3).toString("hex").toUpperCase();
-  return `ARA-${paymentTypeCode(paymentType)}-${orderCode}-${nonce}`;
+function createPaymentReference(order, paymentType) {
+  const orderCode = String(order.orderCode || order._id).replace(/[^a-z0-9]/gi, "").toUpperCase();
+  return `ARA-${paymentTypeCode(paymentType)}-${orderCode}`.slice(0, 50);
 }
 
 function bankTransferConfig() {
@@ -105,7 +106,7 @@ function supportedMethods() {
   const bank = bankTransferConfig();
   const availability = paymentMethodsAvailability();
   return {
-    direct: ["cash", ...(bank.configured ? ["bank_transfer"] : [])],
+    direct: ["cash", ...(bank.configured && storeConfig.enableManualBankTransfer ? ["bank_transfer"] : [])],
     online: [...(availability.payos ? ["payos"] : [])],
     onlineAvailable: availability.payos,
     availability,
@@ -115,6 +116,17 @@ function supportedMethods() {
 
 export function getPaymentMethods() {
   const methods = supportedMethods();
+  const businessHours = storeBusinessStatus();
+  return {
+    methods,
+    businessHours,
+    options: [
+      { method: "bank_transfer", channel: "direct", provider: "manual", name: "Chuyển khoản ngân hàng", description: businessHours.isOpen ? "ARA xác nhận sau khi nhận được tiền." : `Có thể chuyển ngay; ARA sẽ xác nhận sau ${businessHours.openingTime}.`, enabled: methods.direct.includes("bank_transfer"), recommended: true },
+      { method: "cash", channel: "direct", provider: "manual", name: "Tiền mặt", description: "Thanh toán trực tiếp theo chính sách đơn thuê.", enabled: true },
+      { method: "payos", channel: "online", provider: "payos", name: "PayOS", description: "Thanh toán nhanh và xác nhận tự động.", enabled: methods.availability.payos }
+    ],
+    expiryMinutes: paymentConfig.paymentExpiryMinutes
+  };
   return { methods, options: [
     { method: "payos", channel: "online", provider: "payos", name: "QR ngân hàng", description: "Quét VietQR và tự động xác nhận thanh toán", enabled: methods.availability.payos, ...(methods.availability.payos ? {} : { disabledReason: "Phương thức chưa được cấu hình." }) },
     { method: "bank_transfer", channel: "direct", provider: "manual", name: "Chuyển khoản ngân hàng", description: "ARA xác nhận sau khi nhận được tiền", enabled: methods.direct.includes("bank_transfer"), ...(methods.direct.includes("bank_transfer") ? {} : { disabledReason: "Phương thức chưa được cấu hình." }) }
@@ -214,7 +226,7 @@ export async function createPayment(user, payload, idempotencyKey, requestMeta =
   idempotencyKey ||= payload.idempotencyKey;
   payload = { ...payload };
   payload.channel ||= payload.method === "payos" ? "online" : "direct";
-  if (user?.role === "guest" && (!['deposit', 'full'].includes(payload.paymentType) || !['payos', 'bank_transfer'].includes(payload.method))) {
+  if (user?.role === "guest" && (!["deposit", "full"].includes(payload.paymentType) || !["payos", "bank_transfer"].includes(payload.method))) {
     throw new ApiError(400, "Phương thức hoặc loại thanh toán không được hỗ trợ cho khách vãng lai.");
   }
   if (["momo", "vnpay", "bank_gateway"].includes(payload.method)) {
@@ -259,7 +271,7 @@ export async function createPayment(user, payload, idempotencyKey, requestMeta =
       if (!order) throw new ApiError(404, "Không tìm thấy đơn thuê.");
       assertOrderAccess(order, user);
       if (payload.method === "cash" && ["deposit", "full", "rental_balance"].includes(payload.paymentType)) throw new ApiError(400, "Tiền mặt chỉ được ghi nhận khi khách nhận đồ tại ARA.");
-      if (order.paymentPreference === "bank_transfer" && !["bank_transfer", "payos"].includes(payload.method)) throw new ApiError(400, "Đơn này đã chọn phương thức chuyển khoản ngân hàng.");
+      if (["bank_transfer", "payos"].includes(order.paymentPreference) && !["bank_transfer", "payos"].includes(payload.method)) throw new ApiError(400, "Đơn này đã chọn phương thức chuyển khoản ngân hàng.");
 
       const quote = await calculatePaymentQuote(order, payload.paymentType, {
         session,
@@ -281,7 +293,7 @@ export async function createPayment(user, payload, idempotencyKey, requestMeta =
         return active._id;
       }
 
-      const reference = createPaymentReference(order._id, payload.paymentType);
+      const reference = createPaymentReference(order, payload.paymentType);
       const online = payload.channel === "online";
       const payosOrderCode = payload.method === "payos" ? await nextPayosOrderCode() : undefined;
       const expiresMinutes = payload.method === "cash"
@@ -312,15 +324,19 @@ export async function createPayment(user, payload, idempotencyKey, requestMeta =
             accountNumber: transfer.accountNumber,
             accountHolder: transfer.accountHolder,
             accountName: transfer.accountName,
-            qrUrl: transfer.qrUrl || undefined
+            qrUrl: transfer.qrUrl
+              ? transfer.qrUrl.replaceAll("{amount}", String(quote.payableAmount)).replaceAll("{reference}", encodeURIComponent(reference))
+              : undefined
           }
         } : {})
       };
       const [payment] = await Payment.create([values], session ? { session } : {});
 
       order.latestPaymentId = payment._id;
-      if (["payos", "bank_transfer"].includes(payload.method)) order.paymentPreference = "bank_transfer";
-      order.paymentStatus = online ? "awaiting_payment" : "awaiting_confirmation";
+      if (["payos", "bank_transfer"].includes(payload.method)) order.paymentPreference = payload.method;
+      order.paymentMethod = payload.method;
+      order.paymentExpiresAt = payment.expiresAt;
+      order.paymentStatus = online ? "pending" : payload.method === "bank_transfer" ? "pending" : "unpaid";
       await order.save(session ? { session } : {});
       return payment._id;
     });
@@ -426,6 +442,42 @@ export async function getPaymentStatus(id, user) {
   }
   const fresh = await Payment.findById(payment._id).select("+qrCode");
   return { id: fresh.id, status: fresh.status, provider: fresh.provider, method: fresh.method, paymentType: fresh.paymentType, amount: fresh.amount, paidAt: fresh.paidAt, failureReason: fresh.failureReason, expiresAt: fresh.expiresAt, paymentReference: fresh.paymentReference, payUrl: fresh.payUrl, qrCode: fresh.qrCode, transferInstructions: fresh.transferInstructions };
+}
+
+export async function reportManualTransfer(id, user, { proofUrl = "" } = {}) {
+  const payment = await Payment.findById(id);
+  if (!payment) throw new ApiError(404, "Không tìm thấy thanh toán.");
+  assertPaymentAccess(payment, user);
+  if (payment.method !== "bank_transfer" || payment.channel !== "direct") {
+    throw new ApiError(400, "Thanh toán này không phải chuyển khoản thủ công.");
+  }
+  if (payment.status === "success") throw new ApiError(409, "Thanh toán đã được xác nhận trước đó.");
+  if (!payment.active || !["pending", "awaiting_confirmation"].includes(payment.status)) {
+    throw new ApiError(400, "Giao dịch không còn ở trạng thái có thể báo chuyển khoản.");
+  }
+
+  payment.status = "awaiting_confirmation";
+  payment.proofUrl = String(proofUrl || payment.proofUrl || "").trim();
+  payment.proofSubmittedAt = new Date();
+  await payment.save();
+
+  const order = await RentalOrder.findById(payment.orderId);
+  if (order) {
+    order.paymentStatus = "awaiting_verification";
+    order.paymentMethod = payment.method;
+    order.holdExpiresAt = null;
+    await order.save();
+  }
+
+  await AuditLog.create({
+    actorId: user._id,
+    action: "payment_transfer_reported",
+    entityType: "payment",
+    entityId: payment._id,
+    before: { status: "pending" },
+    after: { status: "awaiting_verification", proofUrl: payment.proofUrl }
+  });
+  return populatePayment(payment._id);
 }
 
 export async function cancelPayment(id, user) {
@@ -664,12 +716,24 @@ export async function markPaymentSuccessful(id, options = {}) {
 }
 
 export async function confirmPayment(id, adminId) {
-  return markPaymentSuccessful(id, {
+  const before = await Payment.findById(id).select("status confirmedAt confirmedBy");
+  const payment = await markPaymentSuccessful(id, {
     requireDirect: true,
     confirmedBy: adminId,
     confirmedAt: new Date(),
     paidAt: new Date()
   });
+  if (before?.status !== "success") {
+    await AuditLog.create({
+      actorId: adminId,
+      action: "payment_confirmed",
+      entityType: "payment",
+      entityId: before._id,
+      before: { status: before.status },
+      after: { status: "paid", confirmedAt: payment.confirmedAt, confirmedBy: adminId }
+    });
+  }
+  return payment;
 }
 
 let payosReconciliationRunning = false;
@@ -683,7 +747,8 @@ export async function reconcilePendingPayosPayments() {
       provider: "payos",
       status: "pending",
       active: true,
-      providerOrderId: { $ne: "" }
+      providerOrderId: { $type: "string", $gt: "" },
+      payUrl: { $type: "string", $gt: "" }
     }).sort({ createdAt: 1 }).limit(100);
     for (const payment of pending) {
       try {

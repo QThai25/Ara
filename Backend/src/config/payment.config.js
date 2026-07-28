@@ -1,3 +1,5 @@
+import { storeConfig } from "./store.config.js";
+
 const positiveMinutes = (value, fallback) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
@@ -8,7 +10,7 @@ const validHttpUrl = (value) => { try { return ["http:", "https:"].includes(new 
 export const paymentConfig = {
   frontendUrl: env("FRONTEND_URL", "http://localhost:5173"),
   backendUrl: env("BACKEND_URL", "http://localhost:4000"),
-  paymentExpiryMinutes: positiveMinutes(process.env.PAYMENT_EXPIRY_MINUTES, 60),
+  paymentExpiryMinutes: positiveMinutes(process.env.PAYMENT_EXPIRY_MINUTES, storeConfig.pendingPaymentMinutes),
   bankTransfer: {
     bankName: env("BANK_NAME", env("PAYMENT_BANK_NAME")), branch: env("BANK_BRANCH"),
     accountNumber: env("BANK_ACCOUNT_NUMBER", env("PAYMENT_BANK_ACCOUNT_NUMBER")),
@@ -46,8 +48,8 @@ export const isPayosConfigured = () => Boolean(
 );
 
 export const paymentMethodsAvailability = () => ({
-  bank_transfer: Boolean(paymentConfig.bankTransfer.bankName && paymentConfig.bankTransfer.accountNumber),
+  bank_transfer: storeConfig.enableManualBankTransfer && Boolean(paymentConfig.bankTransfer.bankName && paymentConfig.bankTransfer.accountNumber),
   momo: false,
   vnpay: false,
-  payos: isPayosConfigured()
+  payos: storeConfig.enablePayos && isPayosConfigured()
 });
