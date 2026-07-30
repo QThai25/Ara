@@ -16,18 +16,28 @@ import { AdminRentalOrderListPage } from "../pages/AdminRentalOrderListPage.jsx"
 import { AdminRentalOrderDetailPage } from "../pages/AdminRentalOrderDetailPage.jsx";
 import { AdminCreateRentalOrderPage } from "../pages/AdminCreateRentalOrderPage.jsx";
 import { AdminPaymentPage } from "../pages/AdminPaymentPage.jsx";
+import { AdminPaymentDetailPage } from "../pages/AdminPaymentDetailPage.jsx";
 import { AdminCustomerPage } from "../pages/AdminCustomerPage.jsx";
 import { AdminCustomerDetailPage } from "../pages/AdminCustomerDetailPage.jsx";
 import { AdminVoucherPage } from "../pages/AdminVoucherPage.jsx";
 import { AdminBannerPage } from "../pages/AdminBannerPage.jsx";
 import { AdminReportPage } from "../pages/AdminReportPage.jsx";
 import { AdminReturnInspectionPage } from "../pages/AdminReturnInspectionPage.jsx";
+import { AdminReturnInspectionDetailPage } from "../pages/AdminReturnInspectionDetailPage.jsx";
 import { AdminNotificationPage } from "../pages/AdminNotificationPage.jsx";
 import { AdminContactRequestPage } from "../pages/AdminContactRequestPage.jsx";
 import { AdminFulfillmentRefundPage } from "../pages/AdminFulfillmentRefundPage.jsx";
+import { AdminRefundDetailPage } from "../pages/AdminRefundDetailPage.jsx";
+import { AdminStaffListPage } from "../pages/AdminStaffListPage.jsx";
+import { AdminStaffCreatePage } from "../pages/AdminStaffCreatePage.jsx";
+import { AdminStaffDetailPage } from "../pages/AdminStaffDetailPage.jsx";
+import { AdminStaffEditPage } from "../pages/AdminStaffEditPage.jsx";
+import { AdminAuditLogPage } from "../pages/AdminAuditLogPage.jsx";
+import { AdminChangePasswordPage } from "../pages/AdminChangePasswordPage.jsx";
+import { ADMIN_PERMISSIONS as P } from "../constants/adminPermissions.js";
 
-function ProtectedPage({ toast, children }) {
-  return <ProtectedAdminRoute toast={toast}>{children}</ProtectedAdminRoute>;
+function ProtectedPage({ toast, permission, children }) {
+  return <ProtectedAdminRoute toast={toast} requiredPermission={permission}>{children}</ProtectedAdminRoute>;
 }
 
 function HomeRedirect() {
@@ -53,30 +63,40 @@ export function AdminRoutes({ toast, notify }) {
       <Route path="/login" element={<AdminLoginPage />} />
       <Route path="/" element={<HomeRedirect />} />
       <Route path="/admin" element={<Navigate to="/" replace />} />
-      <Route path="/dashboard" element={<ProtectedPage toast={toast}><DashboardPage notify={notify} /></ProtectedPage>} />
-      <Route path="/costumes" element={<ProtectedPage toast={toast}><AdminCostumeListPage notify={notify} /></ProtectedPage>} />
-      <Route path="/costumes/create" element={<ProtectedPage toast={toast}><AdminCreateCostumePage notify={notify} /></ProtectedPage>} />
-      <Route path="/costumes/:id" element={<ProtectedPage toast={toast}><AdminCostumeDetailPage notify={notify} /></ProtectedPage>} />
-      <Route path="/costumes/:id/edit" element={<ProtectedPage toast={toast}><AdminEditCostumePage notify={notify} /></ProtectedPage>} />
-      <Route path="/brands" element={<ProtectedPage toast={toast}><AdminBrandPage notify={notify} /></ProtectedPage>} />
-      <Route path="/categories" element={<ProtectedPage toast={toast}><AdminCategoryPage notify={notify} /></ProtectedPage>} />
-      <Route path="/occasions" element={<ProtectedPage toast={toast}><AdminOccasionPage notify={notify} /></ProtectedPage>} />
-      <Route path="/styles" element={<ProtectedPage toast={toast}><AdminStylePage notify={notify} /></ProtectedPage>} />
-      <Route path="/orders" element={<ProtectedPage toast={toast}><AdminRentalOrderListPage notify={notify} /></ProtectedPage>} />
-      <Route path="/orders/create" element={<ProtectedPage toast={toast}><AdminCreateRentalOrderPage notify={notify} /></ProtectedPage>} />
-      <Route path="/orders/:id" element={<ProtectedPage toast={toast}><AdminRentalOrderDetailPage notify={notify} /></ProtectedPage>} />
+      <Route path="/dashboard" element={<ProtectedPage toast={toast} permission={P.DASHBOARD_VIEW_OPERATIONAL}><DashboardPage notify={notify} /></ProtectedPage>} />
+      <Route path="/change-password" element={<ProtectedPage toast={toast}><AdminChangePasswordPage notify={notify} /></ProtectedPage>} />
+      <Route path="/costumes" element={<ProtectedPage toast={toast} permission={P.INVENTORY_VIEW}><AdminCostumeListPage notify={notify} /></ProtectedPage>} />
+      <Route path="/costumes/create" element={<ProtectedPage toast={toast} permission={P.CATALOG_MANAGE}><AdminCreateCostumePage notify={notify} /></ProtectedPage>} />
+      <Route path="/costumes/:id" element={<ProtectedPage toast={toast} permission={P.INVENTORY_VIEW}><AdminCostumeDetailPage notify={notify} /></ProtectedPage>} />
+      <Route path="/costumes/:id/edit" element={<ProtectedPage toast={toast} permission={P.CATALOG_MANAGE}><AdminEditCostumePage notify={notify} /></ProtectedPage>} />
+      <Route path="/brands" element={<ProtectedPage toast={toast} permission={P.CATALOG_MANAGE}><AdminBrandPage notify={notify} /></ProtectedPage>} />
+      <Route path="/categories" element={<ProtectedPage toast={toast} permission={P.CATALOG_MANAGE}><AdminCategoryPage notify={notify} /></ProtectedPage>} />
+      <Route path="/occasions" element={<ProtectedPage toast={toast} permission={P.CATALOG_MANAGE}><AdminOccasionPage notify={notify} /></ProtectedPage>} />
+      <Route path="/styles" element={<ProtectedPage toast={toast} permission={P.CATALOG_MANAGE}><AdminStylePage notify={notify} /></ProtectedPage>} />
+      <Route path="/orders" element={<ProtectedPage toast={toast} permission={P.ORDERS_VIEW}><AdminRentalOrderListPage notify={notify} /></ProtectedPage>} />
+      <Route path="/orders/create" element={<ProtectedPage toast={toast} permission={P.ORDERS_OPERATE}><AdminCreateRentalOrderPage notify={notify} /></ProtectedPage>} />
+      <Route path="/orders/:id" element={<ProtectedPage toast={toast} permission={P.ORDERS_VIEW}><AdminRentalOrderDetailPage notify={notify} /></ProtectedPage>} />
       <Route path="/rentals" element={<Navigate to="/orders" replace />} />
       <Route path="/rentals/:id" element={<RentalDetailRedirect />} />
-      <Route path="/payments" element={<ProtectedPage toast={toast}><AdminPaymentPage notify={notify} /></ProtectedPage>} />
-      <Route path="/customers" element={<ProtectedPage toast={toast}><AdminCustomerPage notify={notify} /></ProtectedPage>} />
-      <Route path="/customers/:id" element={<ProtectedPage toast={toast}><AdminCustomerDetailPage notify={notify} /></ProtectedPage>} />
-      <Route path="/vouchers" element={<ProtectedPage toast={toast}><AdminVoucherPage notify={notify} /></ProtectedPage>} />
-      <Route path="/banners" element={<ProtectedPage toast={toast}><AdminBannerPage notify={notify} /></ProtectedPage>} />
-      <Route path="/reports" element={<ProtectedPage toast={toast}><AdminReportPage notify={notify} /></ProtectedPage>} />
-      <Route path="/inspections" element={<ProtectedPage toast={toast}><AdminReturnInspectionPage notify={notify} /></ProtectedPage>} />
-      <Route path="/notifications" element={<ProtectedPage toast={toast}><AdminNotificationPage notify={notify} /></ProtectedPage>} />
-      <Route path="/contact-requests" element={<ProtectedPage toast={toast}><AdminContactRequestPage notify={notify} /></ProtectedPage>} />
-      <Route path="/fulfillment-refunds" element={<ProtectedPage toast={toast}><AdminFulfillmentRefundPage notify={notify} /></ProtectedPage>} />
+      <Route path="/payments" element={<ProtectedPage toast={toast} permission={P.PAYMENTS_VIEW_STATUS}><AdminPaymentPage notify={notify} /></ProtectedPage>} />
+      <Route path="/payments/:id" element={<ProtectedPage toast={toast} permission={P.PAYMENTS_VIEW_STATUS}><AdminPaymentDetailPage notify={notify} /></ProtectedPage>} />
+      <Route path="/customers" element={<ProtectedPage toast={toast} permission={P.CUSTOMERS_VIEW_OPERATIONAL}><AdminCustomerPage notify={notify} /></ProtectedPage>} />
+      <Route path="/customers/:id" element={<ProtectedPage toast={toast} permission={P.CUSTOMERS_VIEW_OPERATIONAL}><AdminCustomerDetailPage notify={notify} /></ProtectedPage>} />
+      <Route path="/vouchers" element={<ProtectedPage toast={toast} permission={P.CONTENT_MANAGE}><AdminVoucherPage notify={notify} /></ProtectedPage>} />
+      <Route path="/banners" element={<ProtectedPage toast={toast} permission={P.CONTENT_MANAGE}><AdminBannerPage notify={notify} /></ProtectedPage>} />
+      <Route path="/reports" element={<ProtectedPage toast={toast} permission={P.REPORTS_VIEW}><AdminReportPage notify={notify} /></ProtectedPage>} />
+      <Route path="/inspections" element={<ProtectedPage toast={toast} permission={P.INSPECTIONS_CREATE}><AdminReturnInspectionPage notify={notify} /></ProtectedPage>} />
+      <Route path="/inspections/:orderId" element={<ProtectedPage toast={toast} permission={P.INSPECTIONS_CREATE}><AdminReturnInspectionDetailPage notify={notify} /></ProtectedPage>} />
+      <Route path="/notifications" element={<ProtectedPage toast={toast} permission={P.NOTIFICATIONS_SEND_ORDER}><AdminNotificationPage notify={notify} /></ProtectedPage>} />
+      <Route path="/contact-requests" element={<ProtectedPage toast={toast} permission={P.CUSTOMERS_VIEW_OPERATIONAL}><AdminContactRequestPage notify={notify} /></ProtectedPage>} />
+      <Route path="/refunds" element={<ProtectedPage toast={toast} permission={P.REFUNDS_VIEW_SENSITIVE}><AdminFulfillmentRefundPage notify={notify} /></ProtectedPage>} />
+      <Route path="/refunds/:id" element={<ProtectedPage toast={toast} permission={P.REFUNDS_VIEW_SENSITIVE}><AdminRefundDetailPage notify={notify} /></ProtectedPage>} />
+      <Route path="/fulfillment-refunds" element={<Navigate to="/refunds" replace />} />
+      <Route path="/staff" element={<ProtectedPage toast={toast} permission={P.STAFF_MANAGE}><AdminStaffListPage notify={notify} /></ProtectedPage>} />
+      <Route path="/staff/new" element={<ProtectedPage toast={toast} permission={P.STAFF_MANAGE}><AdminStaffCreatePage notify={notify} /></ProtectedPage>} />
+      <Route path="/staff/:id" element={<ProtectedPage toast={toast} permission={P.STAFF_MANAGE}><AdminStaffDetailPage notify={notify} /></ProtectedPage>} />
+      <Route path="/staff/:id/edit" element={<ProtectedPage toast={toast} permission={P.STAFF_MANAGE}><AdminStaffEditPage notify={notify} /></ProtectedPage>} />
+      <Route path="/audit-logs" element={<ProtectedPage toast={toast} permission={P.AUDIT_VIEW}><AdminAuditLogPage /></ProtectedPage>} />
       <Route path="*" element={<FallbackRedirect />} />
     </Routes>
   );

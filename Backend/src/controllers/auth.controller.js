@@ -1,6 +1,7 @@
 import * as authService from "../services/auth.service.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { sendSuccess } from "../utils/apiResponse.js";
+import { requestAuditContext } from "../services/auditLog.service.js";
 
 export const register = asyncHandler(async (req, res) => {
   const data = await authService.register(req.body);
@@ -8,7 +9,7 @@ export const register = asyncHandler(async (req, res) => {
 });
 
 export const login = asyncHandler(async (req, res) => {
-  const data = await authService.login(req.body);
+  const data = await authService.login(req.body, requestAuditContext(req));
   sendSuccess(res, "Đăng nhập thành công.", data);
 });
 
@@ -31,9 +32,18 @@ export const verifyPhoneOtp = asyncHandler(async (req, res) => {
 });
 
 export const logout = asyncHandler(async (_req, res) => {
+  await authService.revokeSessions(_req.user._id);
   sendSuccess(res, "Đăng xuất thành công.");
 });
 
 export const me = asyncHandler(async (req, res) => {
-  sendSuccess(res, "Lấy thông tin tài khoản thành công.", req.user);
+  sendSuccess(res, "Lấy thông tin tài khoản thành công.", authService.publicUser(req.user));
+});
+
+export const changePassword = asyncHandler(async (req, res) => {
+  sendSuccess(
+    res,
+    "Đổi mật khẩu thành công. Vui lòng đăng nhập lại.",
+    await authService.changePassword(req.user._id, req.body, requestAuditContext(req))
+  );
 });

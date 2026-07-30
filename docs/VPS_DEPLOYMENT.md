@@ -1,31 +1,88 @@
 # Deploy ARA lên VPS Ubuntu
 
+Cập nhật lần cuối: **30/07/2026**. Runbook này dùng PM2; checklist release đầy đủ nằm tại [deployment-guide.md](deployment-guide.md).
+
 ## Kiến trúc
 
-Customer Frontend và AdminFrontend chạy trên hai project Vercel. Backend Express chạy trên Ubuntu 24.04 qua PM2, chỉ nghe port nội bộ 4000 và được Nginx reverse proxy. Dữ liệu dùng MongoDB Atlas, ảnh dùng Cloudinary, thanh toán dùng payOS hoặc chuyển khoản thủ công.
+Customer Frontend và AdminFrontend chạy trên hai Vercel projects. Backend Express/Socket.IO chạy trên Ubuntu 24.04 qua PM2, chỉ nghe port nội bộ `4000` và được Nginx reverse proxy. Dữ liệu dùng MongoDB Atlas, ảnh dùng Cloudinary, payment dùng tiền mặt/chuyển khoản thủ công/payOS.
+
+Giữ đúng một Backend instance vì notification scheduler và payOS reconciliation còn chạy trong process.
 
 ## Chuẩn bị VPS
 
-Cài Git, Nginx, Node.js tương thích với project (khuyến nghị Node 22 LTS sau khi kiểm tra build), PM2 và Certbot. Không cài MongoDB trên VPS. Clone repo vào `/var/www/ara` rồi tạo `/var/www/ara/Backend/.env` từ `.env.example`; không commit file này.
+Cài Git, Nginx, Node.js 22 LTS, PM2, Certbot và `pm2-logrotate`. Không cài MongoDB trên VPS.
 
-Các biến production tối thiểu: `NODE_ENV=production`, `HOST=0.0.0.0`, `PORT=4000`, `MONGODB_URI`, `CORS_ORIGINS`, `JWT_SECRET`, `GUEST_ORDER_TOKEN_SECRET`, cấu hình `CLOUDINARY_*`, URL `FRONTEND_URL`/`BACKEND_URL`, và các biến `PAYOS_*` khi `PAYOS_ENABLED=true`. Nhập cấu hình ngân hàng đang sử dụng nếu bật chuyển khoản. Dùng domain thật trong env, không sửa source.
+```bash
+sudo mkdir -p /var/www/ara
+sudo chown "$USER":"$USER" /var/www/ara
+git clone <repository-url> /var/www/ara
+cd /var/www/ara/Backend
+npm ci
+```
 
-Local vẫn chạy bằng `npm run dev` trong từng thư mục. Frontend và AdminFrontend dùng `.env.local` với `VITE_API_BASE_URL=http://localhost:4000/api`; backend dùng `Backend/.env` với các URL localhost trong `.env.example`.
+Tạo `/var/www/ara/Backend/.env` từ `.env.production.example` qua secret manager. Không commit/copy file này vào frontend artifact.
 
-## Cài và chạy backend
+Biến tối thiểu:
+
+- Runtime/Mongo: `NODE_ENV`, `HOST`, `PORT`, `MONGODB_URI`.
+- Security: `JWT_SECRET`, `GUEST_ORDER_TOKEN_SECRET`, `REFUND_ACCOUNT_ENCRYPTION_KEY`, `OTP_SECRET`.
+- URLs/CORS: `CORS_ORIGINS`, `FRONTEND_URL`, `BACKEND_URL`.
+- Media: `CLOUDINARY_*`.
+- Manual bank: `ENABLE_MANUAL_BANK_TRANSFER`, `BANK_*` nếu bật.
+- payOS: `PAYOS_*` nếu `PAYOS_ENABLED=true`.
+
+Luôn đặt:
+
+```env
+NODE_ENV=production
+SEED_DEMO_DATA=false
+DEV_OTP_CODE=
+```
+
+Không lưu `ALLOW_PRODUCTION_RBAC_MIGRATION=true` trong env chạy app.
+
+## Test và migration trước khi start
+
+Trên commit release:
 
 ```bash
 cd /var/www/ara/Backend
-npm ci
 npm test
-npm start
+npm run check
+```
 
+Migration role phải dry-run trước:
+
+```bash
+npm run migrate:admin-roles
+```
+
+Chỉ apply sau backup, staging rehearsal và phê duyệt:
+
+```bash
+ALLOW_PRODUCTION_RBAC_MIGRATION=true npm run migrate:admin-roles:apply
+```
+
+Gỡ biến tạm sau khi lệnh kết thúc. Không chạy seed/migration apply trong PM2 startup.
+
+## Chạy Backend
+
+```bash
+cd /var/www/ara/Backend
 pm2 start ecosystem.config.cjs
 pm2 save
 pm2 startup
 ```
 
-Không mở port 4000 trên firewall công cộng. Kiểm tra nội bộ bằng `curl http://127.0.0.1:4000/api/health`.
+Không mở port 4000 công cộng:
+
+```bash
+curl -fsS http://127.0.0.1:4000/api/health
+pm2 status
+pm2 logs ara-backend --lines 100
+```
+
+Log không được chứa Authorization, cookie, password, OTP, secret, đầy đủ STK hoặc payment callback raw.
 
 ## Nginx và HTTPS
 
@@ -52,24 +109,60 @@ server {
 }
 ```
 
-Lưu site config, chạy `sudo nginx -t`, reload Nginx, rồi cấp HTTPS bằng `sudo certbot --nginx -d api.example.com`. Kiểm tra `curl https://api.example.com/api/health`.
+```bash
+sudo nginx -t
+sudo systemctl reload nginx
+sudo certbot --nginx -d api.example.com
+curl -fsS https://api.example.com/api/health
+```
+
+Kiểm tra HTTPS auto-renew và WebSocket upgrade.
 
 ## Vercel
 
-Tạo hai project với root lần lượt là `Frontend` và `AdminFrontend`. Cả hai nhập `VITE_API_BASE_URL=https://api.example.com/api`. Customer nhập thêm `VITE_ADMIN_URL`; Admin nhập thêm `VITE_CUSTOMER_URL`. Redeploy sau khi đổi env. Các file `vercel.json` xử lý SPA rewrite và không proxy API.
+Tạo project root `Frontend` và `AdminFrontend`.
 
-## Cập nhật và rollback
+- Cả hai: `VITE_API_BASE_URL=https://api.example.com/api`.
+- Customer: `VITE_ADMIN_URL=https://admin.example.com`.
+- Admin: `VITE_CUSTOMER_URL=https://www.example.com`.
+
+Build command `npm run build`, output `dist`. Redeploy sau khi đổi env. Kiểm tra deep link, đặc biệt các trang detail của AdminFrontend.
+
+## payOS
+
+Khi đã bật và URL webhook đúng:
+
+```bash
+cd /var/www/ara/Backend
+npm run payos:webhook
+```
+
+Đây là lệnh một lần có kiểm soát, không chạy mỗi lần restart. Return URL không phải nguồn xác nhận payment.
+
+## Smoke RBAC sau deploy
+
+- Owner login, `/api/auth/me` trả role `owner` và permission đầy đủ.
+- Staff login, dashboard không có doanh thu.
+- Staff bị chặn ở reports/refunds/staff/audit/settings.
+- Staff vẫn xem đơn, payment status và tạo inspection.
+- Block/reset Staff làm token và socket cũ mất hiệu lực.
+- Anonymous/customer không truy cập `/api/admin/*`.
+
+## Cập nhật
 
 ```bash
 cd /var/www/ara
-git pull origin develop
+git fetch origin
+git checkout <reviewed-release-tag-or-commit>
 cd Backend
-npm ci
+npm ci --omit=dev
 npm test
+npm run check
 pm2 restart ara-backend --update-env
-
-pm2 logs ara-backend
-sudo tail -n 200 /var/log/nginx/error.log
 ```
 
-Để rollback, xác định commit ổn định bằng `git log`, checkout commit đó theo quy trình release của đội, chạy lại `npm ci`, `npm test`, rồi `pm2 restart ara-backend --update-env`. Không sửa hoặc xóa dữ liệu Atlas khi rollback code.
+Không dùng `git pull` mù trên production. Không chạy migration chỉ vì deploy code mới.
+
+## Rollback
+
+Checkout release đã xác minh, cài đúng lockfile, chạy test/check và restart PM2. Rollback Vercel bằng deployment trước. Không xóa/sửa dữ liệu Atlas; nếu migration gây lỗi, dùng rollback đã rehearsal hoặc restore snapshot.

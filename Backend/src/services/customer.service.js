@@ -21,15 +21,15 @@ const HOLDING_ORDER_STATUSES = [
   "overdue"
 ];
 
-export async function listCustomers() {
+export async function listCustomers({ includeSensitive = true } = {}) {
   const customers = await User.find({ role: "customer" }).select("-password").sort({ createdAt: -1 }).lean();
-  return Promise.all(customers.map(withCustomerStats));
+  return Promise.all(customers.map((customer) => withCustomerStats(customer, false, includeSensitive)));
 }
 
-export async function getCustomer(id) {
+export async function getCustomer(id, { includeSensitive = true } = {}) {
   const customer = await User.findOne({ _id: id, role: "customer" }).select("-password").lean();
   if (!customer) throw new ApiError(404, "Không tìm thấy khách hàng.");
-  return withCustomerStats(customer, true);
+  return withCustomerStats(customer, true, includeSensitive);
 }
 
 export async function createCustomer(payload) {
@@ -91,18 +91,39 @@ async function assertUniqueCustomer(email, phone, excludeId = null) {
   if (existed) throw new ApiError(400, "Email hoặc số điện thoại đã được sử dụng.");
 }
 
-async function withCustomerStats(customer, includeHistory = false) {
+async function withCustomerStats(customer, includeHistory = false, includeSensitive = true) {
+  const customerView = { ...customer };
+  if (!includeSensitive) delete customerView.defaultRefundDestination;
   const filter = { customerId: customer._id };
   const [orderCount, payments, orders, addresses, refundDestinations] = await Promise.all([
     RentalOrder.countDocuments(filter),
-    Payment.find({ customerId: customer._id, status: "success" }).lean(),
+    includeSensitive ? Payment.find({ customerId: customer._id, status: "success" }).lean() : Promise.resolve([]),
     includeHistory ? RentalOrder.find(filter).sort({ createdAt: -1 }).limit(10).populate({ path: "items", populate: { path: "costumeId" } }).lean() : Promise.resolve([]),
     includeHistory ? CustomerAddress.find({ userId: customer._id }).sort({ isDefault: -1, createdAt: -1 }).lean() : Promise.resolve([]),
-    includeHistory ? RefundDestination.find({ userId: customer._id }).sort({ isDefault: -1, createdAt: -1 }).lean() : Promise.resolve([])
+    includeHistory && includeSensitive ? RefundDestination.find({ userId: customer._id }).sort({ isDefault: -1, createdAt: -1 }).lean() : Promise.resolve([])
   ]);
   const totalSpent = payments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
   const safeDestinations = refundDestinations.map(item => ({ _id: item._id, type: item.type, label: item.label, bankCode: item.bankCode, bankName: item.bankName, accountHolderName: item.accountHolderName, maskedAccountNumber: item.accountNumberLast4 ? `******${item.accountNumberLast4}` : "", qrAsset: item.type === "vietqr_image" ? item.qrAsset : undefined, isDefault: item.isDefault, isEnabled: item.isEnabled }));
-  return { ...customer, orderCount, totalSpent, orders, addresses, refundDestinations: safeDestinations };
+  const operationalOrders = includeSensitive ? orders : orders.map((order) => ({
+    _id: order._id,
+    orderCode: order.orderCode,
+    status: order.status,
+    rentalDate: order.rentalDate,
+    returnDate: order.returnDate,
+    createdAt: order.createdAt,
+    items: (order.items || []).map((item) => ({
+      _id: item._id,
+      quantity: item.quantity,
+      costumeId: item.costumeId ? { _id: item.costumeId._id, name: item.costumeId.name, images: item.costumeId.images } : null
+    }))
+  }));
+  return {
+    ...customerView,
+    orderCount,
+    orders: operationalOrders,
+    addresses,
+    ...(includeSensitive ? { totalSpent, refundDestinations: safeDestinations } : {})
+  };
 }
 function parseDate(value, fieldName) {
   if (!value) {

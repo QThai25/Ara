@@ -16,6 +16,7 @@ export const statusLabels = {
   repairing: "Đang bảo trì",
   hidden: "Đã ẩn",
   pending: "Chờ xác nhận",
+  pending_payment: "Chờ thanh toán",
   pending_confirmation: "Chờ xác nhận",
   confirmed: "Đã xác nhận",
   deposited: "Đã đặt cọc",
@@ -35,6 +36,9 @@ export const statusLabels = {
   ready: "Sẵn sàng nhận đồ",
   ready_to_pickup: "Sẵn sàng nhận đồ",
   ready_for_pickup: "Sẵn sàng nhận đồ",
+  ready_for_handover: "Sẵn sàng bàn giao",
+  outbound_in_transit: "Đang giao tới khách",
+  return_in_transit: "Đang vận chuyển về shop",
   renting: "Đang thuê",
   returned: "Đã trả đồ",
   completed: "Hoàn tất",
@@ -48,10 +52,12 @@ export const statusLabels = {
 };
 
 export const statusAliases = {
+  pending_payment: "pending",
   pending_confirmation: "pending",
   deposited: "deposit_paid",
   ready: "ready_to_pickup",
   ready_for_pickup: "ready_to_pickup",
+  ready_for_handover: "ready_to_pickup",
   cancelled: "canceled",
   rejected: "canceled",
   washing: "laundry",

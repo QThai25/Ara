@@ -1,39 +1,43 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { io } from "socket.io-client";
-import { BarChart3, Bell, Boxes, ChevronDown, ChevronLeft, CreditCard, Gift, Image, LayoutDashboard, Menu, MessageSquareText, PackageCheck, Shirt, Sparkles, Tags, Users, X, Truck } from "lucide-react";
+import { BarChart3, Bell, Boxes, ChevronDown, ChevronLeft, CreditCard, Gift, Image, LayoutDashboard, Menu, MessageSquareText, PackageCheck, ScrollText, Shirt, Sparkles, Tags, UserCog, Users, X, WalletCards } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
 import { AdminNotificationBell } from "../components/common/AdminNotificationBell.jsx";
 import { listChatConversations } from "../services/chatService.js";
+import { ADMIN_PERMISSIONS as P, hasPermission } from "../constants/adminPermissions.js";
 
 const navItems = [
-  { to: "/dashboard", label: "Tổng quan", icon: LayoutDashboard, end: true },
-  { to: "/costumes", label: "Trang phục", icon: Shirt },
-  { to: "/brands", label: "Thương hiệu", icon: Tags },
-  { to: "/categories", label: "Danh mục", icon: Tags },
-  { to: "/occasions", label: "Dịp mặc", icon: Tags },
-  { to: "/styles", label: "Phong cách", icon: Sparkles },
-  { to: "/orders", label: "Đơn thuê", icon: PackageCheck },
-  { to: "/payments", label: "Thanh toán", icon: CreditCard },
-  { to: "/fulfillment-refunds", label: "Vận chuyển & hoàn cọc", icon: Truck },
-  { to: "/notifications", label: "Thông báo", icon: Bell },
-  { to: "/contact-requests", label: "Yêu cầu tư vấn", icon: MessageSquareText },
-  { to: "/customers", label: "Khách hàng", icon: Users },
-  { to: "/vouchers", label: "Voucher", icon: Gift },
-  { to: "/banners", label: "Banner", icon: Image },
-  { to: "/reports", label: "Báo cáo", icon: BarChart3 },
-  { to: "/inspections", label: "Kiểm tra trả đồ", icon: Boxes }
+  { to: "/dashboard", label: "Tổng quan", icon: LayoutDashboard, end: true, permission: P.DASHBOARD_VIEW_OPERATIONAL },
+  { to: "/orders", label: "Đơn thuê", icon: PackageCheck, permission: P.ORDERS_VIEW },
+  { to: "/payments", label: "Thanh toán", icon: CreditCard, permission: P.PAYMENTS_VIEW_STATUS },
+  { to: "/refunds", label: "Hoàn cọc", icon: WalletCards, permission: P.REFUNDS_VIEW_SENSITIVE },
+  { to: "/notifications", label: "Thông báo", icon: Bell, permission: P.NOTIFICATIONS_SEND_ORDER },
+  { to: "/inspections", label: "Kiểm tra trả đồ", icon: Boxes, permission: P.INSPECTIONS_CREATE },
+  { to: "/costumes", label: "Trang phục", icon: Shirt, permission: P.INVENTORY_VIEW },
+  { to: "/brands", label: "Thương hiệu", icon: Tags, permission: P.CATALOG_MANAGE },
+  { to: "/categories", label: "Danh mục", icon: Tags, permission: P.CATALOG_MANAGE },
+  { to: "/occasions", label: "Dịp mặc", icon: Tags, permission: P.CATALOG_MANAGE },
+  { to: "/styles", label: "Phong cách", icon: Sparkles, permission: P.CATALOG_MANAGE },
+  { to: "/contact-requests", label: "Yêu cầu tư vấn", icon: MessageSquareText, permission: P.CUSTOMERS_VIEW_OPERATIONAL },
+  { to: "/customers", label: "Khách hàng", icon: Users, permission: P.CUSTOMERS_VIEW_OPERATIONAL },
+  { to: "/vouchers", label: "Voucher", icon: Gift, permission: P.CONTENT_MANAGE },
+  { to: "/banners", label: "Banner", icon: Image, permission: P.CONTENT_MANAGE },
+  { to: "/reports", label: "Báo cáo", icon: BarChart3, permission: P.REPORTS_VIEW },
+  { to: "/staff", label: "Nhân viên", icon: UserCog, permission: P.STAFF_MANAGE },
+  { to: "/audit-logs", label: "Nhật ký hoạt động", icon: ScrollText, permission: P.AUDIT_VIEW }
 ];
 
 const navGroups = [
   { id: "overview", label: "Tổng quan", items: navItems.slice(0, 1) },
-  { id: "operations", label: "Vận hành", items: [...navItems.slice(6, 10), navItems[15]] },
-  { id: "catalog", label: "Kho & danh mục", items: navItems.slice(1, 6) },
-  { id: "customers", label: "Khách hàng & nội dung", items: navItems.slice(10, 14) },
-  { id: "analytics", label: "Phân tích", items: navItems.slice(14, 15) }
+  { id: "operations", label: "Vận hành", items: navItems.slice(1, 6) },
+  { id: "catalog", label: "Kho & danh mục", items: navItems.slice(6, 11) },
+  { id: "customers", label: "Khách hàng & nội dung", items: navItems.slice(11, 15) },
+  { id: "analytics", label: "Phân tích", items: navItems.slice(15, 16) },
+  { id: "system", label: "Hệ thống", items: navItems.slice(16) }
 ];
 
-function groupForPath(pathname) {
-  return navGroups.find((group) => group.items.some((item) => item.end ? pathname === item.to : pathname.startsWith(item.to)))?.id;
+function groupForPath(pathname, groups = navGroups) {
+  return groups.find((group) => group.items.some((item) => item.end ? pathname === item.to : pathname.startsWith(item.to)))?.id;
 }
 
 export function AdminLayout({ user, logout, toast, children }) {
@@ -41,13 +45,17 @@ export function AdminLayout({ user, logout, toast, children }) {
   const [collapsed, setCollapsed] = useState(false);
   const [waitingChats, setWaitingChats] = useState(0);
   const location = useLocation();
+  const availableGroups = useMemo(() => navGroups
+    .map((group) => ({ ...group, items: group.items.filter((item) => hasPermission(user, item.permission)) }))
+    .filter((group) => group.items.length), [user]);
+  const visibleItems = useMemo(() => availableGroups.flatMap((group) => group.items), [availableGroups]);
   const [expandedGroups, setExpandedGroups] = useState(() => new Set([groupForPath(location.pathname) || "overview"]));
-  const activeItem = [...navItems].reverse().find((item) => item.end ? location.pathname === item.to : location.pathname.startsWith(item.to));
+  const activeItem = [...visibleItems].reverse().find((item) => item.end ? location.pathname === item.to : location.pathname.startsWith(item.to));
 
   useEffect(() => {
-    const activeGroup = groupForPath(location.pathname);
+    const activeGroup = groupForPath(location.pathname, availableGroups);
     if (activeGroup) setExpandedGroups(new Set([activeGroup]));
-  }, [location.pathname]);
+  }, [availableGroups, location.pathname]);
 
   const toggleGroup = (groupId) => {
     setExpandedGroups((current) => {
@@ -56,6 +64,7 @@ export function AdminLayout({ user, logout, toast, children }) {
   };
 
   useEffect(() => {
+    if (!hasPermission(user, P.NOTIFICATIONS_SEND_ORDER)) return undefined;
     let active = true;
     const refresh = () => listChatConversations({ status: "waiting_admin" })
       .then((items) => { if (active) setWaitingChats((items || []).length); })
@@ -72,7 +81,7 @@ export function AdminLayout({ user, logout, toast, children }) {
       window.clearInterval(timer);
       socket.disconnect();
     };
-  }, []);
+  }, [user]);
 
   return (
     <div className={`admin-shell ${collapsed ? "collapsed" : ""}`}>
@@ -83,7 +92,7 @@ export function AdminLayout({ user, logout, toast, children }) {
         </div>
         <button className="admin-collapse-btn" onClick={() => setCollapsed((value) => !value)}><ChevronLeft size={17} /></button>
         <nav aria-label="Điều hướng quản trị">
-          {navGroups.map((group) => {
+          {availableGroups.map((group) => {
             const expanded = expandedGroups.has(group.id) || collapsed;
             const containsActiveItem = group.items.some((item) => item.end ? location.pathname === item.to : location.pathname.startsWith(item.to));
             return (
@@ -140,6 +149,7 @@ export function AdminLayout({ user, logout, toast, children }) {
             >
               Đăng xuất
             </button>
+            <span className="admin-user-role">{user?.roleDisplayName || (user?.role === "staff" ? "Nhân viên" : "Chủ tiệm")}</span>
           </div>
         </header>
 

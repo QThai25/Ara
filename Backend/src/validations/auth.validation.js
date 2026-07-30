@@ -27,3 +27,8 @@ export const verifyPhoneOtpValidation = [
   body("otp").notEmpty().withMessage("Vui lòng nhập mã OTP."),
   body("purpose").optional().isIn(["login", "order_lookup"]).withMessage("Mục đích OTP không hợp lệ.")
 ];
+
+export const changePasswordValidation = [
+  body("currentPassword").notEmpty().withMessage("Vui lòng nhập mật khẩu hiện tại."),
+  body("newPassword").isLength({ min: 8, max: 128 }).withMessage("Mật khẩu mới phải có từ 8 đến 128 ký tự.")
+];

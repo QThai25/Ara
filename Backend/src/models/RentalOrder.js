@@ -5,8 +5,8 @@ const rentalOrderSchema = new mongoose.Schema(
     // Optional only for legacy documents until the backfill has run. Every new
     // order is still required by the creation service to receive a unique code.
     orderCode: { type: String, unique: true, sparse: true, index: true, trim: true, uppercase: true },
-    paymentPreference: { type: String, enum: ["cash", "bank_transfer", "payos"], default: "bank_transfer" },
-    paymentMethod: { type: String, enum: ["cash", "bank_transfer", "payos"], default: "bank_transfer", index: true },
+    paymentPreference: { type: String, enum: ["cash", "bank_transfer", "payos", "payos_qr"], default: "bank_transfer" },
+    paymentMethod: { type: String, enum: ["cash", "bank_transfer", "payos", "payos_qr"], default: "bank_transfer", index: true },
     approvalMode: { type: String, enum: ["automatic", "manual"], default: "automatic" },
     customerId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -61,16 +61,17 @@ const rentalOrderSchema = new mongoose.Schema(
       method: { type: String, enum: ["store_pickup", "delivery_store_return", "two_way_delivery"], default: "store_pickup" },
       receiverSnapshot: { fullName: { type: String, default: "" }, phone: { type: String, default: "" } },
       deliveryAddressSnapshot: { addressLine: { type: String, default: "" }, wardCode: String, wardName: String, districtCode: String, districtName: String, provinceCode: String, provinceName: String, note: String },
+      collectionAddressSnapshot: { addressLine: { type: String, default: "" }, wardCode: String, wardName: String, districtCode: String, districtName: String, provinceCode: String, provinceName: String, note: String },
       outbound: {
         scheduledFrom: Date, scheduledTo: Date, fee: { type: Number, min: 0, default: 0 },
         status: { type: String, enum: ["not_required","pending","scheduled","preparing","out_for_delivery","delivered","failed","canceled"], default: "not_required" },
-        provider: String, trackingCode: String, driverName: String, driverPhone: String, startedAt: Date, deliveredAt: Date, failedAt: Date, failureReason: String,
+        provider: String, carrierName: String, trackingCode: String, driverName: String, driverPhone: String, carrierPhone: String, handedToCarrierAt: Date, startedAt: Date, deliveredAt: Date, confirmedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null }, failedAt: Date, failureReason: String,
         proofImages: [{ type: String }], note: String
       },
       returnTrip: {
         scheduledFrom: Date, scheduledTo: Date, fee: { type: Number, min: 0, default: 0 },
         status: { type: String, enum: ["not_required","pending","scheduled","awaiting_pickup","picking_up","received","failed","canceled"], default: "not_required" },
-        provider: String, trackingCode: String, driverName: String, driverPhone: String, startedAt: Date, receivedAt: Date, failedAt: Date, failureReason: String,
+        provider: String, carrierName: String, trackingCode: String, driverName: String, driverPhone: String, carrierPhone: String, customerHandedOverAt: Date, startedAt: Date, receivedByShopAt: Date, receivedAt: Date, confirmedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null }, failedAt: Date, failureReason: String,
         proofImages: [{ type: String }], note: String
       },
       totalFee: { type: Number, min: 0, default: 0 }
@@ -129,10 +130,14 @@ const rentalOrderSchema = new mongoose.Schema(
     collectionAt: { type: Date, default: null },
     expectedReturnedToStoreAt: { type: Date, default: null },
     actualRentalStartAt: { type: Date, default: null },
+    rentalStartedAt: { type: Date, default: null },
+    rentalDueAt: { type: Date, default: null },
     actualDeliveryAt: { type: Date, default: null },
     actualCollectionAt: { type: Date, default: null },
     actualReturnedToStoreAt: { type: Date, default: null },
     billableRentalEndAt: { type: Date, default: null },
+    needsDeliveryReview: { type: Boolean, default: false, index: true },
+    needsFinancialReview: { type: Boolean, default: false, index: true },
     blockedStartAt: { type: Date, default: null, index: true },
     blockedEndAt: { type: Date, default: null, index: true },
     preparationMinutes: { type: Number, min: 0, default: 30 },
@@ -203,12 +208,19 @@ const rentalOrderSchema = new mongoose.Schema(
       enum: [
         "pending",
         "pending_confirmation",
+        "pending_payment",
         "confirmed",
+        "preparing",
         "deposit_paid",
         "deposited",
         "paid",
         "ready_to_pickup",
         "ready_for_pickup",
+        "ready_for_handover",
+        "outbound_in_transit",
+        "return_in_transit",
+        "delivery_failed",
+        "returning_to_shop",
         "renting",
         "returned",
         "completed",
@@ -349,6 +361,9 @@ const rentalOrderSchema = new mongoose.Schema(
       ref: "Payment",
       default: null
     },
+    refundDestinationSnapshot: { type: mongoose.Schema.Types.Mixed, default: null },
+    refundDestinationAudit: [{ actorId: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null }, role: String, action: String, source: String, before: mongoose.Schema.Types.Mixed, after: mongoose.Schema.Types.Mixed, timestamp: { type: Date, default: Date.now } }],
+    needsRefundInformation: { type: Boolean, default: false, index: true },
 
     note: {
       type: String,
@@ -466,13 +481,13 @@ rentalOrderSchema.index({
   status: 1
 });
 
-rentalOrderSchema.set("toJSON", {
-  virtuals: true
-});
-
-rentalOrderSchema.set("toObject", {
-  virtuals: true
-});
+function hideRefundAccount(_doc, value) {
+  const snapshot = value.refundDestinationSnapshot;
+  if (snapshot) value.refundDestinationSnapshot = { ...snapshot, accountNumber: undefined, encryptedAccountNumber: undefined, maskedAccountNumber: snapshot.maskedAccountNumber || `••••••${snapshot.accountNumberLast4 || String(snapshot.accountNumber || "").slice(-4)}` };
+  return value;
+}
+rentalOrderSchema.set("toJSON", { virtuals: true, transform: hideRefundAccount });
+rentalOrderSchema.set("toObject", { virtuals: true, transform: hideRefundAccount });
 
 export const RentalOrder = mongoose.model(
   "RentalOrder",

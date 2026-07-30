@@ -36,3 +36,7 @@ export const handleOrderPickupIssue = (id, issueId, payload) => apiClient.patch(
 export const settleOrderDeposit = (id, payload) => apiClient.post(`/admin/rental-orders/${id}/settlement`, payload);
 export const markImmediateReturn = id => apiClient.patch(`/admin/rental-orders/${id}/immediate-return`);
 export const collectCashAndPickup = id => apiClient.post(`/admin/rental-orders/${id}/collect-cash-and-pickup`);
+export const dispatchHomeDelivery = (id, payload = {}) => apiClient.post(`/admin/rental-orders/${id}/dispatch-home-delivery`, payload);
+export const confirmCustomerReceived = (id, payload = {}) => apiClient.post(`/admin/rental-orders/${id}/confirm-customer-received`, payload);
+export const markCustomerReturnHandover = (id, payload = {}) => apiClient.post(`/admin/rental-orders/${id}/customer-return-handover`, payload);
+export const confirmReturnReceivedByShop = (id, payload = {}) => apiClient.post(`/admin/rental-orders/${id}/confirm-return-received`, payload);

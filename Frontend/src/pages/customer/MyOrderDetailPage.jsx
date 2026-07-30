@@ -4,7 +4,11 @@ import {
   Copy,
   CreditCard,
   Landmark,
+  Phone,
+  QrCode,
   ReceiptText,
+  ShieldCheck,
+  UploadCloud,
   Wallet,
   X
 } from "lucide-react";
@@ -22,15 +26,17 @@ import {
 
 import { OrderDetail } from "../../components/common/OrderDetail.jsx";
 import { PickupIssueForm } from "../../components/common/PickupIssueForm.jsx";
+import { RefundDestinationForm } from "../../components/customer/RefundDestinationForm.jsx";
 import { StateMessage } from "../../components/common/StateMessage.jsx";
 import {
   cancelRentalOrder,
   getMyRentalOrder
-  ,getOrderRefund
+  ,getOrderRefund,
+  selectOrderRefundDestination
 } from "../../services/rentalOrderService.js";
+import { listRefundDestinations } from "../../services/accountService.js";
 import {
   cancelPayment,
-  changeOrderPaymentPreference,
   createPayment,
   getMyPayments,
   getPaymentQuote,
@@ -69,6 +75,7 @@ const PAYMENT_METHOD_LABELS = {
   momo: "MoMo",
   vnpay: "VNPay",
   payos: "QR ngân hàng",
+  payos_qr: "QR PayOS",
   bank_gateway: "Cổng ngân hàng"
 };
 
@@ -104,14 +111,16 @@ const PAYMENT_METHODS = [
     title: "Chuyển khoản ngân hàng",
     description:
       "Nhận đúng số tiền, tài khoản và nội dung chuyển khoản từ hệ thống.",
+    badge: "ARA xác nhận",
     icon: Landmark
   },
   {
     channel: "online",
-    method: "payos",
-    title: "QR ngân hàng",
-    description: "Quét VietQR và tự động xác nhận thanh toán",
-    icon: Landmark
+    method: "payos_qr",
+    title: "QR PayOS",
+    description: "Quét VietQR PayOS và tự động xác nhận thanh toán",
+    badge: "Xác nhận tự động",
+    icon: QrCode
   }
 ];
 
@@ -172,10 +181,14 @@ export function MyOrderDetailPage({
     setPaymentDraft
   ] = useState(null);
   const [selectedPayment, setSelectedPayment] = useState(null);
+  const [standaloneRefundForm, setStandaloneRefundForm] = useState(null);
+  const [openingPayment, setOpeningPayment] = useState(false);
   const [refund,setRefund]=useState(null);
   const [paymentNow, setPaymentNow] = useState(Date.now());
+  const [transferProof, setTransferProof] = useState(null);
 
   const requestRef = useRef(0);
+  const openingPaymentRef = useRef(false);
 
   const load = async (signal, { silent = false } = {}) => {
     const requestId =
@@ -342,7 +355,7 @@ export function MyOrderDetailPage({
   useEffect(() => {
     const payment = paymentDraft?.createdPayment;
     const paymentId = payment?.id || payment?._id;
-    if (!paymentId || payment?.method !== "payos" || !["pending", "awaiting_payment"].includes(payment?.status)) return undefined;
+    if (!paymentId || !["payos", "payos_qr"].includes(payment?.method) || !["pending", "awaiting_payment"].includes(payment?.status)) return undefined;
     let stopped = false;
     let timer;
     const check = async () => {
@@ -398,11 +411,14 @@ export function MyOrderDetailPage({
     }
   };
 
-  const openPaymentModal = (
+  const openPaymentModal = async (
     targetOrder,
     paymentType,
     quote
   ) => {
+    if (openingPaymentRef.current || submittingPayment) return;
+    openingPaymentRef.current = true;
+    setOpeningPayment(true);
     const firstAvailableMethod =
       PAYMENT_METHODS.find(
         (option) =>
@@ -413,6 +429,11 @@ export function MyOrderDetailPage({
           )
       ) || null;
 
+    let refundDestinations = [];
+    if (Number(targetOrder?.totalDepositAmount || targetOrder?.depositAmount || 0) > 0) {
+      try { refundDestinations = await listRefundDestinations(); } catch { refundDestinations = []; }
+    }
+    const defaultDestination = refundDestinations.find((item) => item.isDefault && item.isEnabled) || refundDestinations.find((item) => item.isEnabled) || null;
     setPaymentDraft({
       order: targetOrder,
       paymentType,
@@ -422,7 +443,22 @@ export function MyOrderDetailPage({
       idempotencyKey:
         newIdempotencyKey(),
       createdPayment: null
+      ,step: 1,
+      refundDestinations,
+      selectedRefundDestination: defaultDestination,
+      refundFormType: null
     });
+    openingPaymentRef.current = false;
+    setOpeningPayment(false);
+  };
+
+  const saveLegacyRefundDestination = async (destination) => {
+    const destinationId = destination?.id || destination?._id;
+    const orderId = order?.id || order?._id;
+    if (!destinationId || !orderId) throw new Error("Không thể xác định tài khoản nhận hoàn cọc.");
+    await selectOrderRefundDestination(orderId, destinationId);
+    setStandaloneRefundForm(null);
+    await load(undefined, { silent: true });
   };
 
   const closePaymentModal = () => {
@@ -435,7 +471,7 @@ export function MyOrderDetailPage({
 
   const resumePendingPayment = async (targetOrder) => {
     const pendingPayment = payments.find((payment) =>
-      ["payos", "bank_transfer"].includes(payment.method) &&
+      ["payos", "payos_qr", "bank_transfer"].includes(payment.method) &&
       ["pending", "awaiting_payment", "awaiting_confirmation"].includes(payment.status)
     );
 
@@ -508,23 +544,6 @@ export function MyOrderDetailPage({
     }
   };
 
-  const switchToCash = async () => {
-    const orderId = paymentDraft?.order?.id || paymentDraft?.order?._id;
-    if (!orderId || submittingPayment) return;
-    try {
-      setSubmittingPayment(true);
-      await changeOrderPaymentPreference(orderId, "cash");
-      setPaymentDraft(null);
-      await load();
-      notify?.("Đã chuyển sang thanh toán tiền mặt khi nhận đồ.", "success");
-    } catch (err) {
-      await load();
-      notify?.(err.message || "Không thể chuyển sang thanh toán tiền mặt.", "error");
-    } finally {
-      setSubmittingPayment(false);
-    }
-  };
-
   const methodEnabled = (
     option
   ) => {
@@ -548,6 +567,33 @@ export function MyOrderDetailPage({
         selectedMethod: option
       })
     );
+  };
+
+  const requiresRefundDestination = Number(paymentDraft?.order?.totalDepositAmount || paymentDraft?.order?.depositAmount || 0) > 0;
+
+  const continuePaymentFlow = () => {
+    if (!paymentDraft?.selectedMethod) return;
+    if (requiresRefundDestination) setPaymentDraft((current) => ({ ...current, step: 2 }));
+    else void submitPayment();
+  };
+
+  const confirmRefundDestination = async () => {
+    const destination = paymentDraft?.selectedRefundDestination;
+    const orderId = paymentDraft?.order?.id || paymentDraft?.order?._id;
+    if (!destination || !orderId || submittingPayment) return;
+    try {
+      setSubmittingPayment(true);
+      await selectOrderRefundDestination(orderId, destination.id || destination._id);
+      setPaymentDraft((current) => ({ ...current, step: 3 }));
+    } catch (error) {
+      notify?.(error.message || "Không thể xác nhận tài khoản nhận hoàn cọc.", "error");
+    } finally { setSubmittingPayment(false); }
+  };
+
+  const reloadRefundDestinations = async () => {
+    const destinations = await listRefundDestinations();
+    const selected = destinations.find((item) => item.isDefault && item.isEnabled) || destinations.find((item) => item.isEnabled) || null;
+    setPaymentDraft((current) => ({ ...current, refundDestinations: destinations, selectedRefundDestination: selected, refundFormType: null }));
   };
 
   const submitPayment =
@@ -691,10 +737,13 @@ export function MyOrderDetailPage({
               paymentQuotes={
                 paymentQuotes
               }
+              payments={payments}
+              paymentActionPending={submittingPayment || openingPayment}
+              onAddRefundDestination={() => setStandaloneRefundForm("choice")}
             />
 
             <section className="panel ara-order-note-card"><span className="ara-order-note-card__eyebrow">ARA CARE GUIDE</span><h2>Hướng dẫn sử dụng và hoàn trả</h2><div className="ara-order-note-card__grid"><p><strong>01 · Chăm sóc trang phục</strong>Tuyệt đối không ủi bằng bàn ủi thường. Chỉ dùng bàn ủi hơi nước ở chế độ nhẹ; tránh làm cháy, khét hoặc hỏng chất liệu cao cấp.</p><p><strong>02 · Khi hoàn trả</strong>Trang phục cần khô ráo, đúng hạn và đầy đủ phụ kiện, túi bọc, box/hộp đi kèm.</p></div></section>
-            <section className="panel ara-order-deposit-card"><header><div><span className="ara-order-note-card__eyebrow">DEPOSIT & DELIVERY</span><h2>Cọc và vận chuyển</h2></div><strong className="ara-order-deposit-card__amount">{money(order.totalDepositAmount || order.deposit?.amount || 0)}</strong></header><div className="ara-order-deposit-card__stats"><div><span>Tiền cọc yêu cầu</span><strong>{money(order.totalDepositAmount || 0)}</strong></div><div><span>Tiền cọc đã nhận</span><strong>{money(order.deposit?.amount || 0)}</strong></div><div><span>Hình thức</span><strong>{order.deposit?.method || "Chờ thanh toán"}</strong></div><div><span>Tổng vận chuyển</span><strong>{money(order.shipping?.totalFee || 0)}</strong></div></div><footer><span>Giao đồ {money(order.shipping?.outboundFee || 0)}</span><span>Nhận trả {money(order.shipping?.returnFee || 0)}</span><span>Chính sách {order.policyVersion || "Chưa ghi nhận"}</span></footer></section>
+            <section className="panel ara-order-deposit-card"><header><div><span className="ara-order-note-card__eyebrow">DEPOSIT & DELIVERY</span><h2>Cọc và giao nhận</h2></div><strong className="ara-order-deposit-card__amount">{money(order.totalDepositAmount || order.deposit?.amount || 0)}</strong></header><div className="ara-order-deposit-card__stats"><div><span>Tiền cọc yêu cầu</span><strong>{money(order.totalDepositAmount || 0)}</strong></div><div><span>Tiền cọc đã nhận</span><strong>{money(order.financialSnapshot?.depositAmountCollected || order.deposit?.amount || 0)}</strong></div><div><span>Hình thức</span><strong>{order.deposit?.method || "Chờ thanh toán"}</strong></div><div><span>Phí giao/nhận</span><strong>Trả trực tiếp cho shipper</strong></div></div><footer><span>Phí ship không nằm trong tổng đơn</span><span>Chỉ hỗ trợ giao/nhận tại TP.HCM</span><span>Chính sách {order.policyVersion || "Chưa ghi nhận"}</span></footer></section>
             <section className="panel ara-fulfillment-detail">
               <header className="ara-fulfillment-detail__header">
                 <div>
@@ -735,6 +784,16 @@ export function MyOrderDetailPage({
                   {REFUND_STATUS_LABELS[refund?.status] || "Không phát sinh"}
                 </strong>
               </footer>
+              <div className="ara-fulfillment-detail__refund-help">
+                <div>
+                  <strong>Đã gửi mã QR hoặc thông tin nhận hoàn tiền qua kênh khác?</strong>
+                  <span>Gọi ARA và cung cấp mã đơn để cửa hàng kiểm tra đúng thông tin trước khi hoàn cọc.</span>
+                </div>
+                <a href="tel:0364019798" aria-label="Gọi ARA qua số 036 401 9798 để hỗ trợ hoàn cọc">
+                  <Phone size={17} />
+                  <span>036 401 9798</span>
+                </a>
+              </div>
             </section>
             <PickupIssueForm order={order} notify={notify} />
 
@@ -890,6 +949,9 @@ export function MyOrderDetailPage({
           </>
         )}
 
+      {standaloneRefundForm === "choice" && <div className="ara-payment-backdrop" onMouseDown={() => setStandaloneRefundForm(null)}><div className="ara-refund-choice-dialog" role="dialog" aria-modal="true" aria-labelledby="refund-choice-title" onMouseDown={event => event.stopPropagation()}><button className="ara-refund-dialog-close" type="button" aria-label="Đóng" onClick={() => setStandaloneRefundForm(null)}><X size={19}/></button><h2 id="refund-choice-title">Bổ sung tài khoản nhận hoàn cọc</h2><p>Chọn cách thuận tiện nhất. Đây không phải thông tin dùng để thanh toán đơn thuê.</p><div><button type="button" onClick={() => setStandaloneRefundForm("bank_account")}><Landmark size={20}/><span><strong>Nhập tài khoản ngân hàng</strong><small>Chọn ngân hàng và nhập số tài khoản</small></span></button><button type="button" onClick={() => setStandaloneRefundForm("vietqr_image")}><CreditCard size={20}/><span><strong>Tải mã VietQR nhận tiền</strong><small>ARA đọc thông tin từ QR của bạn</small></span></button></div></div></div>}
+      {["bank_account", "vietqr_image"].includes(standaloneRefundForm) && <RefundDestinationForm type={standaloneRefundForm} notify={notify} onSaved={saveLegacyRefundDestination} onClose={() => setStandaloneRefundForm(null)}/>}
+
       {paymentDraft && (
         <div
           className="ara-payment-backdrop"
@@ -955,8 +1017,18 @@ export function MyOrderDetailPage({
               </button>
             </div>
 
+            {!created && <div className="ara-payment-flow-progress" aria-label="Tiến trình thanh toán">
+              {["Phương thức", "Nhận hoàn cọc", "Xác nhận"].map((label, index) => {
+                const stepNumber = index + 1;
+                const activeStep = Number(paymentDraft.step || 1);
+                return <div key={label} className={stepNumber < activeStep ? "is-done" : stepNumber === activeStep ? "is-active" : ""}><span>{stepNumber < activeStep ? <Check size={14}/> : stepNumber}</span><small>{label}</small></div>;
+              })}
+            </div>}
+
             {!created ? (
               <>
+              {paymentDraft.step === 1 ? <>
+                <div className="ara-payment-step-intro"><div><span>01</span><div><strong>Bạn muốn thanh toán bằng cách nào?</strong><small>Cả hai phương thức đều dùng số tiền do ARA xác nhận, không cần tự nhập.</small></div></div><ShieldCheck size={22}/></div>
                 <div className="ara-payment-options">
                   {PAYMENT_METHODS.map(
                     (option) => {
@@ -1000,6 +1072,7 @@ export function MyOrderDetailPage({
                           </span>
 
                           <span className="ara-payment-option__content">
+                            <em>{option.badge}</em>
                             <strong>
                               {
                                 option.title
@@ -1008,7 +1081,7 @@ export function MyOrderDetailPage({
 
                             <small>
                               {!enabled
-                                ? option.method === "payos" ? "Chưa khả dụng · Phương thức chưa được cấu hình." : option.method === "bank_transfer" ? "Cửa hàng chưa cấu hình tài khoản" : "Chưa khả dụng"
+                                ? option.method === "payos_qr" ? "Chưa khả dụng · Phương thức chưa được cấu hình." : option.method === "bank_transfer" ? "Cửa hàng chưa cấu hình tài khoản" : "Chưa khả dụng"
                                 : option.description}
                             </small>
                           </span>
@@ -1045,9 +1118,7 @@ export function MyOrderDetailPage({
 
                   <button
                     type="button"
-                    onClick={
-                      submitPayment
-                    }
+                    onClick={continuePaymentFlow}
                     disabled={
                       !paymentDraft
                         .selectedMethod ||
@@ -1055,10 +1126,26 @@ export function MyOrderDetailPage({
                     }
                   >
                     {submittingPayment
-                      ? "Đang tạo..."
-                      : "Xác nhận tạo thanh toán"}
+                      ? "Đang xử lý..."
+                      : "Tiếp tục"}
                   </button>
                 </div>
+              </> : paymentDraft.step === 2 ? <section className="ara-refund-checkout-step">
+                <header><span className="ara-refund-step-icon"><ShieldCheck size={22}/></span><div><h3>Tài khoản nhận hoàn cọc</h3><p>ARA sẽ hoàn tiền cọc vào tài khoản này sau khi nhận và kiểm tra đồ. Đây không phải tài khoản dùng để thanh toán đơn hàng.</p></div></header>
+                {paymentDraft.refundFormType ? <RefundDestinationForm type={paymentDraft.refundFormType} notify={notify} onSaved={reloadRefundDestinations} onClose={() => setPaymentDraft((current) => ({ ...current, refundFormType: null }))}/> : <>
+                  <div className="ara-refund-destination-choices">
+                    {(paymentDraft.refundDestinations || []).filter((item) => item.isEnabled).map((item) => <button key={item.id || item._id} type="button" className={paymentDraft.selectedRefundDestination === item ? "is-selected" : ""} onClick={() => setPaymentDraft((current) => ({ ...current, selectedRefundDestination: item }))}>
+                      <strong>{item.bankName}</strong><span>{item.maskedAccountNumber}</span><small>{item.accountHolderName}</small>
+                    </button>)}
+                  </div>
+                  <div className="ara-refund-input-methods"><button type="button" onClick={() => setPaymentDraft((current) => ({ ...current, refundFormType: "bank_account" }))}><span><Landmark size={22}/></span><div><strong>Nhập tài khoản ngân hàng</strong><small>Chọn ngân hàng, nhập số tài khoản và tên người nhận</small></div></button><button type="button" onClick={() => setPaymentDraft((current) => ({ ...current, refundFormType: "vietqr_image" }))}><span><QrCode size={22}/></span><div><strong>Tải VietQR nhận tiền</strong><small>Đọc nhanh tài khoản từ QR trong ứng dụng ngân hàng</small></div></button></div>
+                  <div className="ara-payment-step-actions"><button type="button" onClick={() => setPaymentDraft((current) => ({ ...current, step: 1 }))}>Quay lại</button><button type="button" disabled={!paymentDraft.selectedRefundDestination || submittingPayment} onClick={confirmRefundDestination}>{submittingPayment ? "Đang xác nhận..." : "Xác nhận tài khoản"}</button></div>
+                </>}
+              </section> : <section className="ara-payment-final-step">
+                <h3>Kiểm tra và tạo giao dịch</h3><p>Tài khoản nhận hoàn cọc đã được lưu riêng cho đơn này.</p>
+                <button type="button" disabled={submittingPayment} onClick={submitPayment}>{submittingPayment ? "Đang tạo..." : ["payos", "payos_qr"].includes(paymentDraft.selectedMethod?.method) ? "Tạo mã QR thanh toán" : "Tiếp tục chuyển khoản"}</button>
+                <button type="button" disabled={submittingPayment} onClick={() => setPaymentDraft((current) => ({ ...current, step: requiresRefundDestination ? 2 : 1 }))}>Quay lại</button>
+              </section>}
               </>
             ) : (
               <div className="ara-payment-created">
@@ -1220,14 +1307,17 @@ export function MyOrderDetailPage({
                 )}
 
                 {created.method === "bank_transfer" && ["pending", "awaiting_confirmation"].includes(created.status) && (
-                  <button
+                  <><label className="ara-payment-proof-picker">
+                    <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => setTransferProof(event.target.files?.[0] || null)}/>
+                    <UploadCloud size={21}/><span><strong>{transferProof ? transferProof.name : "Tải ảnh biên lai chuyển khoản"}</strong><small>Ảnh giao dịch thành công · PNG, JPG hoặc WEBP · tối đa 5MB</small></span>
+                  </label><button
                     type="button"
                     className="ara-payment-created__open"
-                    disabled={submittingPayment}
+                    disabled={submittingPayment || !transferProof}
                     onClick={async () => {
                       try {
                         setSubmittingPayment(true);
-                        const updated = await reportManualTransfer(created.id || created._id);
+                        const updated = await reportManualTransfer(created.id || created._id, transferProof);
                         setPayments((current) => current.map((payment) =>
                           String(payment.id || payment._id) === String(updated.id || updated._id)
                             ? { ...payment, ...updated }
@@ -1245,30 +1335,23 @@ export function MyOrderDetailPage({
                     }}
                   >
                     {submittingPayment ? "Đang gửi..." : "Tôi đã chuyển khoản"}
-                  </button>
+                  </button></>
                 )}
 
-                {["pending", "awaiting_payment"].includes(created.status) && (
+                {["pending", "awaiting_payment", "awaiting_confirmation"].includes(created.status) && (
                   <button
                     type="button"
                     className="ara-payment-created__change"
                     onClick={changePaymentMethod}
                     disabled={submittingPayment}
                   >
-                    {submittingPayment ? "Đang chuyển..." : "Đổi phương thức thanh toán"}
+                    {submittingPayment ? "Đang chuyển..." : "Đổi giữa payOS và chuyển khoản thường"}
                   </button>
                 )}
 
-                {["pending", "awaiting_payment", "awaiting_confirmation"].includes(created.status) && (
-                  <button
-                    type="button"
-                    className="ara-payment-created__cash"
-                    onClick={switchToCash}
-                    disabled={submittingPayment}
-                  >
-                    Chuyển sang tiền mặt khi nhận đồ
-                  </button>
-                )}
+                <p className="ara-payment-created__cash-note">
+                  Tiền mặt chỉ được chọn ngay tại bước tạo đơn và chỉ áp dụng khi nhận đồ tại cửa hàng.
+                </p>
 
                 <button
                   type="button"
@@ -1299,7 +1382,7 @@ export function MyOrderDetailPage({
               <div><dt>Thanh toán lúc</dt><dd>{selectedPayment.paidAt ? formatDateTime(selectedPayment.paidAt) : "Chưa thanh toán"}</dd></div>
               <div><dt>Mã giao dịch ngân hàng</dt><dd>{selectedPayment.providerTransactionId || "Chưa có"}</dd></div>
               <div><dt>Mã liên kết payOS</dt><dd>{selectedPayment.providerOrderId || "-"}</dd></div>
-              <div><dt>Minh chứng thanh toán</dt><dd>{selectedPayment.proofUrl ? <a href={selectedPayment.proofUrl} target="_blank" rel="noreferrer">Xem minh chứng</a> : "Chưa tải lên"}</dd></div>
+              <div><dt>Minh chứng thanh toán</dt><dd>{selectedPayment.proofAccessUrl ? <a href={selectedPayment.proofAccessUrl} target="_blank" rel="noreferrer">Xem minh chứng</a> : "Chưa tải lên"}</dd></div>
             </dl>
             <div className="ara-payment-receipt__actions">
               {selectedPayment.payUrl && <button type="button" onClick={() => window.open(selectedPayment.payUrl, "_blank", "noopener,noreferrer")}>Mở trang giao dịch payOS</button>}

@@ -36,6 +36,7 @@ const TYPE_TAXONOMY = {
   payment_rental_balance_completed: ["payment", "rental_balance_success"],
   payment_penalty_completed: ["payment", "penalty_success"],
   payment_refund_completed: ["payment", "refund"],
+  refund_information_required: ["payment", "refund"],
   settlement_penalty_required: ["payment", "penalty_required"],
   settlement_refund_pending: ["payment", "refund"],
   settlement_completed: ["payment", "settlement_completed"],

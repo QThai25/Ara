@@ -14,11 +14,16 @@ api.interceptors.response.use(
   (response) => response.data,
   (error) => {
     const status = error.response?.status;
-    if ((status === 401 || status === 403) && window.location.pathname !== "/login") {
+    const code = error.response?.data?.code;
+    if ((status === 401 || code === "ACCOUNT_BLOCKED") && window.location.pathname !== "/login") {
       localStorage.removeItem("ara_admin_token");
       localStorage.removeItem("ara_admin_user");
       window.location.assign("/login");
     }
-    return Promise.reject(new Error(error.response?.data?.message || "Có lỗi xảy ra, vui lòng thử lại."));
+    const apiError = new Error(error.response?.data?.message || "Có lỗi xảy ra, vui lòng thử lại.");
+    apiError.status = status;
+    apiError.code = code;
+    apiError.data = error.response?.data?.data;
+    return Promise.reject(apiError);
   }
 );

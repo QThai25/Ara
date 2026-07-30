@@ -157,9 +157,17 @@ export async function seedDemoData() {
   const existingUsers = await User.countDocuments();
   if (existingUsers > 0) return;
 
-  const [adminPassword, customerPassword] = await Promise.all([bcrypt.hash("admin123", 10), bcrypt.hash("khach123", 10)]);
+  const demoAdminPassword = String(process.env.SEED_DEMO_ADMIN_PASSWORD || "");
+  const demoCustomerPassword = String(process.env.SEED_DEMO_CUSTOMER_PASSWORD || "");
+  if (demoAdminPassword.length < 8 || demoCustomerPassword.length < 8) {
+    throw new Error("SEED_DEMO_ADMIN_PASSWORD and SEED_DEMO_CUSTOMER_PASSWORD must each contain at least 8 characters.");
+  }
+  const [adminPassword, customerPassword] = await Promise.all([
+    bcrypt.hash(demoAdminPassword, 10),
+    bcrypt.hash(demoCustomerPassword, 10)
+  ]);
   await User.create([
-    { name: "Quản trị Ara", email: "admin@ara.vn", phone: "0900000000", password: adminPassword, role: "admin" },
+    { name: "Chủ tiệm Ara", email: "admin@ara.vn", phone: "0900000000", password: adminPassword, role: "owner" },
     { name: "Khách mẫu", email: "khach@ara.vn", phone: "0911111111", password: customerPassword, role: "customer" }
   ]);
 

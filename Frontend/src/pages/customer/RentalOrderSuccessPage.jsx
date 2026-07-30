@@ -5,7 +5,8 @@ import { QRCodeSVG } from "qrcode.react";
 import { formatDate, money } from "../../utils/format.js";
 import { getStatusLabel } from "../../utils/status.js";
 import { createPayment, getPaymentMethods, getPaymentQuote, getPaymentStatus } from "../../services/paymentService.js";
-import { getGuestOrderBySession } from "../../services/rentalOrderService.js";
+import { captureOrderRefundDestination, getGuestOrderBySession } from "../../services/rentalOrderService.js";
+import { RefundDestinationForm } from "../../components/customer/RefundDestinationForm.jsx";
 import { getGuestOrderSession, removeGuestOrderSession, saveGuestOrderSession, updateGuestOrderSession } from "../../utils/guestOrderSession.js";
 
 const RECEIPT_KEY = "ara_last_rental_receipt";
@@ -31,6 +32,7 @@ export function RentalOrderSuccessPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState("");
+  const [refundFormType, setRefundFormType] = useState("");
   const timer = useRef(null);
 
   useEffect(() => {
@@ -104,6 +106,10 @@ export function RentalOrderSuccessPage() {
   const submit = async () => {
     const method = methods.find(item => item.method === selected);
     if (!method?.enabled || submitting || !quote?.canPay) return;
+    if (Number(receipt?.totalDepositAmount || 0) > 0 && !receipt?.hasRefundDestination) {
+      setError("Vui lòng xác nhận tài khoản nhận hoàn cọc trước khi thanh toán.");
+      return;
+    }
     try {
       setSubmitting(true); setError("");
       const idempotencyKey = crypto.randomUUID();
@@ -112,6 +118,12 @@ export function RentalOrderSuccessPage() {
       updateGuestOrderSession(orderCode, { paymentId: created.id || created._id });
     } catch (err) { setError(err.message || "Không thể tạo thanh toán."); }
     finally { setSubmitting(false); }
+  };
+  const saveGuestRefundDestination = async body => {
+    const saved = await captureOrderRefundDestination(orderId, body, guestConfig(token));
+    setReceipt(current => ({ ...current, hasRefundDestination: true, refundDestination: saved }));
+    setError("");
+    return saved;
   };
   const openPayos = () => {
     if (!payment?.payUrl) return;
@@ -131,13 +143,23 @@ export function RentalOrderSuccessPage() {
       <div className="guest-code-row"><div><small>MÃ ĐƠN CỦA BẠN</small><strong>{orderCode && orderCode !== "undefined" ? orderCode : "Đang cập nhật"}</strong></div><button type="button" onClick={() => copy("code", orderCode)}><Copy size={17}/>{copied === "code" ? "Đã sao chép" : "Sao chép"}</button></div>
       {receipt && <section className="guest-order-progress"><div className="guest-order-current-status"><span>TRẠNG THÁI ĐƠN</span><strong>{getStatusLabel(orderStatus)}</strong>{orderStatus === "ready_to_pickup" && <small>Bạn có thể đến nhận đồ hoặc chờ ARA giao theo phương thức đã chọn.</small>}{orderStatus === "renting" && <small>ARA đã ghi nhận bạn nhận trang phục.</small>}{orderStatus === "overdue" && <small>Đơn đã quá hạn trả. Vui lòng liên hệ ARA để được hỗ trợ.</small>}</div>{activeOrderStep >= 0 && <div className="guest-order-progress-steps">{ORDER_STEPS.map((step, index) => <div key={step} className={index < activeOrderStep ? "done" : index === activeOrderStep ? "active" : "pending"}><i>{index < activeOrderStep ? "✓" : index + 1}</i><span>{ORDER_STEP_LABELS[step]}</span></div>)}</div>}</section>}
       {receipt ? <><div className="guest-order-summary"><p><span>Khách hàng</span><strong>{receipt.customerInfo?.fullName}</strong></p><p><span>Số điện thoại</span><strong>{mask(receipt.customerInfo?.phone)}</strong></p><p><span>Bắt đầu thuê</span><strong>{formatDate(receipt.plannedRentalStartAt||receipt.rentalDate)}</strong></p><p><span>Hạn đồ về cửa hàng</span><strong>{formatDate(receipt.plannedRentalEndAt||receipt.returnDate)}</strong></p><p><span>Gói thuê</span><strong>{Number(receipt.rentalDays||1)} ngày ({Number(receipt.rentalDurationHours||(receipt.rentalDays||1)*24)} giờ)</strong></p><p><span>Trang phục</span><strong>{receipt.itemCount} sản phẩm</strong></p><p><span>Tiền thuê</span><strong>{money(receipt.totalRentalPrice)}</strong></p><p><span>Tiền cọc</span><strong>{money(receipt.totalDepositAmount)}</strong></p></div>
+        {Number(receipt.totalDepositAmount || 0) > 0 && !receipt.hasRefundDestination && <section className="ara-refund-checkout-step"><header><h2>Tài khoản nhận hoàn cọc</h2><p>ARA sẽ hoàn tiền cọc vào đây sau khi nhận và kiểm tra đồ. Đây không phải tài khoản dùng để thanh toán đơn thuê.</p></header><div className="ara-refund-input-methods"><button type="button" onClick={() => setRefundFormType("bank_account")}>Nhập tài khoản ngân hàng</button><button type="button" onClick={() => setRefundFormType("vietqr_image")}>Tải QR nhận tiền</button></div></section>}
         {loading ? <div className="ara-guest-payment-skeleton">Đang tải phương thức và số tiền thanh toán…</div> : paid ? <div className="ara-guest-payment-paid"><CheckCircle2/><div><h2>ARA đã ghi nhận thanh toán</h2><p>{payment?.paymentType === "deposit" ? "Đặt cọc" : "Thanh toán toàn bộ"} · {money(payment?.amount || quote?.alreadyPaidAmount || 0)} · {payment?.method === "payos" ? "QR ngân hàng" : "Chuyển khoản ngân hàng"}</p>{payment?.paymentReference && <small>Mã giao dịch: {String(payment.paymentReference).replace(/[^A-Z0-9-]/gi, "").slice(0, 40)}</small>}{payment?.paidAt && <small> · {new Date(payment.paidAt).toLocaleString("vi-VN")}</small>}</div></div> : payment ? <section className="ara-guest-payment-detail">
           <div className="ara-guest-payment-status"><strong>{payment.status === "awaiting_confirmation" ? "Đang chờ ARA xác nhận chuyển khoản" : "Đang chờ payOS xác nhận"}</strong><span>{payment.status === "awaiting_confirmation" ? "Sau khi chuyển khoản, ARA sẽ kiểm tra và xác nhận thanh toán." : "Trạng thái được kiểm tra tự động mỗi 3 giây."}</span></div>
           {(payment.qrCode || transfer.qrUrl) && <div className="ara-guest-payment-qr">{payment.qrCode ? <QRCodeSVG value={payment.qrCode} size={230}/> : <img src={transfer.qrUrl} alt="QR chuyển khoản ARA"/>}</div>}
           <dl><div><dt>Số tiền</dt><dd>{money(payment.amount)}</dd></div>{transfer.bankName && <div><dt>Ngân hàng</dt><dd>{transfer.bankName}</dd></div>}<div><dt>Chủ tài khoản</dt><dd>{transfer.accountHolder || transfer.accountName || "ARA"}</dd></div><div><dt>Số tài khoản</dt><dd>{transfer.accountNumber || "—"}<button onClick={() => copy("account", transfer.accountNumber)}><Copy size={15}/></button></dd></div><div><dt>Nội dung CK</dt><dd>{payment.paymentReference}<button onClick={() => copy("reference", payment.paymentReference)}><Copy size={15}/></button></dd></div><div><dt>Hết hạn</dt><dd>{payment.expiresAt ? new Date(payment.expiresAt).toLocaleString("vi-VN") : "—"}</dd></div></dl>
           <div className="ara-guest-payment-actions">{payment.method === "payos" && payment.payUrl && <button onClick={openPayos}>Mở trang thanh toán</button>}<button className="secondary" onClick={() => refreshPayment()}><RefreshCw size={16}/> Kiểm tra trạng thái</button></div>
-        </section> : <section className="ara-guest-payment-picker"><h2>Chọn phương thức thanh toán</h2><div className="ara-guest-payment-methods">{methods.map(item => <button key={item.method} type="button" disabled={!item.enabled} className={selected === item.method ? "selected" : ""} onClick={() => setSelected(item.method)}>{item.method === "payos" ? <QrCode/> : <Landmark/>}<span><strong>{item.name}</strong><small>{item.description}</small>{!item.enabled && <em>{item.disabledReason}</em>}</span></button>)}</div><div className="ara-guest-payment-quote"><span>Thanh toán toàn bộ</span><strong>{money(quote?.payableAmount || 0)}</strong></div><button className="ara-guest-payment-submit" disabled={!selected || !quote?.canPay || submitting} onClick={submit}>{submitting ? "Đang tạo thanh toán…" : "Tiếp tục thanh toán"}</button></section>}
+        </section> : <section className="ara-guest-payment-picker"><h2>Chọn phương thức thanh toán</h2><div className="ara-guest-payment-methods">{methods.map(item => <button key={item.method} type="button" disabled={!item.enabled} className={selected === item.method ? "selected" : ""} onClick={() => setSelected(item.method)}>{item.method === "payos" ? <QrCode/> : <Landmark/>}<span><strong>{item.name}</strong><small>{item.description}</small>{!item.enabled && <em>{item.disabledReason}</em>}</span></button>)}</div><div className="ara-guest-payment-quote"><span>Thanh toán toàn bộ</span><strong>{money(quote?.payableAmount || 0)}</strong></div><button className="ara-guest-payment-submit" disabled={!selected || !quote?.canPay || submitting || (Number(receipt.totalDepositAmount || 0) > 0 && !receipt.hasRefundDestination)} onClick={submit}>{submitting ? "Đang tạo thanh toán…" : "Tiếp tục thanh toán"}</button></section>}
         {error && <p className="form-error">{error}</p>}</> : <p>Phiên đặt thuê không còn dữ liệu. Hãy tra cứu bằng số điện thoại và mã đơn để cấp lại quyền thanh toán.</p>}
     </main><aside className="guest-checkout-aside"><h2>Cần thay đổi đơn?</h2><p>Để sửa hoặc hủy đơn, vui lòng liên hệ trực tiếp ARA.</p><a href="tel:0364019798"><Phone size={18}/> Gọi ARA</a><Link to="/rental-orders/lookup">Tra cứu đơn</Link><Link to="/costumes"><ShoppingBag size={18}/> Tiếp tục xem đồ</Link></aside></div>
+    {refundFormType && <RefundDestinationForm
+      type={refundFormType}
+      notify={message => setError(message)}
+      saveDestination={saveGuestRefundDestination}
+      requestConfig={{ ...guestConfig(token), orderId }}
+      saveToProfile={false}
+      onSaved={() => setRefundFormType("")}
+      onClose={() => setRefundFormType("")}
+    />}
   </div></section>;
 }

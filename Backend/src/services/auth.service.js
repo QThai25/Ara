@@ -4,24 +4,39 @@ import jwt from "jsonwebtoken";
 import { PhoneOtp } from "../models/PhoneOtp.js";
 import { User } from "../models/User.js";
 import { ApiError } from "../utils/ApiError.js";
+import { canonicalAdminRole, isAdminRole, permissionsForRole, roleDisplayName } from "../utils/adminPermissions.js";
 import { maskPhone, normalizePhone } from "../utils/phone.js";
+import { recordAuditEvent } from "./auditLog.service.js";
+import { disconnectUserSessions } from "../realtime/socket.js";
 
 function signToken(user) {
   return jwt.sign(
-    { id: user._id, role: user.role },
+    {
+      id: user._id,
+      role: canonicalAdminRole(user.role),
+      tokenVersion: Number(user.tokenVersion || 0)
+    },
     process.env.JWT_SECRET || "dev-secret",
     { expiresIn: "7d" }
   );
 }
 
-function publicUser(user) {
-  return user.toObject({
+export function publicUser(user) {
+  const value = user.toObject({
     versionKey: false,
     transform: (_doc, ret) => {
       delete ret.password;
+      delete ret.tokenVersion;
       return ret;
     }
   });
+  if (isAdminRole(value.role)) {
+    value.role = canonicalAdminRole(value.role);
+    value.roleDisplayName = roleDisplayName(value.role);
+    value.permissions = permissionsForRole(user.role);
+    delete value.defaultRefundDestination;
+  }
+  return value;
 }
 
 export async function register(payload) {
@@ -63,20 +78,57 @@ export async function register(payload) {
   return { token: signToken(user), user: publicUser(user) };
 }
 
-export async function login({ email, password }) {
-  const user = await User.findOne({ email });
-  if (!user) throw new ApiError(401, "Email hoặc mật khẩu không đúng.");
-  if (user.status === "blocked") throw new ApiError(403, "Tài khoản của bạn đang bị khóa.");
+export async function login({ email, password }, auditContext = {}) {
+  const user = await User.findOne({ email: String(email || "").trim().toLowerCase() }).select("+tokenVersion");
+  if (!user) {
+    await recordAuditEvent({
+      action: "auth.login_failed",
+      resourceType: "authentication",
+      reason: "unknown_account",
+      ...auditContext
+    });
+    throw new ApiError(401, "Email hoặc mật khẩu không đúng.");
+  }
+  if (user.status === "blocked") {
+    await recordAuditEvent({
+      actor: user,
+      action: "auth.login_blocked",
+      resourceType: "authentication",
+      resourceId: user._id,
+      reason: "account_blocked",
+      ...auditContext
+    });
+    throw new ApiError(403, "Tài khoản của bạn đang bị khóa.");
+  }
 
   const matched = user.password ? await bcrypt.compare(password, user.password) : false;
-  if (!matched) throw new ApiError(401, "Email hoặc mật khẩu không đúng.");
+  if (!matched) {
+    await recordAuditEvent({
+      actor: user,
+      action: "auth.login_failed",
+      resourceType: "authentication",
+      resourceId: user._id,
+      reason: "invalid_password",
+      ...auditContext
+    });
+    throw new ApiError(401, "Email hoặc mật khẩu không đúng.");
+  }
 
+  user.lastLoginAt = new Date();
+  await user.save();
+  await recordAuditEvent({
+    actor: user,
+    action: "auth.login_succeeded",
+    resourceType: "authentication",
+    resourceId: user._id,
+    ...auditContext
+  });
   return { token: signToken(user), user: publicUser(user) };
 }
 
 export async function loginWithPhone({ phone, password }) {
   const phoneNormalized = normalizePhone(phone);
-  const user = await User.findOne({ phoneNormalized });
+  const user = await User.findOne({ phoneNormalized }).select("+tokenVersion");
   if (!user) throw new ApiError(401, "Số điện thoại hoặc mật khẩu không đúng.");
   if (user.status === "blocked") throw new ApiError(403, "Tài khoản của bạn đang bị khóa.");
   const matched = user.password ? await bcrypt.compare(password, user.password) : false;
@@ -86,6 +138,8 @@ export async function loginWithPhone({ phone, password }) {
       : "Số điện thoại hoặc mật khẩu không đúng.";
     throw new ApiError(401, message);
   }
+  user.lastLoginAt = new Date();
+  await user.save();
   return { token: signToken(user), user: publicUser(user) };
 }
 
@@ -159,7 +213,7 @@ export async function verifyPhoneOtp({ phone, otp, purpose = "login" }) {
   record.consumedAt = new Date();
   await record.save();
 
-  let user = await User.findOne({ phoneNormalized });
+  let user = await User.findOne({ phoneNormalized }).select("+tokenVersion");
   if (!user) {
     user = await User.create({
       name: "Khách hàng",
@@ -172,10 +226,41 @@ export async function verifyPhoneOtp({ phone, otp, purpose = "login" }) {
       phoneVerified: true
     });
   } else {
+    if (user.status === "blocked") throw new ApiError(403, "Tài khoản của bạn đang bị khóa.");
+    if (isAdminRole(user.role)) throw new ApiError(403, "Tài khoản quản trị phải đăng nhập bằng email và mật khẩu.");
     user.phoneVerified = true;
     if (!user.authMode) user.authMode = user.password ? "password" : "phone_otp";
     await user.save();
   }
 
   return { token: signToken(user), user: publicUser(user) };
+}
+
+export async function revokeSessions(userId) {
+  await User.findByIdAndUpdate(userId, { $inc: { tokenVersion: 1 } });
+  disconnectUserSessions(userId);
+}
+
+export async function changePassword(userId, { currentPassword, newPassword }, auditContext = {}) {
+  const user = await User.findById(userId).select("+password +tokenVersion");
+  if (!user) throw new ApiError(404, "Không tìm thấy tài khoản.");
+  const matched = user.password ? await bcrypt.compare(currentPassword, user.password) : false;
+  if (!matched) throw new ApiError(400, "Mật khẩu hiện tại không đúng.");
+  if (await bcrypt.compare(newPassword, user.password)) {
+    throw new ApiError(400, "Mật khẩu mới phải khác mật khẩu hiện tại.");
+  }
+  user.password = await bcrypt.hash(newPassword, 10);
+  user.passwordChangedAt = new Date();
+  user.mustChangePassword = false;
+  user.tokenVersion = Number(user.tokenVersion || 0) + 1;
+  await user.save();
+  disconnectUserSessions(user._id);
+  await recordAuditEvent({
+    actor: user,
+    action: "auth.password_changed",
+    resourceType: "authentication",
+    resourceId: user._id,
+    ...auditContext
+  });
+  return { sessionsRevoked: true };
 }

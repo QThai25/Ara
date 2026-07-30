@@ -47,3 +47,7 @@ adminRentalOrderRoutes.patch("/:id/issues/:issueId", auth, adminOnly, controller
 adminRentalOrderRoutes.post("/:id/settlement", auth, adminOnly, controller.settleDeposit);
 adminRentalOrderRoutes.patch("/:id/immediate-return", auth, adminOnly, controller.immediateReturn);
 adminRentalOrderRoutes.post("/:id/collect-cash-and-pickup", auth, adminOnly, controller.collectCashAndPickup);
+adminRentalOrderRoutes.post("/:id/dispatch-home-delivery", auth, adminOnly, controller.dispatchHomeDelivery);
+adminRentalOrderRoutes.post("/:id/confirm-customer-received", auth, adminOnly, controller.confirmCustomerReceived);
+adminRentalOrderRoutes.post("/:id/customer-return-handover", auth, adminOnly, controller.markCustomerHandedToShipper);
+adminRentalOrderRoutes.post("/:id/confirm-return-received", auth, adminOnly, controller.confirmReturnReceivedByShop);

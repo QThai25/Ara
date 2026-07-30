@@ -1,5 +1,7 @@
 # Migration luồng thanh toán
 
+Cập nhật: **30/07/2026**. Script này chỉ dành cho payment legacy; migration role quản trị nằm trong `scripts/migrate-admin-roles.js` và `docs/ADMIN_RBAC.md`.
+
 Script `migrate-payment-statuses.js` chuẩn hóa dữ liệu cũ trước khi bật unique index của Payment.
 
 ## 1. Sao lưu database
@@ -9,7 +11,7 @@ Luôn tạo bản sao MongoDB trước khi chạy chế độ apply.
 ## 2. Kiểm tra trước (không ghi dữ liệu)
 
 ```bash
-node scripts/migrate-payment-statuses.js
+npm run migrate:payments
 ```
 
 Kết quả liệt kê số Payment/Order cần cập nhật và các đơn legacy có trạng thái thanh toán nhưng không có Payment thành công để đối soát.
@@ -31,3 +33,5 @@ Script sẽ:
 - đồng bộ lại toàn bộ index Payment.
 
 Sau migration, kiểm tra thủ công mọi ID xuất hiện trong `ambiguousLegacyOrdersWithoutSuccessfulPayment` trước khi vận hành production.
+
+Không chạy payment migration và role migration trong cùng một bước không thể rollback. Mỗi migration cần backup, dry-run output và biên bản phê duyệt riêng. Không đưa `--apply` vào startup/PM2/Docker command.

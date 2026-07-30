@@ -18,6 +18,7 @@ import { createOccasion, createStyle, deleteOccasion, deleteStyle, getAdminOccas
 import { createReturnInspection, rejectRentalOrder } from "../services/rentalOrderService.js";
 import { uploadImages } from "../services/uploadService.js";
 import { costumeName, formatDate, formatDateTime, getStatusLabel, money, orderTotal, resolveImageUrl } from "../utils/format.js";
+import { normalizeCostumeEditorPayload } from "../utils/costumeEditor.js";
 import { costumeStatusOptions as sharedCostumeStatusOptions } from "../utils/status.js";
 import { adminTabs } from "./adminTabs.js";
 import {
@@ -47,6 +48,8 @@ import React, {
   useState
 } from "react";
 import { createPortal } from "react-dom";
+import { useAdminAuth } from "../context/AdminAuthContext.jsx";
+import { ADMIN_PERMISSIONS as P } from "../constants/adminPermissions.js";
 
 const asArray = (value) => (Array.isArray(value) ? value : []);
 const itemId = (item) => item?.id || item?._id || item?.code || "";
@@ -100,7 +103,8 @@ const fallbackStyleOptions = [
   { value: "elegant", label: "Thanh lịch", slug: "elegant", name: "Thanh lịch", icon: "elegant", status: "active" }
 ];
 
-export function AdminPage({ activeTab, notify }) {
+export function AdminPage({ activeTab, notify, costumeEditor = null }) {
+  const { can } = useAdminAuth();
   const [summary, setSummary] = useState(null);
   const [orders, setOrders] = useState([]);
   const [costumes, setCostumes] = useState([]);
@@ -116,23 +120,38 @@ export function AdminPage({ activeTab, notify }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const load = async (keepOrderId = selectedOrderId) => {
-    setLoading(true);
-    setError("");
+  const load = async (keepOrderId = selectedOrderId, { silent = false } = {}) => {
+    if (!silent) {
+      setLoading(true);
+      setError("");
+    }
     try {
-      const [sum, ord, cos, cus, pay, cats, brandList, occasionList, styleList, voucherList, bannerList] = await Promise.all([
-        getAdminDashboard(),
-        getAdminOrders(),
-        costumeApi.getList(),
-        getAdminCustomers(),
-        getAdminPayments(),
-        getAdminCategories(),
-        getAdminBrands(),
-        getAdminOccasions().catch(() => fallbackOccasionOptions),
-        getAdminStyles().catch(() => fallbackStyleOptions),
-        getAdminVouchers().catch(() => mockVouchers),
-        getAdminBanners().catch(() => [])
-      ]);
+      const jobs = {};
+      if ([adminTabs.dashboard, adminTabs.orders, adminTabs.inspections].includes(activeTab)) jobs.orders = getAdminOrders();
+      if ([adminTabs.dashboard, adminTabs.costumes].includes(activeTab)) jobs.costumes = costumeApi.getList();
+      if (activeTab === adminTabs.dashboard) jobs.summary = getAdminDashboard();
+      if (activeTab === adminTabs.customers) jobs.customers = getAdminCustomers();
+      if (activeTab === adminTabs.payments) jobs.payments = getAdminPayments();
+      if ([adminTabs.costumes, adminTabs.categories].includes(activeTab)) jobs.categories = getAdminCategories();
+      if ([adminTabs.costumes, adminTabs.brands].includes(activeTab)) jobs.brands = getAdminBrands();
+      if ([adminTabs.costumes, adminTabs.occasions, adminTabs.categories].includes(activeTab)) jobs.occasions = getAdminOccasions().catch(() => fallbackOccasionOptions);
+      if ([adminTabs.costumes, adminTabs.styles, adminTabs.categories].includes(activeTab)) jobs.styles = getAdminStyles().catch(() => fallbackStyleOptions);
+      if (activeTab === adminTabs.vouchers) jobs.vouchers = getAdminVouchers().catch(() => mockVouchers);
+      if (activeTab === adminTabs.banners) jobs.banners = getAdminBanners().catch(() => []);
+      const keys = Object.keys(jobs);
+      const values = await Promise.all(Object.values(jobs));
+      const loaded = Object.fromEntries(keys.map((key, index) => [key, values[index]]));
+      const sum = loaded.summary ?? summary;
+      const ord = loaded.orders ?? orders;
+      const cos = loaded.costumes ?? costumes;
+      const cus = loaded.customers ?? customers;
+      const pay = loaded.payments ?? payments;
+      const cats = loaded.categories ?? categories;
+      const brandList = loaded.brands ?? brands;
+      const occasionList = loaded.occasions ?? occasions;
+      const styleList = loaded.styles ?? styles;
+      const voucherList = loaded.vouchers ?? vouchers;
+      const bannerList = loaded.banners ?? banners;
       const safeOrders = asArray(ord);
       setSummary(sum);
       setOrders(safeOrders);
@@ -149,10 +168,10 @@ export function AdminPage({ activeTab, notify }) {
       setSelectedOrderId(nextId || null);
       return safeOrders;
     } catch (err) {
-      setError(err.message);
+      if (!silent) setError(err.message);
       notify(err.message, "error");
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -200,14 +219,14 @@ export function AdminPage({ activeTab, notify }) {
   );
 
   if (activeTab === adminTabs.dashboard) return chrome(<Dashboard summary={summary} stats={dashboardStats} orders={orders} costumes={costumes} />);
-  if (activeTab === adminTabs.costumes) return chrome(<AdminCostumes costumes={costumes} categories={categories} brands={brands} occasions={occasions} styles={styles} notify={notify} reload={load} />);
+  if (activeTab === adminTabs.costumes) return chrome(<AdminCostumes costumes={costumes} categories={categories} brands={brands} occasions={occasions} styles={styles} notify={notify} reload={() => load(selectedOrderId, { silent: true })} canManageCatalog={can(P.CATALOG_MANAGE)} canOperateInventory={can(P.INVENTORY_OPERATE)} editor={costumeEditor} />);
   if (activeTab === adminTabs.brands) return chrome(<TaxonomyManager title="Quản lý thương hiệu" noun="thương hiệu" items={brands} notify={notify} reload={load} createItem={createBrand} updateItem={updateBrand} deleteItem={deleteBrand} toggleItem={toggleBrandStatus} />);
   if (activeTab === adminTabs.categories) return chrome(<TaxonomyManager title="Quản lý danh mục" noun="danh mục" items={categories} notify={notify} reload={load} createItem={createCategory} updateItem={updateCategory} deleteItem={deleteCategory} toggleItem={toggleCategoryStatus} showIcon defaultOptions={{ occasions, styles }} />);
   if (activeTab === adminTabs.occasions) return chrome(<TaxonomyManager title="Quản lý dịp mặc" noun="dịp mặc" items={occasions} notify={notify} reload={load} createItem={createOccasion} updateItem={updateOccasion} deleteItem={deleteOccasion} toggleItem={toggleOccasionStatus} showIcon />);
   if (activeTab === adminTabs.styles) return chrome(<TaxonomyManager title="Quản lý phong cách" noun="phong cách" items={styles} notify={notify} reload={load} createItem={createStyle} updateItem={updateStyle} deleteItem={deleteStyle} toggleItem={toggleStyleStatus} showIcon />);
   if (activeTab === adminTabs.orders) return chrome(<AdminOrders orders={orders} selected={selectedOrder} selectedOrderId={selectedOrderId} setSelectedOrderId={setSelectedOrderId} notify={notify} reload={load} />);
   if (activeTab === adminTabs.inspections) return chrome(<AdminOrders orders={orders.filter((order) => ["renting", "returned", "overdue"].includes(order.status))} selected={selectedOrder} selectedOrderId={selectedOrderId} setSelectedOrderId={setSelectedOrderId} notify={notify} reload={load} inspectionOnly />);
-  if (activeTab === adminTabs.payments) return chrome(<PaymentManager rows={payments} notify={notify} reload={load} />);
+  if (activeTab === adminTabs.payments) return chrome(<PaymentManager rows={payments} notify={notify} reload={load} canConfirm={can(P.PAYMENTS_CONFIRM_BANK_TRANSFER)} />);
   if (activeTab === adminTabs.customers) return chrome(<SimpleResource title="Quản lý khách hàng" rows={customers} columns={["name", "email", "phone", "status"]} labels={["Tên", "Email", "Số điện thoại", "Trạng thái"]} />);
   if (activeTab === adminTabs.vouchers) return chrome(<VoucherManager items={vouchers} notify={notify} reload={load} />);
   if (activeTab === adminTabs.banners) return chrome(<BannerManager items={banners} notify={notify} reload={load} />);
@@ -420,7 +439,10 @@ function AdminCostumes({
   occasions,
   styles,
   notify,
-  reload
+  reload,
+  canManageCatalog,
+  canOperateInventory,
+  editor
 }) {
   const navigate = useNavigate();
 
@@ -448,6 +470,36 @@ function AdminCostumes({
 
   const [modal, setModal] =
     useState(null);
+
+  useEffect(() => {
+    if (editor?.mode === "create") {
+      setModal((current) => current?.routeEditor ? current : {
+        mode: "create",
+        routeEditor: true
+      });
+      return;
+    }
+
+    if (editor?.mode === "edit" && editor.id && costumes.length) {
+      const item = findById(costumes, editor.id);
+      if (item) {
+        setModal((current) => current?.routeEditor && itemId(current.item) === editor.id ? current : {
+          mode: "edit",
+          item,
+          routeEditor: true
+        });
+      }
+    }
+  }, [costumes, editor?.id, editor?.mode]);
+
+  const closeCostumeEditor = () => {
+    setModal(null);
+    if (editor?.mode === "edit" && editor.id) {
+      navigate(`/costumes/${editor.id}`);
+      return;
+    }
+    if (editor?.mode === "create") navigate("/costumes");
+  };
 
   const brandOptions = useMemo(
     () =>
@@ -744,96 +796,7 @@ function AdminCostumes({
   ].filter(Boolean);
 
   const save = async (payload, editingId) => {
-    const imageAssets = asArray(payload.imageAssets)
-      .map((asset, index) => {
-        if (typeof asset === "string") {
-          return {
-            url: asset,
-            publicId: "",
-            alt: "",
-            sortOrder: index
-          };
-        }
-
-        return {
-          url: asset?.url || "",
-          publicId: asset?.publicId || "",
-          alt: asset?.alt || "",
-          sortOrder: index
-        };
-      })
-      .filter((asset) => asset.url);
-
-    const images = imageAssets.length
-      ? imageAssets.map((asset) => asset.url)
-      : asArray(payload.images)
-        .map((item) =>
-          typeof item === "string"
-            ? item
-            : item?.url
-        )
-        .filter(Boolean);
-
-    const primaryImage =
-      payload.image &&
-        images.includes(payload.image)
-        ? payload.image
-        : images[0] || "";
-
-    const primaryAsset =
-      imageAssets.find(
-        (asset) => asset.url === primaryImage
-      ) || null;
-
-    const normalized = {
-      name: payload.name,
-      description: payload.description,
-      brandSlug: payload.brandSlug,
-      categoryId: payload.categoryId,
-      size: payload.size,
-      color: payload.color,
-      occasionIds: payload.occasionIds,
-      styleIds: payload.styleIds,
-      material: payload.material,
-
-      // Gửi toàn bộ danh sách ảnh
-      images,
-      imageAssets,
-
-      // Ảnh đại diện
-      image: primaryImage,
-      imageUrl: primaryImage,
-      imagePublicId:
-        primaryAsset?.publicId ||
-        payload.imagePublicId ||
-        "",
-
-      originalPrice: Number(
-        payload.originalPrice || 0
-      ),
-
-      rentalPricePerDay: Number(
-        payload.rentalPricePerDay || 0
-      ),
-
-      memberPrice: Number(
-        payload.memberPrice || 0
-      ),
-
-      depositAmount: Number(
-        payload.depositAmount || 0
-      ),
-
-      quantity: Number(
-        payload.quantity || 0
-      ),
-
-      skuCode: payload.skuCode,
-      operationalStatus: payload.operationalStatus,
-      cleaningDurationMinutes: Number(payload.cleaningDurationMinutes || 180),
-      accessories: payload.accessories,
-      conditionNote: payload.conditionNote
-    };
+    const normalized = normalizeCostumeEditorPayload(payload);
 
     try {
       const response = editingId
@@ -853,6 +816,14 @@ function AdminCostumes({
       );
 
       setModal(null);
+      if (editor?.mode === "edit" && editingId) {
+        navigate(`/costumes/${editingId}`);
+        return;
+      }
+      if (editor?.mode === "create") {
+        navigate("/costumes");
+        return;
+      }
       await reload();
     } catch (error) {
       notify(
@@ -910,19 +881,15 @@ function AdminCostumes({
       <PageHeader
         title="Quản lý trang phục"
         subtitle="Theo dõi kho, giá thuê, trạng thái và thông tin từng thiết kế."
-        action={
+        action={canManageCatalog ? (
           <AdminButton
             variant="primary"
-            onClick={() =>
-              setModal({
-                mode: "create"
-              })
-            }
+            onClick={() => setModal({ mode: "create" })}
           >
             <Plus size={16} />
             Thêm trang phục
           </AdminButton>
-        }
+        ) : null}
       />
 
       <div className="admin-stat-grid costume-stat-grid">
@@ -1178,9 +1145,9 @@ function AdminCostumes({
         <div className="costume-table-shell">
           <AdminTable
             tableClassName="costume-table costume-table-compact"
+            mobileCards
             rows={filtered}
             columns={[
-              "image",
               "name",
               "classification",
               "pricing",
@@ -1188,7 +1155,6 @@ function AdminCostumes({
               "status"
             ]}
             labels={[
-              "Ảnh",
               "Trang phục",
               "Phân loại",
               "Giá & cọc",
@@ -1196,13 +1162,12 @@ function AdminCostumes({
               "Trạng thái"
             ]}
             colWidths={[
-              "68px",
               "",
-              "180px",
-              "160px",
-              "78px",
               "150px",
-              "76px"
+              "140px",
+              "90px",
+              "172px",
+              "84px"
             ]}
             columnClasses={{
               name: "clamp-cell",
@@ -1214,40 +1179,24 @@ function AdminCostumes({
               status: "status-cell"
             }}
             format={{
-              image: (_, row) => (
-                <img
-                  className="admin-thumb costume-admin-thumb"
-                  src={resolveImageUrl(
-                    row.image ||
-                    row.images?.[0]
-                  )}
-                  alt={row.name}
-                  onError={(event) => {
-                    event.currentTarget.src =
-                      "/placeholder.png";
-                  }}
-                />
-              ),
-
               name: (value, row) => (
-                <span className="costume-name-cell">
-                  <strong>
-                    {value ||
-                      "Chưa đặt tên"}
-                  </strong>
-
-                  <small>
-                    {[
-                      row.skuCode &&
-                      `SKU: ${row.skuCode}`,
-                      row.size &&
-                      `Size ${row.size}`,
-                      row.color
-                    ]
-                      .filter(Boolean)
-                      .join(" · ") ||
-                      "Chưa có thông tin phụ"}
-                  </small>
+                <span className="costume-product-cell">
+                  <img
+                    className="admin-thumb costume-admin-thumb"
+                    src={resolveImageUrl(row.image || row.images?.[0])}
+                    alt=""
+                    onError={(event) => {
+                      event.currentTarget.src = "/placeholder.png";
+                    }}
+                  />
+                  <span className="costume-name-cell">
+                    <strong>{value || "Chưa đặt tên"}</strong>
+                    <small>{[
+                      row.skuCode && `SKU: ${row.skuCode}`,
+                      row.size && `Size: ${row.size}`,
+                      row.color && `Màu: ${row.color}`
+                    ].filter(Boolean).join(" · ") || "Chưa có thông tin phụ"}</small>
+                  </span>
                 </span>
               ),
 
@@ -1280,7 +1229,7 @@ function AdminCostumes({
                   </strong>
 
                   <small>
-                    Cọc{" "}
+                    Tiền cọc ·{" "}
                     {money(
                       row.depositAmount
                     )}
@@ -1289,18 +1238,23 @@ function AdminCostumes({
               ),
 
               quantity: (value) => (
-                <span className="costume-stock-value">
-                  {Number(value || 0)}
+                <span className="costume-stock-cell">
+                  <strong className="costume-stock-value">{Number(value || 0)}</strong>
+                  <small>sản phẩm</small>
                 </span>
               ),
 
               status: (_, row) => (
                 <span className="costume-status-stack">
-                  <AdminSelect
-                    value={row.operationalStatus || (row.status === "available" ? "active" : row.status)}
-                    options={costumeStatusOptions}
-                    onChange={(value) => changeStatus(row, value)}
-                  />
+                  <span className="costume-status-row">
+                    {canOperateInventory ? (
+                      <AdminSelect
+                        value={row.operationalStatus || (row.status === "available" ? "active" : row.status)}
+                        options={costumeStatusOptions}
+                        onChange={(value) => changeStatus(row, value)}
+                      />
+                    ) : <strong>{getStatusLabel(row.operationalStatus || row.status)}</strong>}
+                  </span>
                   <AdminStatusBadge type="costume" value={row.currentDisplayStatus || "available"} />
                   {row.currentStatusUntil && <small>Đến {formatDateTime(row.currentStatusUntil)}</small>}
                 </span>
@@ -1321,17 +1275,9 @@ function AdminCostumes({
                   Xem
                 </AdminButton>
 
-                <AdminButton
-                  onClick={() =>
-                    setModal({
-                      mode: "edit",
-                      item: row
-                    })
-                  }
-                >
-                  <Pencil size={14} />
-                  Sửa
-                </AdminButton>
+                {canManageCatalog && <AdminButton onClick={() => setModal({ mode: "edit", item: row })}>
+                  <Pencil size={14} /> Sửa
+                </AdminButton>}
 
                 {false && (<>
                 <AdminButton
@@ -1379,7 +1325,7 @@ function AdminCostumes({
 
                 </>)}
 
-                <AdminButton
+                {canManageCatalog && <AdminButton
                   variant="danger"
                   onClick={() =>
                     remove(row)
@@ -1387,7 +1333,7 @@ function AdminCostumes({
                 >
                   <Trash2 size={14} />
                   Xóa
-                </AdminButton>
+                </AdminButton>}
               </AdminActionMenu>
             )}
           />
@@ -1418,9 +1364,7 @@ function AdminCostumes({
             occasions={occasions}
             styles={styles}
             notify={notify}
-            onClose={() =>
-              setModal(null)
-            }
+            onClose={closeCostumeEditor}
             onSave={save}
           />
         )}
@@ -1703,7 +1647,7 @@ function LegacyModalSelect({
   );
 }
 
-function CostumeFormModal({
+export function CostumeFormModal({
   title,
   initial,
   categories = [],
@@ -1714,6 +1658,7 @@ function CostumeFormModal({
   onClose,
   onSave
 }) {
+  const formId = "admin-costume-editor-form";
   const categoryOptions = asArray(categories);
   const brandOptions = asArray(brands);
 
@@ -1803,6 +1748,7 @@ function CostumeFormModal({
   }));
 
   const [uploading, setUploading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const manuallyEditedClassification = useRef({ occasionIds: false, styleIds: false });
 
   const occasionSelectOptions =
@@ -1843,6 +1789,7 @@ function CostumeFormModal({
 
   const submit = async (event) => {
     event.preventDefault();
+    if (saving || uploading) return;
 
     if (!form.name || !form.brandSlug || !form.categoryId) {
       notify(
@@ -1863,10 +1810,15 @@ function CostumeFormModal({
       return;
     }
 
-    await onSave(
-      form,
-      initial ? itemId(initial) : null
-    );
+    setSaving(true);
+    try {
+      await onSave(
+        form,
+        initial ? itemId(initial) : null
+      );
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -1874,8 +1826,33 @@ function CostumeFormModal({
       title={title}
       onClose={onClose}
       className="costume-form-modal"
+      footer={
+        <>
+          <AdminButton
+            type="button"
+            onClick={onClose}
+            disabled={saving}
+          >
+            Hủy
+          </AdminButton>
+
+          <AdminButton
+            type="submit"
+            form={formId}
+            variant="primary"
+            disabled={uploading || saving}
+          >
+            {saving
+              ? "Đang lưu..."
+              : initial
+                ? "Lưu thay đổi"
+                : "Tạo trang phục"}
+          </AdminButton>
+        </>
+      }
     >
       <form
+        id={formId}
         className="admin-form"
         onSubmit={submit}
       >
@@ -2111,22 +2088,6 @@ function CostumeFormModal({
           </label>
         </fieldset>
 
-        <div className="modal-actions">
-          <AdminButton
-            type="button"
-            onClick={onClose}
-          >
-            Hủy
-          </AdminButton>
-
-          <AdminButton
-            type="submit"
-            variant="primary"
-            disabled={uploading}
-          >
-            Lưu
-          </AdminButton>
-        </div>
       </form>
     </AdminModal>
   );
@@ -2636,7 +2597,8 @@ const paymentTypeLabels = {
   refund: "Hoàn cọc"
 };
 
-function PaymentManager({ rows, notify, reload }) {
+function PaymentManager({ rows, notify, reload, canConfirm }) {
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const orderFilter = searchParams.get("orderId") || "";
   const [search, setSearch] = useState("");
@@ -2644,10 +2606,14 @@ function PaymentManager({ rows, notify, reload }) {
   const [typeFilter, setTypeFilter] = useState("");
   const [methodFilter, setMethodFilter] = useState("");
   const debouncedSearch = useDebouncedValue(search, 600);
-  const [selectedId, setSelectedId] = useState(searchParams.get("paymentId") || null);
+  const legacyPaymentId = searchParams.get("paymentId") || "";
   const [liveRows, setLiveRows] = useState(asArray(rows));
 
   useEffect(() => setLiveRows(asArray(rows)), [rows]);
+
+  useEffect(() => {
+    if (legacyPaymentId) navigate(`/payments/${legacyPaymentId}`, { replace: true });
+  }, [legacyPaymentId, navigate]);
 
   useEffect(() => {
     let active = true;
@@ -2667,6 +2633,7 @@ function PaymentManager({ rows, notify, reload }) {
   }, []);
 
   const filtered = liveRows.filter((row) => {
+    if (row.paymentType === "refund") return false;
     const matchesOrder = !orderFilter || itemId(row.orderId || row.order) === orderFilter;
     const matchesSearch = Object.values(row || {}).join(" ").toLowerCase().includes(debouncedSearch.toLowerCase());
     const matchesStatus = !statusFilter || row.status === statusFilter;
@@ -2682,7 +2649,7 @@ function PaymentManager({ rows, notify, reload }) {
         <div className="admin-toolbar admin-payment-filters">
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={"T\u00ecm theo m\u00e3, kh\u00e1ch h\u00e0ng, tr\u1ea1ng th\u00e1i..."} />
           <AdminSelect value={statusFilter} onChange={setStatusFilter} options={[["", "Tất cả trạng thái"], ["pending", "Đang chờ thanh toán"], ["awaiting_confirmation", "Chờ cửa hàng xác nhận"], ["success", "Thành công"], ["failed", "Thất bại"], ["canceled", "Đã hủy"], ["expired", "Hết hạn"], ["refunded", "Đã hoàn tiền"]]} />
-          <AdminSelect value={typeFilter} onChange={setTypeFilter} options={[["", "Tất cả loại thanh toán"], ["deposit", "Tiền cọc"], ["full", "Thanh toán toàn bộ"], ["rental_balance", "Thanh toán phần còn lại"], ["penalty", "Phí phát sinh"], ["refund", "Hoàn cọc"]]} />
+          <AdminSelect value={typeFilter} onChange={setTypeFilter} options={[["", "Tất cả loại thanh toán"], ["deposit", "Tiền cọc"], ["full", "Thanh toán toàn bộ"], ["rental_balance", "Thanh toán phần còn lại"], ["penalty", "Phí phát sinh"]]} />
           <AdminSelect value={methodFilter} onChange={setMethodFilter} options={[["", "Tất cả phương thức"], ["cash", "Tiền mặt khi nhận đồ"], ["bank_transfer", "Chuyển khoản cửa hàng xác nhận"], ["payos", "QR ngân hàng (payOS)"]]} />
         </div>
         <AdminTable
@@ -2699,15 +2666,16 @@ function PaymentManager({ rows, notify, reload }) {
             provider: (value) => value === "payos" ? "payOS" : value,
             status: (value) => <span className={"badge " + value}>{getStatusLabel(value)}</span>
           }}
-          actions={(row) => <AdminButton onClick={() => setSelectedId(itemId(row))}><Eye size={14} /> Xem</AdminButton>}
+          actions={(row) => <AdminButton onClick={() => navigate(`/payments/${itemId(row)}`)}><Eye size={14} /> Xem</AdminButton>}
+          tableClassName="payment-table"
+          colWidths={["175px", "100px", "110px", "160px", "90px", "180px", "170px", "150px", "110px"]}
         />
       </div>
-      {selectedId && <PaymentDetailModal id={selectedId} fallback={liveRows.find((row) => itemId(row) === selectedId)} notify={notify} onChanged={reload} onClose={() => setSelectedId(null)} />}
     </>
   );
 }
 
-function PaymentDetailModal({ id, fallback, notify, onChanged, onClose }) {
+function PaymentDetailModal({ id, fallback, notify, onChanged, onClose, canConfirm = true }) {
   const [payment, setPayment] = useState(fallback || null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -2736,18 +2704,22 @@ function PaymentDetailModal({ id, fallback, notify, onChanged, onClose }) {
   const refundDestination = payment?.refundDestination;
 
   return (
-    <AdminModal title={"Chi ti\u1ebft thanh to\u00e1n"} onClose={onClose}>
+    <AdminModal title={"Chi ti\u1ebft thanh to\u00e1n"} onClose={onClose} className="payment-detail-modal">
       {loading && <LoadingState />}
       {error && <div className="admin-state error">{error}</div>}
       {payment && (
         <div className="payment-detail">
-          <div className="detail-list">
+          <section className="payment-review-summary">
+            <div><small>GIAO DỊCH KHÁCH HÀNG</small><h2>{money(payment.amount)}</h2><p>{paymentTypeLabels[payment.paymentType] || payment.paymentType} · {order.orderCode || `ARA-${String(itemId(order)).slice(-6).toUpperCase()}`}</p></div>
+            <span className={`badge ${payment.status}`}>{getStatusLabel(payment.status)}</span>
+          </section>
+          <div className="detail-list payment-transaction-details">
             <DetailRow label={isRefund ? "Mã hoàn cọc" : "Mã thanh toán"} value={isRefund ? (payment.refundCode || payment.paymentReference) : (payment.paymentReference || itemId(payment))} />
             <DetailRow label={"M\u00e3 \u0111\u01a1n thu\u00ea"} value={order.orderCode || `ARA-${String(itemId(order)).slice(-6).toUpperCase()}`} />
             <DetailRow label={"Kh\u00e1ch h\u00e0ng"} value={customer.name || customer.email || customer.phone} />
             <DetailRow label={"S\u1ed1 ti\u1ec1n"} value={money(payment.amount)} />
             <DetailRow label={"Ph\u01b0\u01a1ng th\u1ee9c thanh to\u00e1n"} value={({ cash: "Tiền mặt", bank_transfer: "Chuyển khoản ngân hàng", momo: "MoMo", vnpay: "VNPay", payos: "PayOS", bank_gateway: "Cổng ngân hàng" })[payment.method] || payment.method} />
-            <DetailRow label="Minh chứng chuyển khoản" value={payment.proofUrl ? <a href={payment.proofUrl} target="_blank" rel="noreferrer">Xem minh chứng</a> : "Chưa tải lên"} />
+            <DetailRow label="Minh chứng chuyển khoản" value={payment.proofAccessUrl ? <a className="payment-proof-link" href={payment.proofAccessUrl} target="_blank" rel="noreferrer">Mở ảnh minh chứng</a> : payment.method === "bank_transfer" ? "Khách chưa gửi minh chứng" : "Không áp dụng"} />
             {!isRefund && <DetailRow label="Nhà cung cấp" value={payment.provider === "payos" ? "payOS" : payment.provider} />}
             {!isRefund && <DetailRow label="Mã đơn provider" value={payment.providerOrderCode || payment.providerOrderId} />}
             {!isRefund && <DetailRow label="Mã giao dịch provider" value={payment.providerTransactionId} />}
@@ -2765,7 +2737,7 @@ function PaymentDetailModal({ id, fallback, notify, onChanged, onClose }) {
               {!refundDestination && <p className="admin-refund-missing">Chưa thể hoàn tiền. Khách cần thêm tài khoản ngân hàng hoặc ảnh VietQR nhận hoàn cọc.</p>}
             </section>
           )}
-          <div className="detail-list">
+          <div className="detail-list payment-order-totals">
             <DetailRow label={"Ng\u00e0y thu\u00ea"} value={formatDate(order.rentalDate)} />
             <DetailRow label={"Ng\u00e0y tr\u1ea3"} value={formatDate(order.returnDate)} />
             <DetailRow label={"Tr\u1ea1ng th\u00e1i \u0111\u01a1n"} value={order.status} status />
@@ -2794,7 +2766,7 @@ function PaymentDetailModal({ id, fallback, notify, onChanged, onClose }) {
             )}
           </div>
           <div className="modal-actions">
-            {payment.status === "awaiting_confirmation" && (
+            {canConfirm && payment.status === "awaiting_confirmation" && (
               <>
                 <AdminButton
                   variant="primary"
@@ -2906,7 +2878,7 @@ function isMoneyColumn(column) {
   return /price|amount|fee|deposit|revenue|total|value/i.test(column);
 }
 
-function AdminTable({ title, rows = [], columns, labels, format = {}, actions, colWidths = [], columnClasses = {}, tableClassName = "" }) {
+function AdminTable({ title, rows = [], columns, labels, format = {}, actions, colWidths = [], columnClasses = {}, tableClassName = "", mobileCards = false }) {
   const safeRows = asArray(rows);
   const [page, setPage] = useState(1);
   const pageSize = 10;
@@ -2918,7 +2890,7 @@ function AdminTable({ title, rows = [], columns, labels, format = {}, actions, c
   }, [page, totalPages]);
 
   return (
-    <div className="admin-table-wrap">
+    <div className={`admin-table-wrap ${mobileCards ? "admin-table-mobile-cards" : ""}`.trim()}>
       {title && <h2>{title}</h2>}
       {safeRows.length === 0 ? <EmptyState /> : (
         <>
@@ -2935,12 +2907,12 @@ function AdminTable({ title, rows = [], columns, labels, format = {}, actions, c
             <thead><tr>{labels.map((label) => <th key={label}>{label}</th>)}{actions && <th className="action-cell">Thao tác</th>}</tr></thead>
             <tbody>{pagedRows.map((row, index) => (
               <tr key={itemId(row) || index}>
-                {columns.map((col) => {
+                {columns.map((col, columnIndex) => {
                   const value = format[col] ? format[col](row[col], row) : col === "status" ? <StatusBadge value={row[col]} /> : row[col];
                   const className = ["admin-cell", isMoneyColumn(col) ? "money-cell" : "", columnClasses[col] || ""].filter(Boolean).join(" ");
-                  return <td key={col} className={className}><span className="cell-content">{value}</span></td>;
+                  return <td key={col} className={className} data-label={mobileCards ? labels[columnIndex] : undefined}><span className="cell-content">{value}</span></td>;
                 })}
-                {actions && <td className="action-cell"><div className="action-group row-actions">{actions(row)}</div></td>}
+                {actions && <td className="action-cell" data-label={mobileCards ? "Thao tác" : undefined}><div className="action-group row-actions">{actions(row)}</div></td>}
               </tr>
             ))}</tbody>
           </table>

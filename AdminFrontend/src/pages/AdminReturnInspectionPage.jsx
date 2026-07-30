@@ -94,7 +94,10 @@ export function AdminReturnInspectionPage({ notify }) {
         { key: "actualReturn", label: "Trả thực tế", render: (order) => formatDateTime(order.actualReturnDate || order.returnedAt) },
         { key: "fees", label: "Phí phát sinh", className: "money-cell", render: (order) => money(Number(order.lateFee || 0) + Number(order.damageFee || 0)) },
         { key: "state", label: "Trạng thái xử lý", render: (order) => <AdminStatusBadge value={inspectionState(order)}/> },
-        { key: "action", label: "Thao tác", className: "action-cell", render: (order) => <button onClick={() => navigate(`/orders/${idOf(order)}`)}><Eye size={15}/> {order.status === "returned" && !order.inspectedAt ? "Kiểm tra ngay" : "Xem chi tiết"}</button> }
+        { key: "action", label: "Thao tác", className: "action-cell", render: (order) => {
+          const canInspect = ["renting", "overdue"].includes(order.status) || (order.status === "returned" && !order.inspectedAt);
+          return <button onClick={() => navigate(canInspect ? `/inspections/${idOf(order)}` : `/orders/${idOf(order)}`)}><Eye size={15}/> {canInspect ? "Kiểm tra ngay" : "Xem chi tiết"}</button>;
+        } }
       ]}
     />}
   </>;

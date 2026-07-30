@@ -29,12 +29,29 @@ function usePortalPosition(open, triggerRef, width = null) {
   return style;
 }
 
-export function ModalSelect({ label, value, options = [], onChange, placeholder = "Chọn một giá trị", disabled = false, clearable = false, className = "" }) {
+export function ModalSelect({ label, value, options = [], onChange, placeholder = "Chọn một giá trị", disabled = false, clearable = false, searchable = false, searchPlaceholder = "Tìm lựa chọn…", className = "" }) {
   const [open, setOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [query, setQuery] = useState("");
   const rootRef = useRef(null), triggerRef = useRef(null), menuRef = useRef(null);
   const menuStyle = usePortalPosition(open, triggerRef);
   const normalized = useMemo(() => normalizeOptions(options), [options]);
+  const visibleOptions = useMemo(() => {
+    const needle = query.trim().toLocaleLowerCase("vi");
+    return needle
+      ? normalized.filter((option) => option.label.toLocaleLowerCase("vi").includes(needle))
+      : normalized;
+  }, [normalized, query]);
   const selected = normalized.find((option) => String(option.value) === String(value ?? ""));
+  const selectable = useMemo(() => clearable ? [{ value: "", label: placeholder }, ...visibleOptions] : visibleOptions, [clearable, visibleOptions, placeholder]);
+  useEffect(() => {
+    if (!open) {
+      setQuery("");
+      return;
+    }
+    const selectedIndex = selectable.findIndex((option) => String(option.value) === String(value ?? ""));
+    setActiveIndex(Math.max(0, selectedIndex));
+  }, [open, selectable, value]);
   useEffect(() => {
     if (!open) return undefined;
     const close = (event) => {
@@ -45,24 +62,57 @@ export function ModalSelect({ label, value, options = [], onChange, placeholder 
     return () => { document.removeEventListener("pointerdown", close); window.removeEventListener("keydown", close); };
   }, [open]);
   const choose = (next) => { onChange(next); setOpen(false); requestAnimationFrame(() => triggerRef.current?.focus()); };
+  const keyDown = (event) => {
+    if (disabled) return;
+    if (!open && ["ArrowDown", "ArrowUp", "Enter", " "].includes(event.key)) {
+      event.preventDefault();
+      setOpen(true);
+      return;
+    }
+    if (!open) return;
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      const direction = event.key === "ArrowDown" ? 1 : -1;
+      setActiveIndex((current) => (current + direction + selectable.length) % Math.max(1, selectable.length));
+    } else if (event.key === "Home" || event.key === "End") {
+      event.preventDefault();
+      setActiveIndex(event.key === "Home" ? 0 : Math.max(0, selectable.length - 1));
+    } else if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      if (selectable[activeIndex]) choose(selectable[activeIndex].value);
+    } else if (event.key === "Tab") {
+      setOpen(false);
+    }
+  };
   return <label className={`modal-select-field ${className}`} ref={rootRef}>
     {label && <span className="admin-control-label">{label}</span>}
-    <button ref={triggerRef} type="button" className={`modal-select-trigger ${open ? "is-open" : ""} ${selected ? "" : "is-placeholder"}`} disabled={disabled} aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen((current) => !current)}><span>{selected?.label || placeholder}</span><ChevronDown size={17}/></button>
-    {open && createPortal(<div ref={menuRef} className="modal-select-menu" style={menuStyle} role="listbox" aria-label={label || placeholder}>
-      {clearable && <button type="button" role="option" aria-selected={!selected} className={!selected ? "is-selected" : ""} onClick={() => choose("")}><span>{placeholder}</span>{!selected && <CheckCircle2 size={16}/>}</button>}
-      {!normalized.length && <p>Không có lựa chọn</p>}
-      {normalized.map((option) => { const active = String(option.value) === String(value ?? ""); return <button type="button" role="option" aria-selected={active} className={active ? "is-selected" : ""} key={String(option.value)} onClick={() => choose(option.value)}><span>{option.label}</span>{active && <CheckCircle2 size={16}/>}</button>; })}
+    <button ref={triggerRef} type="button" className={`modal-select-trigger ${open ? "is-open" : ""} ${selected ? "" : "is-placeholder"}`} disabled={disabled} aria-haspopup="listbox" aria-expanded={open} onKeyDown={keyDown} onClick={() => setOpen((current) => !current)}><span>{selected?.label || placeholder}</span><ChevronDown size={17}/></button>
+    {open && createPortal(<div ref={menuRef} className="modal-select-menu" style={menuStyle} role="listbox" aria-label={label || placeholder} onKeyDown={keyDown}>
+      {searchable && <input autoFocus className="modal-select-search" value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => {
+        if (!["ArrowDown", "ArrowUp", "Home", "End", "Enter", "Escape", "Tab"].includes(event.key)) event.stopPropagation();
+      }} placeholder={searchPlaceholder} aria-label={searchPlaceholder}/>}
+      {clearable && <button type="button" role="option" aria-selected={!selected} className={`${!selected ? "is-selected" : ""} ${activeIndex === 0 ? "is-keyboard-active" : ""}`} onMouseEnter={() => setActiveIndex(0)} onClick={() => choose("")}><span>{placeholder}</span>{!selected && <CheckCircle2 size={16}/>}</button>}
+      {!visibleOptions.length && <p>Không có lựa chọn phù hợp</p>}
+      {visibleOptions.map((option, index) => { const active = String(option.value) === String(value ?? ""); const optionIndex = index + (clearable ? 1 : 0); return <button type="button" role="option" aria-selected={active} className={`${active ? "is-selected" : ""} ${activeIndex === optionIndex ? "is-keyboard-active" : ""}`} key={String(option.value)} onMouseEnter={() => setActiveIndex(optionIndex)} onClick={() => choose(option.value)}><span>{option.label}</span>{active && <CheckCircle2 size={16}/>}</button>; })}
     </div>, document.body)}
   </label>;
 }
 
+export function ModalCombobox(props) {
+  return <ModalSelect {...props} searchable />;
+}
+
 export function ModalMultiSelect({ label, value = [], options = [], onChange, placeholder = "Chọn một hoặc nhiều giá trị", disabled = false, className = "" }) {
   const [open, setOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
   const rootRef = useRef(null), triggerRef = useRef(null), menuRef = useRef(null);
   const menuStyle = usePortalPosition(open, triggerRef);
   const normalized = useMemo(() => normalizeOptions(options), [options]);
   const selectedIds = useMemo(() => new Set((Array.isArray(value) ? value : []).map(String)), [value]);
   const selected = normalized.filter((option) => selectedIds.has(String(option.value)));
+  useEffect(() => {
+    if (open) setActiveIndex(0);
+  }, [open]);
   useEffect(() => {
     if (!open) return undefined;
     const close = (event) => {
@@ -82,15 +132,37 @@ export function ModalMultiSelect({ label, value = [], options = [], onChange, pl
     event.stopPropagation();
     onChange((Array.isArray(value) ? value : []).filter((item) => String(item) !== String(identity)));
   };
+  const keyDown = (event) => {
+    if (disabled) return;
+    if (!open && ["ArrowDown", "ArrowUp", "Enter", " "].includes(event.key)) {
+      event.preventDefault();
+      setOpen(true);
+      return;
+    }
+    if (!open) return;
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      const direction = event.key === "ArrowDown" ? 1 : -1;
+      setActiveIndex((current) => (current + direction + normalized.length) % Math.max(1, normalized.length));
+    } else if (event.key === "Home" || event.key === "End") {
+      event.preventDefault();
+      setActiveIndex(event.key === "Home" ? 0 : Math.max(0, normalized.length - 1));
+    } else if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      if (normalized[activeIndex]) toggle(normalized[activeIndex].value);
+    } else if (event.key === "Tab") {
+      setOpen(false);
+    }
+  };
   return <label className={`modal-select-field modal-multi-select-field ${className}`} ref={rootRef}>
     {label && <span className="admin-control-label">{label}</span>}
-    <button ref={triggerRef} type="button" className={`modal-select-trigger modal-multi-select-trigger ${open ? "is-open" : ""} ${selected.length ? "" : "is-placeholder"}`} disabled={disabled} aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen((current) => !current)}>
+    <button ref={triggerRef} type="button" className={`modal-select-trigger modal-multi-select-trigger ${open ? "is-open" : ""} ${selected.length ? "" : "is-placeholder"}`} disabled={disabled} aria-haspopup="listbox" aria-expanded={open} onKeyDown={keyDown} onClick={() => setOpen((current) => !current)}>
       <span className="modal-multi-select-values">{selected.length ? selected.map((option) => <span className="modal-multi-select-chip" key={String(option.value)}>{option.label}<span role="button" tabIndex={-1} aria-label={`Bỏ ${option.label}`} onClick={(event) => remove(event, option.value)}><X size={13}/></span></span>) : placeholder}</span>
       <ChevronDown size={17}/>
     </button>
-    {open && createPortal(<div ref={menuRef} className="modal-select-menu modal-multi-select-menu" style={menuStyle} role="listbox" aria-multiselectable="true" aria-label={label || placeholder}>
+    {open && createPortal(<div ref={menuRef} className="modal-select-menu modal-multi-select-menu" style={menuStyle} role="listbox" aria-multiselectable="true" aria-label={label || placeholder} onKeyDown={keyDown}>
       {!normalized.length && <p>Không có lựa chọn</p>}
-      {normalized.map((option) => { const active = selectedIds.has(String(option.value)); return <button type="button" role="option" aria-selected={active} className={active ? "is-selected" : ""} key={String(option.value)} onClick={() => toggle(option.value)}><span>{option.label}</span>{active && <CheckCircle2 size={16}/>}</button>; })}
+      {normalized.map((option, index) => { const active = selectedIds.has(String(option.value)); return <button type="button" role="option" aria-selected={active} className={`${active ? "is-selected" : ""} ${activeIndex === index ? "is-keyboard-active" : ""}`} key={String(option.value)} onMouseEnter={() => setActiveIndex(index)} onClick={() => toggle(option.value)}><span>{option.label}</span>{active && <CheckCircle2 size={16}/>}</button>; })}
     </div>, document.body)}
   </label>;
 }
@@ -123,7 +195,7 @@ export function MoneyThousandsInput({ label, value, onChange = () => {}, require
   return <label className="money-thousands-field"><span className="admin-control-label">{label}</span><span className="admin-input-shell"><input type="text" inputMode="numeric" required={required} readOnly={readOnly} value={units} placeholder="Ví dụ: 700" onFocus={e=>e.currentTarget.select()} onChange={e=>{const raw=e.target.value.replace(/\D/g,"");onChange(raw===""?"":Number(raw)*1000);}}/><b>.000 đ</b></span>{units&&<small>Thành tiền: {new Intl.NumberFormat("vi-VN").format(Number(value))} đ</small>}</label>;
 }
 
-export function AdminModal({ title, children, onClose, className = "" }) {
+export function AdminModal({ title, children, footer = null, onClose, className = "" }) {
   useEffect(()=>{const close=e=>{if(e.key==="Escape")onClose();};window.addEventListener("keydown",close);const previous=document.body.style.overflow;document.body.style.overflow="hidden";return()=>{window.removeEventListener("keydown",close);document.body.style.overflow=previous;};},[onClose]);
-  return createPortal(<div className="admin-modal-backdrop" role="presentation" onPointerDown={e=>{if(e.target===e.currentTarget)onClose();}}><section className={`admin-modal ${className}`} role="dialog" aria-modal="true" aria-label={title}><header className="admin-modal-head"><h2>{title}</h2><button type="button" aria-label="Đóng" onClick={onClose}><X size={20}/></button></header><div className="admin-modal-body">{children}</div></section></div>,document.body);
+  return createPortal(<div className="admin-modal-backdrop" role="presentation" onPointerDown={e=>{if(e.target===e.currentTarget)onClose();}}><section className={`admin-modal ${footer ? "admin-modal--with-footer" : ""} ${className}`.trim()} role="dialog" aria-modal="true" aria-label={title}><header className="admin-modal-head"><h2>{title}</h2><button type="button" aria-label="Đóng" onClick={onClose}><X size={20}/></button></header><div className="admin-modal-body">{children}</div>{footer && <footer className="admin-modal-footer">{footer}</footer>}</section></div>,document.body);
 }

@@ -5,7 +5,7 @@ export const orderLabels = Object.fromEntries(orderStatusOptions);
 export const costumeLabels = Object.fromEntries(costumeStatusOptions);
 export { getStatusLabel, normalizeStatus, statusAliases, statusLabels };
 
-export const steps = ["confirmed", "ready_to_pickup", "renting", "returned", "completed"];
+export const steps = ["pending_payment", "confirmed", "ready_for_handover", "outbound_in_transit", "renting", "return_in_transit", "returned", "completed"];
 
 export function money(value) {
   return new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND" }).format(value || 0);

@@ -7,10 +7,10 @@ import { Costume } from "../models/Costume.js";
 import { Payment } from "../models/Payment.js";
 import { AuditLog } from "../models/AuditLog.js";
 import { ApiError } from "../utils/ApiError.js";
+import { ADMIN_PERMISSIONS, hasAdminPermission, isAdminRole } from "../utils/adminPermissions.js";
 import { RENTAL_POLICY, calculateExtraDayFee } from "../config/rentalPolicy.js";
 import { assertNoScheduleConflict } from "./costume.service.js";
 
-const adminRoles = ["admin", "staff", "owner"];
 const requireOrder = async id => {
   const order = await RentalOrder.findById(id);
   if (!order) throw new ApiError(404, "Không tìm thấy đơn thuê.");
@@ -22,12 +22,16 @@ export async function confirmDeposit(orderId, input, actorId) {
   const order = await requireOrder(orderId);
   const method = input.method;
   if (!["partial_cash", "full_rental", "original_id"].includes(method)) throw new ApiError(400, "Hình thức cọc không hợp lệ.");
+  if (method !== "original_id") {
+    const error = new ApiError(422, "Tiền cọc chỉ được ghi nhận qua Payment thành công; không thể xác nhận cọc trực tiếp trên đơn.");
+    error.code = "RENTAL_PAYMENT_LEDGER_REQUIRED";
+    throw error;
+  }
   const amount = Number(input.amount);
   if (!Number.isFinite(amount) || amount < 0) throw new ApiError(400, "Admin phải xác nhận số tiền cọc thực tế.");
   if (method !== "original_id" && amount <= 0) throw new ApiError(400, "Số tiền cọc phải lớn hơn 0.");
   const before = order.deposit?.toObject?.() || order.deposit;
   order.deposit = { ...before, method, amount, status: "received", note: input.note || "", confirmedBy: actorId, confirmedAt: new Date(), originalIdReceivedAt: method === "original_id" ? new Date(input.originalIdReceivedAt || Date.now()) : null };
-  order.totalDepositAmount = amount;
   await order.save(); await audit(actorId, "deposit.confirm", order, before, order.deposit, input.note);
   return order;
 }
@@ -43,8 +47,8 @@ export async function updateLogistics(orderId, input, actorId) {
   const order = await requireOrder(orderId); const before = order.schedule?.toObject?.() || order.schedule;
   for (const key of ["pickupAt", "mainWearDate", "dueReturnAt", "actualReturnAt", "shopShippedAt", "customerReceivedAt", "customerReturnShippedAt", "shopReceivedBackAt"]) if (input[key] !== undefined) order.schedule[key] = input[key] ? new Date(input[key]) : null;
   if (input.isOutOfProvince !== undefined) order.schedule.isOutOfProvince = Boolean(input.isOutOfProvince);
-  const outboundFee = Math.max(0, Number(input.outboundFee ?? order.shipping.outboundFee) || 0); const returnFee = Math.max(0, Number(input.returnFee ?? order.shipping.returnFee) || 0);
-  order.shipping = { outboundFee, returnFee, totalFee: outboundFee + returnFee }; await order.save();
+  if (Number(input.outboundFee || 0) !== 0 || Number(input.returnFee || 0) !== 0) throw new ApiError(422, "Phí giao/nhận do khách thanh toán trực tiếp cho shipper và không được ghi vào đơn.");
+  await order.save();
   await audit(actorId, "logistics.update", order, before, { schedule: order.schedule, shipping: order.shipping }); return order;
 }
 
@@ -80,12 +84,13 @@ export async function reportPickupIssue(orderId, input, user) {
   return PickupIssue.create({ orderId, customerId: user._id, issueType: input.issueType, description: input.description, evidenceUrls: input.evidenceUrls });
 }
 export const listIssues = orderId => PickupIssue.find({ orderId }).populate("handledBy", "name").sort({ createdAt: -1 });
-export async function listIssuesForUser(orderId, user) { const order = await requireOrder(orderId); if (!adminRoles.includes(user.role) && String(order.customerId) !== String(user._id)) throw new ApiError(403, "Bạn không có quyền xem báo cáo của đơn này."); return listIssues(orderId); }
+export async function listIssuesForUser(orderId, user) { const order = await requireOrder(orderId); if (!isAdminRole(user.role) && String(order.customerId) !== String(user._id)) throw new ApiError(403, "Bạn không có quyền xem báo cáo của đơn này."); return listIssues(orderId); }
 export async function handleIssue(orderId, issueId, input, actorId) { const issue = await PickupIssue.findOne({ _id: issueId, orderId }); if (!issue) throw new ApiError(404, "Không tìm thấy báo cáo."); issue.status = input.status; issue.resolutionNote = input.resolutionNote || ""; issue.handledBy = actorId; issue.handledAt = new Date(); await issue.save(); return issue; }
 
 export async function applyCredit(orderId, input, user) {
   const order = await requireOrder(orderId); const actorId = user._id; const amount = Number(input.amount);
-  if (!adminRoles.includes(user.role) && String(order.customerId) !== String(actorId)) throw new ApiError(403, "Bạn không có quyền dùng số dư cho đơn này.");
+  if (isAdminRole(user.role) && !hasAdminPermission(user, ADMIN_PERMISSIONS.PAYMENTS_ADJUST)) throw new ApiError(403, "Tài khoản không có quyền điều chỉnh số dư đơn thuê.");
+  if (!isAdminRole(user.role) && String(order.customerId) !== String(actorId)) throw new ApiError(403, "Bạn không có quyền dùng số dư cho đơn này.");
   if (!Number.isFinite(amount) || amount <= 0) throw new ApiError(400, "Số tiền sử dụng không hợp lệ.");
   const credit = await RentalCredit.findOneAndUpdate({ _id: input.creditId, customerId: order.customerId, remainingAmount: { $gte: amount } }, { $inc: { remainingAmount: -amount }, $push: { usages: { orderId, amount, appliedBy: actorId, appliedAt: new Date() } } }, { new: true });
   if (!credit) throw new ApiError(409, "Số dư không tồn tại hoặc không đủ."); credit.status = credit.remainingAmount === 0 ? "used" : "partially_used"; await credit.save(); order.creditAppliedAmount += amount; await order.save(); await audit(actorId, "credit.apply", order, null, { creditId: credit._id, amount }); return { order, credit };

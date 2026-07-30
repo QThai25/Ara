@@ -1,72 +1,90 @@
 # ARA system audit
 
-## Scope and architecture
+Cập nhật trạng thái: **30/07/2026**.
 
-ARA is a three-application JavaScript repository:
+## Kiến trúc
 
-| Application | Stack | Entrypoint | Main responsibility |
-| --- | --- | --- | --- |
-| Backend | Node.js, Express, Mongoose, Socket.IO | `Backend/server.js` | REST API, MongoDB persistence, realtime chat, schedulers and PayOS |
-| Customer frontend | React 18, React Router, Axios, Vite | `Frontend/src/main.jsx` | Catalogue, availability, checkout, account, payments and ARI chat |
-| Admin frontend | React 18, React Router, Axios, Vite | `AdminFrontend/src/main.jsx` | Catalogue, rental, payment, customer, report, fulfillment and support operations |
+| Application | Stack | Entrypoint | Trách nhiệm |
+|---|---|---|---|
+| Backend | Node.js, Express, Mongoose, Socket.IO | `Backend/server.js` | REST, MongoDB, realtime, scheduler, payment/refund |
+| Customer | React 18, React Router, Axios, Vite | `Frontend/src/main.jsx` | Catalog, availability, checkout, account và order |
+| Admin | React 18, React Router, Axios, Vite | `AdminFrontend/src/main.jsx` | Owner/Staff operation, payment, inspection, refund, reports và audit |
 
-MongoDB entities are defined in `Backend/src/models`. Important domains include users and addresses; costume taxonomy and inventory; rental orders, items and reservations; payments and refunds; shipping zones and transport reservations; notifications; chat conversations and knowledge.
-
-Runtime jobs start in `Backend/server.js`: notification scheduling, PayOS reconciliation and transport-duration suggestions. Socket.IO is initialized from the same HTTP server.
+Runtime jobs gồm notification scheduling và payOS reconciliation. Backend/customer/admin là ba package npm độc lập.
 
 ## API inventory
 
-Public/customer route groups mounted by `Backend/src/routes/index.js`: auth, categories, brands, costumes, rental orders, payments, reviews, wishlist, vouchers, banners, occasions, styles, contact, notifications, account, shipping, locations, refunds, chat and transport.
+Public/customer groups: auth, taxonomy/catalog, rental orders, payments, reviews, wishlist, voucher/banner, contact, notification, account, location, refund destination, chat và fulfillment-compatible routes.
 
-Admin route groups: dashboard, customers, categories, brands, costumes, rental orders, payments, reviews, vouchers, banners, occasions, styles, contact requests, notifications, reports, invoices, shipping zones, refunds, chat and transport. All are now mounted through the centralized `mountAdmin(path, router)` guard.
+Admin groups: dashboard, customers, taxonomy/catalog, rental orders, payments, refunds, notifications/chat/contact, reports, invoices/settings, staff và audit logs.
 
-Customer routes are declared in `Frontend/src/routes/AppRoutes.jsx`. Admin routes are declared in `AdminFrontend/src/routes/AdminRoutes.jsx`; UI protection is provided by `ProtectedAdminRoute`, while API authorization is enforced independently by the backend.
+Tất cả `/api/admin/*` dùng centralized mount:
 
-## Core business rules verified from code and tests
-
-| Rule | Actor | Implementation | Expected result |
-| --- | --- | --- | --- |
-| Rental duration | Customer/admin | `rentalTimeline.service.js` | One rental day is exactly 24 elapsed hours |
-| Inventory conflict | Customer/admin | `rentalAvailability.service.js` | Reject overlapping quantity, including cleaning buffer |
-| Legacy compatibility | System | `costume.service.js`, `rentalAvailability.service.js` | Legacy RentalOrderItem and canonical Reservation both hold inventory without double counting |
-| Operational status | Admin | Costume service/model | Admin changes operational state; rented/cleaning are derived |
-| Payment separation | Customer/admin | Payment and rental services | Payment state does not directly mutate rental progress |
-| Guest order access | Guest | Signed scoped token | Guest can access only the bound order and allowed scope |
-| Admin authorization | Admin/staff/owner | `routes/index.js`, auth/admin middleware | Every `/api/admin/*` router requires a valid privileged user |
-
-## Findings
-
-### P0 — fixed: inconsistent admin API protection
-
-Evidence: several admin route modules (for example `banner.routes.js`, `shipping.routes.js`, `transport.routes.js`) did not attach authentication locally. UI route protection is not an API security boundary. `Backend/src/routes/index.js` now mounts every admin router through `auth` and `adminOnly`. `Backend/test/admin-route-auth.test.js` prevents an unguarded direct admin mount.
-
-### P1 — mitigated: nearest-bookable endpoint performed repeated database work
-
-Evidence: `findNearestBookable` formerly called the complete quote path for as many as 14 slots × 32 days. It now loads a 32-day inventory grid once, filters impossible candidates in memory, checks remaining hours per day concurrently and stops on the first valid day. Customer UI requests the selected-slot quote first and performs nearest-slot discovery in the background.
-
-### P1 — open: no real database query-plan baseline
-
-The available test environment does not provide an isolated seeded MongoDB benchmark target. No `explain("executionStats")` was run against production. Query-plan claims and index changes are therefore intentionally deferred.
-
-### P2 — open: no configured lint, type-check, coverage or browser E2E
-
-All three package manifests were inspected. Backend has `test` and `check`; both frontends have build/check only. Playwright, ESLint and TypeScript are not configured. Adding them is a separate, test-infrastructure change.
-
-### P2 — open: offset pagination remains in high-volume lists
-
-Examples: notification, payment, rental-order and contact services use `skip/limit`. This is acceptable for the current dataset but should move to keyset pagination before large production volumes.
-
-## Baseline commands
-
-```powershell
-cd Backend; npm.cmd test
-cd Backend; npm.cmd run check
-cd Frontend; npm.cmd run build
-cd AdminFrontend; npm.cmd run build
+```text
+auth → active/tokenVersion → privileged role → route permission
 ```
 
-Observed baseline after the current fixes: backend tests pass (152 tests, including new authorization, rate-limit and error-disclosure regressions), backend syntax check passes, and both frontend production builds pass. Vite reports a pre-existing large-chunk warning.
+Shared payment/cancellation/credit/refund services còn recheck permission khi caller mang admin token.
+
+## Business source of truth
+
+| Domain | Source |
+|---|---|
+| Availability | Reservation + compatibility legacy order holds |
+| Order action | Backend `allowedActions` và `actionBlockReasons` |
+| Tiền đã thu | Chỉ `Payment.status = success` |
+| Refund | Payment/DepositRefund ledger và settlement |
+| Fulfillment | Mốc vật lý trong order; phí ship ngoài hệ thống |
+| Admin authorization | Backend permission map/policy, không phải sidebar |
+
+Không đổi công thức giá/cọc/penalty/refund hoặc state machine trong đợt RBAC/UI.
+
+## Findings đã xử lý
+
+### P0 — admin authorization không nhất quán
+
+Fixed bằng centralized route policy, service-level bypass defense, role-aware projection và regression tests.
+
+### P0 — session cũ sau khi Staff bị block/reset
+
+Fixed bằng Mongo status/tokenVersion recheck cho HTTP/socket, increment version và ngắt socket.
+
+### P1 — nearest-bookable lặp DB work
+
+Đã tải booking grid một lần, prefilter trong memory và chỉ validate candidate khả thi. Customer nhận selected-slot feedback trước khi background nearest search hoàn tất.
+
+### P1 — Admin page fetch thừa resource
+
+Trang quản trị lớn không còn fetch mọi resource chỉ vì route đổi; chỉ fetch resource active. Auth profile/permissions được tải một lần theo auth lifecycle.
+
+## Findings mở
+
+- Không có MongoDB staging snapshot để chạy `explain("executionStats")`.
+- Chưa có Playwright/browser E2E hoặc Customer unit test runner.
+- Không có lint/type-check/coverage config.
+- Offset pagination còn ở list lớn.
+- Legacy dashboard revenue có thể khác Payment-ledger report.
+- Bundle chart Admin và ProductCarousel import warning cần performance task riêng.
+
+## Lệnh xác minh gần nhất
+
+```powershell
+cd Backend
+npm.cmd test
+npm.cmd run check
+
+cd ..\Frontend
+npm.cmd run build
+
+cd ..\AdminFrontend
+npm.cmd test
+npm.cmd run build
+```
+
+Kết quả: Backend 181/181; Admin 4/4; hai production build pass. Không ghi lint/E2E là pass vì chưa có runner/config.
 
 ## Rollback
 
-The centralized authorization change can be rolled back by replacing `mountAdmin` calls with direct mounts, but that reintroduces the vulnerability. The nearest-slot split can be rolled back by removing `includeNearest`/`nearestOnly` and returning to one synchronous quote; this is not recommended because it restores blocking UX.
+Không rollback bằng cách bỏ permission guard vì sẽ mở lại lỗ hổng. Dùng release artifact trước, giữ migration/index additive nếu an toàn, và restore Atlas snapshot/chạy rollback đã rehearsal khi có data incident.
+
+Tài liệu hiện hành: [RBAC](ADMIN_RBAC.md), [test matrix](test-matrix.md), [deployment readiness](deployment-readiness.md).

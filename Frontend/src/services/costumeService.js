@@ -3,28 +3,40 @@ import { normalizeCostume } from "../utils/format.js";
 import { createTimedRequestCache, throwIfAborted } from "../utils/timedRequestCache.js";
 
 const availabilityCache = createTimedRequestCache();
+const costumeDetailCache = createTimedRequestCache({ staleTime: 300_000, gcTime: 900_000 });
+const costumeListCache = createTimedRequestCache({ staleTime: 120_000, gcTime: 600_000 });
+const costumeDetailRequests = new Map();
+const costumeListRequests = new Map();
 
 export async function getCostumes(query = "", config = {}) {
-  const response = await apiClient.get(
-    `/costumes${query}`,
-    config
-  );
+  const cacheKey = costumeListCache.key(["costumes", query]);
+  const cached = costumeListCache.get(cacheKey);
+  if (cached !== undefined) return cached;
+  const canShareRequest = !config.signal;
+  if (canShareRequest && costumeListRequests.has(cacheKey)) return costumeListRequests.get(cacheKey);
 
-  const rows =
-    response.data?.items ||
-    response.data ||
-    [];
-
-  return rows.map(normalizeCostume);
+  const request = apiClient.get(`/costumes${query}`, config).then((response) => {
+    const rows = response.data?.items || response.data || [];
+    return costumeListCache.set(cacheKey, rows.map(normalizeCostume));
+  }).finally(() => {
+    if (canShareRequest) costumeListRequests.delete(cacheKey);
+  });
+  if (canShareRequest) costumeListRequests.set(cacheKey, request);
+  return request;
 }
 
 export async function getCostume(id) {
-  const response = await apiClient.get(
-    `/costumes/${id}`
-  );
+  const cacheKey = costumeDetailCache.key(["costume", id]);
+  const cached = costumeDetailCache.get(cacheKey);
+  if (cached !== undefined) return cached;
+  if (costumeDetailRequests.has(cacheKey)) return costumeDetailRequests.get(cacheKey);
 
-  const data = response.data || response;
-  return normalizeCostume(data);
+  const request = apiClient.get(`/costumes/${id}`).then((response) => {
+    const data = response.data || response;
+    return costumeDetailCache.set(cacheKey, normalizeCostume(data));
+  }).finally(() => costumeDetailRequests.delete(cacheKey));
+  costumeDetailRequests.set(cacheKey, request);
+  return request;
 }
 
 export async function getCategories() {

@@ -1,0 +1,4 @@
+/* Tailwind utilities only: deliberately omit Preflight to preserve the existing admin UI. */
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+@source "../components/revenue/RevenueAnalytics.jsx";

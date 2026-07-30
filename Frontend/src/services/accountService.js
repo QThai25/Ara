@@ -8,8 +8,9 @@ export const deleteAddress=async id=>data(await apiClient.delete(`/account/addre
 export const setDefaultAddress=async id=>data(await apiClient.patch(`/account/addresses/${id}/default`));
 export const toggleAddress=async id=>data(await apiClient.patch(`/account/addresses/${id}/toggle`));
 export const listRefundDestinations=async()=>data(await apiClient.get("/account/refund-destinations"));
+export const listSupportedBanks=async()=>data(await apiClient.get("/account/banks"));
 export const createRefundDestination=async body=>data(await apiClient.post("/account/refund-destinations",body));
 export const deleteRefundDestination=async id=>data(await apiClient.delete(`/account/refund-destinations/${id}`));
 export const setDefaultRefundDestination=async id=>data(await apiClient.patch(`/account/refund-destinations/${id}/default`));
 export const toggleRefundDestination=async id=>data(await apiClient.patch(`/account/refund-destinations/${id}/toggle`));
-export const uploadRefundQr=async file=>{const body=new FormData();body.append("image",file);return data(await apiClient.post("/uploads/refund-qr",body));};
+export const uploadRefundQr=async(file,config={})=>{const body=new FormData();body.append("image",file);const orderId=config.orderId;const requestConfig={...config};delete requestConfig.orderId;return data(await apiClient.post(orderId?`/uploads/refund-qr/${orderId}`:"/uploads/refund-qr",body,requestConfig));};

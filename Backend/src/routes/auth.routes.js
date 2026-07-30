@@ -4,6 +4,7 @@ import { auth } from "../middlewares/auth.middleware.js";
 import { validate } from "../middlewares/validate.middleware.js";
 import {
   loginValidation,
+  changePasswordValidation,
   phoneLoginValidation,
   registerValidation,
   requestPhoneOtpValidation,
@@ -24,4 +25,5 @@ authRoutes.post("/phone/login", loginRateLimit, phoneLoginValidation, validate, 
 authRoutes.post("/phone/request-otp", requestOtpRateLimit, requestPhoneOtpValidation, validate, controller.requestPhoneOtp);
 authRoutes.post("/phone/verify-otp", verifyOtpRateLimit, verifyPhoneOtpValidation, validate, controller.verifyPhoneOtp);
 authRoutes.post("/logout", auth, controller.logout);
+authRoutes.post("/change-password", auth, changePasswordValidation, validate, controller.changePassword);
 authRoutes.get("/me", auth, controller.me);

@@ -19,6 +19,9 @@ import React, {
 import { useNavigate, useParams } from "react-router-dom";
 import { io } from "socket.io-client";
 
+import { ADMIN_PERMISSIONS as P } from "../constants/adminPermissions.js";
+import { useAdminAuth } from "../context/AdminAuthContext.jsx";
+
 import {
   AdminDetailSection,
   AdminPageHeader,
@@ -27,18 +30,19 @@ import {
 
 import { AdminConfirmModal } from "../components/common/AdminConfirmModal.jsx";
 import { OrderHoldCountdown } from "../components/common/OrderHoldCountdown.jsx";
-import { ReturnInspectionModal } from "../components/common/ReturnInspectionModal.jsx";
 import { StateMessage } from "../components/common/StateMessage.jsx";
 
 import {
   approveRentalOrder,
   collectCashAndPickup,
+  confirmCustomerReceived,
+  confirmReturnReceivedByShop,
+  dispatchHomeDelivery,
   completeRentalOrder,
-  createReturnInspection,
   getAdminRentalOrder,
   markRentalOrderPickedUp,
   markRentalOrderReady,
-  markRentalOrderReturned,
+  markCustomerReturnHandover,
   rejectRentalOrder
 } from "../services/rentalOrderService.js";
 import { createAdminPayment, getAdminPaymentQuote } from "../services/paymentService.js";
@@ -46,10 +50,35 @@ import { createAdminPayment, getAdminPaymentQuote } from "../services/paymentSer
 import {
   costumeImage,
   costumeName,
-  money,
-  orderLabels,
-  steps
+  money
 } from "../utils/format.js";
+
+const ORDER_PROGRESS = [
+  { key: "pending_payment", label: "Chờ thanh toán", description: "Khách hoàn tất khoản thanh toán đầu tiên." },
+  { key: "confirmed", label: "Đã xác nhận", description: "Đơn hợp lệ và trang phục đã được giữ lịch." },
+  { key: "ready_for_handover", label: "Chuẩn bị & giao đồ", description: "Shop chuẩn bị xong và bàn giao tại shop hoặc cho shipper." },
+  { key: "renting", label: "Đang thuê", description: "Khách đã thực nhận trang phục." },
+  { key: "returned", label: "Nhận lại & kiểm tra", description: "Shop nhận lại đồ và kiểm tra tình trạng." },
+  { key: "completed", label: "Hoàn tất", description: "Đã quyết toán và hoàn cọc nếu có." }
+];
+
+const PROGRESS_STATUS = {
+  pending: "pending_payment",
+  pending_payment: "pending_payment",
+  confirmed: "confirmed",
+  deposit_paid: "confirmed",
+  preparing: "ready_for_handover",
+  ready_for_handover: "ready_for_handover",
+  ready_to_pickup: "ready_for_handover",
+  outbound_in_transit: "ready_for_handover",
+  delivery_exception: "ready_for_handover",
+  renting: "renting",
+  overdue: "renting",
+  return_in_transit: "returned",
+  return_delivery_exception: "returned",
+  returned: "returned",
+  completed: "completed"
+};
 
 const STATUS_ALIASES = {
   pending_confirmation: "pending",
@@ -73,6 +102,18 @@ const getCustomer = (order) => ({
 });
 
 const paymentPreferenceLabel = value => !value ? "Tiền mặt khi nhận đồ" : ({ cash: "Tiền mặt khi nhận đồ", bank_transfer: "Chuyển khoản ngân hàng", momo: "MoMo", vnpay: "VNPay", payos: "PayOS", bank_gateway: "Cổng ngân hàng" }[value] || value);
+
+const paymentStatusLabel = value => ({
+  unpaid: "Chưa thanh toán",
+  pending: "Chờ thanh toán",
+  awaiting_verification: "Chờ xác minh chuyển khoản",
+  awaiting_confirmation: "Chờ cửa hàng xác nhận",
+  deposit_paid: "Đã thanh toán cọc",
+  fully_paid: "Đã thanh toán toàn bộ",
+  paid: "Đã thanh toán",
+  settlement_pending: "Chờ quyết toán",
+  refunded: "Đã hoàn cọc"
+}[value] || value || "Chưa thanh toán");
 
 const normalizeStatus = (status) =>
   STATUS_ALIASES[status] || status || "";
@@ -152,6 +193,11 @@ const apiErrorMessage = (error, fallback) =>
 export function AdminRentalOrderDetailPage({ notify }) {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { can } = useAdminAuth();
+  const canOverrideOrder = can(P.ORDERS_OVERRIDE);
+  const canInspectReturn = can(P.INSPECTIONS_CREATE);
+  const canAdjustPayment = can(P.PAYMENTS_ADJUST);
+  const canProcessRefund = can(P.REFUNDS_PROCESS);
 
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -162,7 +208,6 @@ export function AdminRentalOrderDetailPage({ notify }) {
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const [rejectError, setRejectError] = useState("");
-  const [inspectionModalOpen, setInspectionModalOpen] = useState(false);
   const [detailView, setDetailView] = useState("overview");
 
   const requestRef = useRef(0);
@@ -335,74 +380,6 @@ export function AdminRentalOrderDetailPage({ notify }) {
     [order?.status]
   );
 
-  const submitInspection = async (payload) => {
-    if (!payload.items?.length) {
-      notify?.("Không có trang phục để kiểm tra.", "error");
-      return;
-    }
-
-    setActionLoading(true);
-
-    try {
-      if (normalizedStatus === "renting") {
-        await markRentalOrderReturned(id);
-      }
-
-      for (const item of payload.items) {
-        await createReturnInspection(id, {
-          costumeId: item.costumeId,
-          condition: item.condition,
-          lateHours: Number(payload.lateHours || 0),
-          lateFee: Number(payload.lateFee || 0),
-          damageFee: Number(item.damageFee || 0),
-          isDry: item.isDry !== false,
-          missingAccessories: item.missingAccessories || "",
-          missingBags: Number(item.missingBags || 0),
-          missingBoxes: Number(item.missingBoxes || 0),
-          cleaningSeverity: item.cleaningSeverity || "none",
-          cleaningFee: Number(item.cleaningFee || 0),
-          shopSupportAmount: Number(item.shopSupportAmount || 0),
-          damageSeverity: item.damageSeverity || "none",
-          repairFee: Number(item.repairFee || 0),
-          liquidationPrice: Number(item.liquidationPrice || 0),
-          evidenceUrls: String(item.evidenceUrls || "").split(/\r?\n|,/).map(value => value.trim()).filter(Boolean),
-          note: [
-            item.note,
-            item.missingAccessories
-              ? `Phụ kiện thiếu: ${item.missingAccessories}`
-              : "",
-            payload.note
-          ]
-            .filter(Boolean)
-            .join("\n")
-        });
-      }
-
-      notify?.(
-        "Tiếp nhận đồ trả và lưu biên bản thành công.",
-        "success"
-      );
-
-      setInspectionModalOpen(false);
-      await reloadOrder();
-    } catch (err) {
-      console.error(
-        "CREATE RETURN INSPECTION ERROR:",
-        err?.response?.data || err
-      );
-
-      notify?.(
-        apiErrorMessage(
-          err,
-          "Không thể lưu biên bản kiểm tra trả đồ."
-        ),
-        "error"
-      );
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
   const inspectionExists = hasInspection(order);
   const inspections = getInspections(order);
   const inspection = getLatestInspection(order);
@@ -410,6 +387,45 @@ export function AdminRentalOrderDetailPage({ notify }) {
   const bankTransferUnpaid = order?.paymentPreference === "bank_transfer"
     && !["success", "paid", "fully_paid", "deposit_paid", "deposited"].includes(latestPaymentStatus)
     && !["paid", "fully_paid", "deposit_paid", "deposited"].includes(order?.paymentStatus);
+
+  const openPaymentForReview = async () => {
+    const existingPaymentId = order?.latestPaymentId?._id || order?.latestPaymentId?.id;
+    if (existingPaymentId) {
+      navigate(`/payments/${existingPaymentId}`);
+      return;
+    }
+
+    if (!canAdjustPayment) {
+      notify?.("Tài khoản không có quyền tạo giao dịch thanh toán.", "error");
+      return;
+    }
+
+    if (order?.paymentPreference !== "bank_transfer") {
+      navigate(`/payments?orderId=${id}`);
+      return;
+    }
+
+    setActionLoading(true);
+    try {
+      const quote = await getAdminPaymentQuote({ orderId: id, paymentType: "full" });
+      if (!quote?.canPay || Number(quote?.payableAmount || 0) <= 0) {
+        throw new Error(quote?.reason || "Đơn này không còn khoản cần thanh toán.");
+      }
+      const payment = await createAdminPayment({
+        orderId: id,
+        paymentType: "full",
+        channel: "direct",
+        method: "bank_transfer"
+      }, crypto.randomUUID());
+      const paymentId = payment?.id || payment?._id;
+      await reloadOrder();
+      navigate(`/payments/${paymentId}`);
+    } catch (err) {
+      notify?.(apiErrorMessage(err, "Không thể tạo giao dịch chuyển khoản để duyệt."), "error");
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
   const actions = useMemo(() => {
     if (!order) return [];
@@ -430,27 +446,31 @@ export function AdminRentalOrderDetailPage({ notify }) {
           })
       });
 
-      result.push({
-        label: "Từ chối đơn",
-        tone: "danger",
-        onClick: openRejectModal
-      });
+      if (canOverrideOrder) {
+        result.push({
+          label: "Từ chối đơn",
+          tone: "danger",
+          onClick: openRejectModal
+        });
+      }
     }
 
-    if (normalizedStatus === "confirmed") {
+    if (normalizedStatus === "confirmed" && order.allowedActions?.markReadyForHandover !== false) {
       result.push({
         label: "Sẵn sàng nhận đồ",
         tone: "primary",
         onClick: () => openConfirm({ title: "Sẵn sàng nhận đồ", description: "Xác nhận cửa hàng đã chuẩn bị xong trang phục?", confirmLabel: "Xác nhận sẵn sàng", action: () => markRentalOrderReady(id) })
       });
-      result.push({
-        label: "Hủy đơn",
-        tone: "danger",
-        onClick: openRejectModal
-      });
+      if (canOverrideOrder) {
+        result.push({
+          label: "Hủy đơn",
+          tone: "danger",
+          onClick: openRejectModal
+        });
+      }
     }
 
-    if (normalizedStatus === "deposit_paid") {
+    if (normalizedStatus === "deposit_paid" && order.allowedActions?.markReadyForHandover !== false) {
       result.push({
         label: "Sẵn sàng nhận đồ",
         tone: "primary",
@@ -465,9 +485,9 @@ export function AdminRentalOrderDetailPage({ notify }) {
       });
     }
 
-    if (normalizedStatus === "ready_to_pickup") {
+    if (normalizedStatus === "ready_to_pickup" && (order.allowedActions?.collectCashAndPickup || order.allowedActions?.confirmStorePickup || order.allowedActions?.dispatchHomeDelivery)) {
       result.push({
-        label: order.paymentPreference === "cash" ? "Xác nhận thu tiền và khách nhận đồ" : "Khách đã nhận đồ",
+        label: order.pickupMethod === "home_delivery" ? "Đã giao đồ cho shipper" : order.paymentPreference === "cash" ? "Xác nhận thu tiền và khách nhận đồ" : "Khách đã nhận đồ",
         tone: "primary",
         onClick: () =>
           openConfirm({
@@ -475,34 +495,45 @@ export function AdminRentalOrderDetailPage({ notify }) {
             description:
               "Xác nhận khách hàng đã nhận đầy đủ trang phục?",
             confirmLabel: "Xác nhận đã nhận",
-            action: () => order.paymentPreference === "cash" ? collectCashAndPickup(id) : markRentalOrderPickedUp(id)
+            action: () => order.pickupMethod === "home_delivery" ? dispatchHomeDelivery(id) : order.paymentPreference === "cash" ? collectCashAndPickup(id) : markRentalOrderPickedUp(id)
           })
       });
     }
 
-    if (["renting", "overdue"].includes(normalizedStatus)) {
+    if (order.allowedActions?.confirmCustomerReceived) {
+      result.push({ label: "Xác nhận khách đã nhận hàng", tone: "primary", onClick: () => openConfirm({ title: "Khách đã nhận hàng", description: "Chỉ xác nhận khi có bằng chứng giao thành công. Thời gian thuê bắt đầu tại mốc này.", confirmLabel: "Xác nhận đã nhận", action: () => confirmCustomerReceived(id) }) });
+    }
+
+    if (order.allowedActions?.markCustomerHandedToShipper) {
+      result.push({ label: "Khách đã giao đồ trả cho shipper", tone: "warning", onClick: () => openConfirm({ title: "Ghi nhận bàn giao đồ trả", description: "Phí trễ sẽ dừng tại thời điểm xác nhận này. Đồ vẫn bị khóa cho tới khi về shop.", confirmLabel: "Xác nhận bàn giao", action: () => markCustomerReturnHandover(id) }) });
+    } else if (canInspectReturn && ["renting", "overdue"].includes(normalizedStatus)) {
       result.push({
         label: "Kiểm tra và nhận đồ trả",
         tone: "warning",
-        onClick: () => setInspectionModalOpen(true)
+        onClick: () => navigate(`/inspections/${id}`)
       });
+    }
+
+    if (order.allowedActions?.confirmReturnReceivedByShop) {
+      result.push({ label: "Shop đã nhận lại đồ", tone: "warning", onClick: () => openConfirm({ title: "Shop đã nhận lại đồ", description: "Sau mốc này shop có thể lập biên bản kiểm tra.", confirmLabel: "Xác nhận đã nhận", action: () => confirmReturnReceivedByShop(id) }) });
     }
 
     if (
       normalizedStatus === "returned" &&
+      canInspectReturn &&
       !inspectionExists
     ) {
       result.push({
         label: "Lập biên bản trả đồ",
         tone: "warning",
-        onClick: () => setInspectionModalOpen(true)
+        onClick: () => navigate(`/inspections/${id}`)
       });
     }
 
     if (
       normalizedStatus === "returned" &&
       inspectionExists &&
-      order.settlementStatus === "settled"
+      order.allowedActions?.completeOrder
     ) {
       result.push({
         label: "Hoàn tất đơn",
@@ -518,27 +549,16 @@ export function AdminRentalOrderDetailPage({ notify }) {
       });
     }
 
-    if (normalizedStatus === "returned" && order.settlementStatus === "pending_refund") {
+    if (canProcessRefund && normalizedStatus === "returned" && order.settlementStatus === "pending_refund") {
       result.push({
-        label: "Tạo giao dịch hoàn cọc",
+        label: "Xử lý hoàn cọc",
         tone: "warning",
         onClick: () =>
           openConfirm({
-            title: "Tạo giao dịch hoàn cọc",
-            description: "Hệ thống sẽ tạo đúng số tiền cọc còn phải hoàn. Sau khi thực sự hoàn tiền, hãy xác nhận giao dịch tại trang Thanh toán.",
-            confirmLabel: "Tạo hoàn cọc",
-            action: async () => {
-              const quote = await getAdminPaymentQuote({ orderId: id, paymentType: "refund" });
-              const method = quote.supportedMethods?.direct?.includes("bank_transfer") ? "bank_transfer" : "cash";
-              const payment = await createAdminPayment({
-                orderId: id,
-                paymentType: "refund",
-                channel: "direct",
-                method
-              }, crypto.randomUUID());
-              navigate(`/payments?orderId=${id}&paymentId=${payment.id || payment._id}`);
-              return payment;
-            }
+            title: "Mở xử lý hoàn cọc",
+            description: "Khoản hoàn cọc đã được tạo từ kết quả kiểm tra trả đồ. Bạn sẽ được chuyển đến trang Hoàn cọc để xử lý theo đúng trạng thái hiện tại.",
+            confirmLabel: "Đến trang Hoàn cọc",
+            action: async () => navigate(`/refunds?search=${encodeURIComponent(order.latestRefund?.refundCode || order.orderCode || id)}`)
           })
       });
     }
@@ -549,10 +569,13 @@ export function AdminRentalOrderDetailPage({ notify }) {
     id,
     inspectionExists,
     normalizedStatus,
-    bankTransferUnpaid
+    bankTransferUnpaid,
+    canInspectReturn,
+    canOverrideOrder,
+    canProcessRefund
   ]);
 
-  const activeStep = steps.indexOf(normalizedStatus);
+  const activeStep = ORDER_PROGRESS.findIndex((step) => step.key === (PROGRESS_STATUS[normalizedStatus] || normalizedStatus));
 
   const penaltyFee =
     Number(order?.lateFee || 0) +
@@ -718,6 +741,8 @@ export function AdminRentalOrderDetailPage({ notify }) {
                   <Info label="Trạng thái thanh toán" value={order.paymentStatus === "unpaid" ? "Chưa thanh toán" : order.paymentStatus === "awaiting_confirmation" ? "Chờ xác nhận chuyển khoản" : ["paid", "fully_paid"].includes(order.paymentStatus) ? "Đã thanh toán toàn bộ" : order.paymentStatus === "deposit_paid" ? "Đã thanh toán tiền cọc" : order.paymentStatus} />
                   <Info label="Hóa đơn điện tử" value={order.invoice?.requested ? `Có — ${order.invoice.email || "chưa có email"}` : "Không yêu cầu"} />
                   <Info label="Phiên bản chính sách" value={order.policyVersion || "Chưa ghi nhận"} />
+                  <Info label="Thông tin nhận hoàn cọc" value={order.refundDestinationSnapshot ? "Đã sẵn sàng" : "Cần khách bổ sung"} />
+                  {order.refundDestinationSnapshot && <Info label="Tài khoản hoàn cọc" value={`${order.refundDestinationSnapshot.bankName} ${order.refundDestinationSnapshot.maskedAccountNumber} · ${order.refundDestinationSnapshot.accountName || order.refundDestinationSnapshot.accountHolderName}`} wide />}
 
                   <Info
                     label="Ngày tạo đơn"
@@ -821,9 +846,9 @@ export function AdminRentalOrderDetailPage({ notify }) {
                   <Info label="Người nhận" value={order.fulfillment?.receiverSnapshot?.fullName||order.customerInfo?.fullName}/>
                   <Info label="Điện thoại" value={order.fulfillment?.receiverSnapshot?.phone||order.customerInfo?.phone}/>
                   <Info label="Địa chỉ" value={[order.fulfillment?.deliveryAddressSnapshot?.addressLine,order.fulfillment?.deliveryAddressSnapshot?.wardName,order.fulfillment?.deliveryAddressSnapshot?.districtName,order.fulfillment?.deliveryAddressSnapshot?.provinceName].filter(Boolean).join(", ")||"41/1 Nguyễn Bỉnh Khiêm, Phường Đa Kao, Quận 1, Thành phố Hồ Chí Minh"} wide/>
-                  <Info label="Chiều giao" value={`${({pending:"Chờ xử lý",scheduled:"Đã lên lịch",in_transit:"Đang giao",completed:"Đã giao",not_required:"Không áp dụng"})[order.fulfillment?.outbound?.status]||order.fulfillment?.outbound?.status||"Không áp dụng"} · ${money(order.fulfillment?.outbound?.fee||0)}`}/>
-                  <Info label="Chiều nhận lại" value={`${({pending:"Chờ xử lý",scheduled:"Đã lên lịch",in_transit:"Đang nhận",completed:"Đã nhận",not_required:"Không áp dụng"})[order.fulfillment?.returnTrip?.status]||order.fulfillment?.returnTrip?.status||"Không áp dụng"} · ${money(order.fulfillment?.returnTrip?.fee||0)}`}/>
-                  <Info label="Tổng vận chuyển" value={money(order.fulfillment?.totalFee||order.shipping?.totalFee||0)}/>
+                  <Info label="Chiều giao" value={({pending:"Chờ shop liên hệ shipper",scheduled:"Đã sắp xếp shipper",out_for_delivery:"Đang giao tới khách",delivered:"Khách đã nhận",not_required:"Không áp dụng"})[order.fulfillment?.outbound?.status]||order.fulfillment?.outbound?.status||"Không áp dụng"}/>
+                  <Info label="Chiều nhận lại" value={({pending:"Chờ shop liên hệ shipper",scheduled:"Đã sắp xếp shipper",picking_up:"Đang vận chuyển về shop",received:"Shop đã nhận lại",not_required:"Không áp dụng"})[order.fulfillment?.returnTrip?.status]||order.fulfillment?.returnTrip?.status||"Không áp dụng"}/>
+                  <Info label="Phí giao/nhận" value="Khách thanh toán trực tiếp cho shipper; không nằm trong đơn" wide/>
                   {order.transportQuoteSnapshot?.outbound&&<>
                     <Info label="Quy tắc giao đi" value={order.transportQuoteSnapshot.outbound.matchedRuleId?`Rule ${order.transportQuoteSnapshot.outbound.timeBucket||""}`:"Thời gian mặc định của khu vực"}/>
                     <Info label="Thời gian giao đi" value={`${order.transportQuoteSnapshot.outbound.baseMinutes} phút + ${order.transportQuoteSnapshot.outbound.safetyBufferMinutes} phút dự phòng = ${order.transportQuoteSnapshot.outbound.effectiveDurationMinutes} phút`}/>
@@ -843,7 +868,7 @@ export function AdminRentalOrderDetailPage({ notify }) {
               >
                 <div className="admin-order-timeline-scroll">
                   <div className="admin-order-timeline">
-                    {steps.map((step, index) => {
+                    {ORDER_PROGRESS.map((step, index) => {
                       const completed =
                         index < activeStep;
 
@@ -852,7 +877,7 @@ export function AdminRentalOrderDetailPage({ notify }) {
 
                       return (
                         <div
-                          key={step}
+                          key={step.key}
                           className={[
                             completed ? "done" : "",
                             active ? "active" : ""
@@ -863,13 +888,15 @@ export function AdminRentalOrderDetailPage({ notify }) {
                           <span>{index + 1}</span>
 
                           <small>
-                            {orderLabels[step]}
+                            {step.label}
                           </small>
+
+                          <em>{step.description}</em>
 
                           <time>
                             {timelineDate(
                               order,
-                              step
+                              step.key
                             )}
                           </time>
                         </div>
@@ -986,7 +1013,7 @@ export function AdminRentalOrderDetailPage({ notify }) {
 
                 <dl className="admin-money-list">
                   <div><dt>Phương thức</dt><dd>{paymentPreferenceLabel(order.paymentPreference)}</dd></div>
-                  <div><dt>Trạng thái</dt><dd>{order.paymentStatus === "unpaid" ? "Chưa thanh toán" : order.paymentStatus === "awaiting_confirmation" ? "Chờ xác nhận chuyển khoản" : ["paid", "fully_paid"].includes(order.paymentStatus) ? "Đã thanh toán toàn bộ" : order.paymentStatus}</dd></div>
+                  <div><dt>Trạng thái</dt><dd><span className={`badge ${order.paymentStatus || "unpaid"}`}>{paymentStatusLabel(order.paymentStatus)}</span></dd></div>
                 </dl>
 
                 <dl className="admin-money-list">
@@ -998,9 +1025,7 @@ export function AdminRentalOrderDetailPage({ notify }) {
                   <div><dt>Phí giữ thêm{schedule.extraDays ? ` (${schedule.extraDays} ngày)` : ""}</dt><dd>{pricing.plannedExtraDayFee == null ? "Không có breakdown" : money(pricing.plannedExtraDayFee)}</dd></div>
                   {pricing.extraDayRatePercent != null && <div><dt>Mức phí giữ thêm</dt><dd>{pricing.extraDayRatePercent}% giá gói/ngày</dd></div>}
                   <div><dt>Tổng tiền thuê</dt><dd>{money(pricing.totalRentalPrice ?? order.totalRentalPrice)}</dd></div>
-                  <div><dt>Phí giao đi</dt><dd>{money(pricing.outboundFee)}</dd></div>
-                  <div><dt>Phí nhận lại</dt><dd>{money(pricing.returnFee)}</dd></div>
-                  <div><dt>Tổng phí vận chuyển</dt><dd>{money(pricing.totalShippingFee)}</dd></div>
+                  {(order.pickupMethod === "home_delivery" || order.returnMethod === "home_collection") && <div><dt>Phí giao/nhận</dt><dd>Khách trả trực tiếp cho shipper theo thực tế</dd></div>}
 
                   <div>
                     <dt>Tiền cọc yêu cầu</dt>
@@ -1051,11 +1076,7 @@ export function AdminRentalOrderDetailPage({ notify }) {
 
                     <button
                       type="button"
-                      onClick={() =>
-                        navigate(
-                          `/payments?orderId=${id}`
-                        )
-                      }
+                      onClick={openPaymentForReview}
                     >
                       Xem giao dịch
                     </button>
@@ -1066,7 +1087,9 @@ export function AdminRentalOrderDetailPage({ notify }) {
                     <span>{order.paymentPreference === "bank_transfer" ? "Chờ khách tạo/chuyển khoản" : "Thanh toán khi nhận trang phục"}</span>
                     <small>{paymentPreferenceLabel(order.paymentPreference)} · {money(order.finalAmount || 0)}</small>
                     <span className="badge pending">{order.paymentPreference === "cash" ? "Chưa thu tiền" : "Chưa có giao dịch"}</span>
-                    <button type="button" onClick={() => navigate(`/payments?orderId=${id}`)}>Xem giao dịch</button>
+                    {canAdjustPayment && (
+                      <button type="button" disabled={actionLoading} onClick={openPaymentForReview}>{actionLoading ? "Đang tạo giao dịch…" : "Tạo và xem giao dịch"}</button>
+                    )}
                   </div>
                 )}
               </AdminDetailSection>
@@ -1217,17 +1240,6 @@ export function AdminRentalOrderDetailPage({ notify }) {
         </div>
       )}
 
-      <ReturnInspectionModal
-        open={inspectionModalOpen}
-        order={order}
-        loading={actionLoading}
-        onClose={() => {
-          if (!actionLoading) {
-            setInspectionModalOpen(false);
-          }
-        }}
-        onSubmit={submitInspection}
-      />
     </section>
   );
 }
@@ -1235,7 +1247,7 @@ export function AdminRentalOrderDetailPage({ notify }) {
 
 function timelineDate(order, step) {
   const fieldMap = {
-    pending: order.createdAt,
+    pending_payment: order.createdAt,
 
     confirmed:
       order.approvedAt ||
@@ -1246,14 +1258,18 @@ function timelineDate(order, step) {
       order.paidAt ||
       order.paymentConfirmedAt,
 
-    ready_to_pickup:
+    ready_for_handover:
+      order.readyForHandoverAt ||
       order.readyAt ||
       order.readyForPickupAt,
 
     renting:
+      order.actualRentalStartAt ||
+      order.customerReceivedAt ||
       order.pickedUpAt,
 
     returned:
+      order.returnReceivedByShopAt ||
       order.actualReturnDate ||
       order.returnedAt,
 

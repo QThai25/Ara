@@ -6,6 +6,7 @@ import { auth } from "../middlewares/auth.middleware.js";
 import { adminOnly } from "../middlewares/admin.middleware.js";
 import { validate } from "../middlewares/validate.middleware.js";
 import { optionalPaymentAuth } from "../middlewares/paymentAccess.middleware.js";
+import { uploadRefundProofImage } from "../middlewares/upload.middleware.js";
 
 import {
   confirmDirectPaymentValidation,
@@ -73,7 +74,7 @@ paymentRoutes.get(
 
 paymentRoutes.get("/:id/status", ...optionalPaymentAuth, paymentIdValidation, validate, controller.getPaymentStatus);
 paymentRoutes.patch("/:id/cancel", ...optionalPaymentAuth, paymentIdValidation, validate, controller.cancelPayment);
-paymentRoutes.patch("/:id/report-transfer", ...optionalPaymentAuth, reportTransferValidation, validate, controller.reportTransfer);
+paymentRoutes.patch("/:id/report-transfer", ...optionalPaymentAuth, paymentIdValidation, validate, uploadRefundProofImage.single("proof"), controller.reportTransfer);
 paymentRoutes.patch("/orders/:orderId/preference", auth, controller.changeOrderPaymentPreference);
 
 paymentRoutes.get(

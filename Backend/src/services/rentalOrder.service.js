@@ -7,6 +7,7 @@ import { RentalOrderItem } from "../models/RentalOrderItem.js";
 import { ReturnInspection } from "../models/ReturnInspection.js";
 import { User } from "../models/User.js";
 import { ApiError } from "../utils/ApiError.js";
+import { ADMIN_PERMISSIONS, hasAdminPermission, isAdminRole } from "../utils/adminPermissions.js";
 import { calculateRentalReturnDate, isPastDate, parseLocalDateTime, rentalPriceBreakdown, RENTAL_TURNAROUND_MINUTES } from "../utils/date.js";
 import { runFinancialTransaction } from "../utils/financialTransaction.js";
 import { assertNoScheduleConflict, operationalStatusOf } from "./costume.service.js";
@@ -28,6 +29,8 @@ import { calculateRentalTransportTimeline } from "./transportTime.service.js";
 import { createRentalHold } from "./rentalAvailability.service.js";
 import { Reservation } from "../models/Reservation.js";
 import { TransportReservation } from "../models/TransportReservation.js";
+import { DepositRefund } from "../models/DepositRefund.js";
+import { getAllowedRentalOrderActions, getOrderFinancialSnapshot, canCompleteOrder, canDispatchHomeDelivery, canStartRental } from "./rentalOrderFinancialPolicy.service.js";
 
 const DEFAULT_POLICY_VERSION = RENTAL_POLICY.policyVersion;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -174,6 +177,19 @@ function normalizeCreateOrderPayload(rawPayload) {
   const standardSchedule = !canonicalRequest && rawPayload.mainUseDate ? buildStandardRentalSchedule({ ...rawPayload, fulfillmentMethod: rawPayload.fulfillment?.fulfillmentMethod || rawPayload.fulfillmentMethod }, 0) : null;
   const rentalDate = standardSchedule?.pickupAt || rawPayload.requestedStartAt || rawPayload.rentalDate;
   const rentalDays = standardSchedule ? 2 + standardSchedule.extraDays : Number(rawPayload.rentalDays || 1);
+  const pickupMethod = rawPayload.pickupMethod || rawPayload.fulfillment?.pickupMethod || "store_pickup";
+  const returnMethod = rawPayload.returnMethod || rawPayload.fulfillment?.returnMethod || "store_return";
+
+  if (pickupMethod === "home_delivery" && rawPayload.paymentPreference === "cash") {
+    const error = new ApiError(422, "Không hỗ trợ thanh toán tiền thuê bằng tiền mặt khi giao tận nơi.");
+    error.code = "RENTAL_CASH_HOME_DELIVERY_FORBIDDEN";
+    throw error;
+  }
+  if ((pickupMethod === "home_delivery" || returnMethod === "home_collection") && rawPayload.externalCarrierFeeAccepted !== true) {
+    const error = new ApiError(422, "Bạn cần xác nhận phí giao/nhận được thanh toán trực tiếp cho shipper và không nằm trong đơn thuê.");
+    error.code = "EXTERNAL_CARRIER_FEE_ACK_REQUIRED";
+    throw error;
+  }
 
   if (!rentalDate) {
     throw new ApiError(400, "Vui lòng chọn ngày thuê.");
@@ -520,7 +536,7 @@ export async function expirePendingOrders({ orderId = null, customerId = null } 
     const filter = {
       // Luồng hiện tại tự động xác nhận đơn ngay khi tạo. Vì vậy đơn chưa
       // thanh toán ở trạng thái confirmed cũng phải hết hạn và nhả lịch.
-      status: { $in: [...new Set([...canonicalStatuses(["pending"]), "confirmed"])] },
+      status: { $in: [...new Set([...canonicalStatuses(["pending"]), "pending_payment", "confirmed"])] },
       $or: [
         { paymentStatus: { $in: ["pending", "unpaid", "awaiting_payment"] } },
         { paymentStatus: { $exists: false } }
@@ -569,6 +585,9 @@ export async function decorateOrder(orderId) {
   if (!document) return null;
   const order = document.toObject({ virtuals: true });
   const payments = Array.isArray(order.payments) ? order.payments : [];
+  const refunds = await DepositRefund.find({ orderId }).sort({ createdAt: -1 }).lean();
+  const financialSnapshot = getOrderFinancialSnapshot(order, payments, refunds);
+  const actionProjection = getAllowedRentalOrderActions({ order, financial: financialSnapshot });
   const successfulPayments = payments.filter((payment) => payment?.status === "success");
   const paidAmount = successfulPayments
     .filter((payment) => payment.paymentType !== "refund")
@@ -578,7 +597,7 @@ export async function decorateOrder(orderId) {
     .reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
   const shipping = order.fulfillment || {};
   const totalPenalty = Number(order.lateFee || 0) + Number(order.damageFee || 0);
-  const totalDue = Number(order.totalRentalPrice || 0) + Number(shipping.totalFee || order.shipping?.totalFee || 0) + totalPenalty + Number(order.totalDepositAmount || 0);
+  const totalDue = Number(order.totalRentalPrice || 0) + totalPenalty + Number(order.totalDepositAmount || 0);
   const extraDays = Math.max(0, Number(order.extraDays || 0));
   const extraDayDates = order.mainUseDate
     ? Array.from({ length: extraDays }, (_, index) => addCalendarDays(order.mainUseDate, index + 1))
@@ -586,6 +605,21 @@ export async function decorateOrder(orderId) {
 
   return {
     ...order,
+    refundDestinationSnapshot: order.refundDestinationSnapshot ? {
+      ...order.refundDestinationSnapshot,
+      accountNumber: undefined,
+      encryptedAccountNumber: undefined,
+      maskedAccountNumber: order.refundDestinationSnapshot.maskedAccountNumber || `••••••${String(order.refundDestinationSnapshot.accountNumber || "").slice(-4)}`
+    } : null,
+    needsRefundInformation: !order.refundDestinationSnapshot?.bankBin || !order.refundDestinationSnapshot?.maskedAccountNumber,
+    latestRefund: refunds[0] ? {
+      id: String(refunds[0]._id),
+      refundCode: refunds[0].refundCode,
+      status: refunds[0].status,
+      amount: refunds[0].amount
+    } : null,
+    financialSnapshot,
+    ...actionProjection,
     legacyPaymentStatus: order.paymentStatus,
     paymentStatus: ({
       unpaid: "unpaid",
@@ -628,8 +662,8 @@ export async function decorateOrder(orderId) {
       expectedDeliveryAt: order.expectedDeliveryAt || null,
       collectionAt: order.collectionAt || null,
       expectedReturnedToStoreAt: order.expectedReturnedToStoreAt || order.returnDate || null,
-      customerPossessionStartAt: order.expectedDeliveryAt || order.plannedRentalStartAt || order.rentalDate || null,
-      customerPossessionEndAt: order.collectionAt || order.plannedRentalEndAt || order.returnDate || null,
+      customerPossessionStartAt: order.rentalStartedAt || order.actualRentalStartAt || null,
+      customerPossessionEndAt: order.billableRentalEndAt || null,
       blockedStartAt: order.blockedStartAt || order.blockedFrom || order.rentalDate || null,
       blockedEndAt: order.blockedEndAt || order.blockedUntil || order.returnDate || null,
       preparationMinutes: Number(order.preparationMinutes || 0),
@@ -654,11 +688,11 @@ export async function decorateOrder(orderId) {
       plannedExtraDayFee: order.plannedExtraDayFee ?? null,
       extraDayRatePercent: order.mainUseDate ? 10 : null,
       totalRentalPrice: Number(order.totalRentalPrice || 0),
-      outboundFee: Number(shipping.outbound?.fee || order.shipping?.outboundFee || 0),
-      returnFee: Number(shipping.returnTrip?.fee || order.shipping?.returnFee || 0),
-      totalShippingFee: Number(shipping.totalFee || order.shipping?.totalFee || 0),
-      deliveryFee: Number(order.deliveryFee || shipping.outbound?.fee || order.shipping?.outboundFee || 0),
-      collectionFee: Number(order.collectionFee || shipping.returnTrip?.fee || order.shipping?.returnFee || 0),
+      outboundFee: 0,
+      returnFee: 0,
+      totalShippingFee: 0,
+      deliveryFee: 0,
+      collectionFee: 0,
       lateFee: Number(order.lateFee || 0),
       damageFee: Number(order.damageFee || 0),
       totalPenalty,
@@ -903,22 +937,23 @@ export async function createRentalOrder(userOrCustomerId, rawPayload) {
                   DEFAULT_POLICY_VERSION,
                 policyAcceptedAt: new Date(),
 
-                status: "confirmed",
+              status: "pending_payment",
                 bookingStatus: "payment_pending",
                 paymentStatus: "unpaid",
                 approvalMode: "automatic",
-                approvedAt: new Date(),
+                approvedAt: null,
                 approvedBy: null,
                 paymentPreference: ["cash", "bank_transfer", "payos"].includes(payload.paymentPreference) ? payload.paymentPreference : "bank_transfer",
                 paymentMethod: ["cash", "bank_transfer", "payos"].includes(payload.paymentPreference) ? payload.paymentPreference : "bank_transfer",
-                shipping: { outboundFee: shippingQuote.outboundFee, returnFee: shippingQuote.returnFee, totalFee: shippingQuote.totalShippingFee },
+                shipping: { outboundFee: 0, returnFee: 0, totalFee: 0 },
                 fulfillment: {
                   method: shippingQuote.fulfillmentMethod,
                   receiverSnapshot: shippingQuote.receiver || { fullName: resolvedCustomer.customerInfo.fullName, phone: resolvedCustomer.customerInfo.phone },
-                  deliveryAddressSnapshot: shippingQuote.address || {},
-                  outbound: { fee: shippingQuote.outboundFee, status: shippingQuote.fulfillmentMethod === "store_pickup" ? "not_required" : "pending", scheduledFrom: payload.fulfillment?.outbound?.scheduledFrom || null, scheduledTo: payload.fulfillment?.outbound?.scheduledTo || null },
-                  returnTrip: { fee: shippingQuote.returnFee, status: shippingQuote.fulfillmentMethod === "two_way_delivery" ? "pending" : "not_required", scheduledFrom: payload.fulfillment?.returnTrip?.scheduledFrom || null, scheduledTo: payload.fulfillment?.returnTrip?.scheduledTo || null },
-                  totalFee: shippingQuote.totalShippingFee
+                  deliveryAddressSnapshot: shippingQuote.deliveryAddress || {},
+                  collectionAddressSnapshot: shippingQuote.collectionAddress || {},
+                  outbound: { fee: 0, status: shippingQuote.fulfillmentMethod === "store_pickup" ? "not_required" : "pending", scheduledFrom: payload.fulfillment?.outbound?.scheduledFrom || null, scheduledTo: payload.fulfillment?.outbound?.scheduledTo || null },
+                  returnTrip: { fee: 0, status: shippingQuote.fulfillmentMethod === "two_way_delivery" ? "pending" : "not_required", scheduledFrom: payload.fulfillment?.returnTrip?.scheduledFrom || null, scheduledTo: payload.fulfillment?.returnTrip?.scheduledTo || null },
+                  totalFee: 0
                 },
                 note: payload.note || ""
               },
@@ -983,7 +1018,7 @@ export async function createRentalOrder(userOrCustomerId, rawPayload) {
           order.baseRentalAmount = preparedItems.reduce((sum, entry) => sum + resolveStandardPackagePrice(entry.costume) * entry.quantity, 0);
           order.plannedExtraDayFee = payload.mainUseDate ? totalRentalPrice - order.baseRentalAmount : 0;
           order.totalDepositAmount = totalDepositAmount;
-          order.finalAmount = totalRentalPrice + totalDepositAmount + shippingQuote.totalShippingFee;
+          order.finalAmount = totalRentalPrice + totalDepositAmount;
           await order.save(sessionOptions(session));
 
           return order;
@@ -1111,7 +1146,7 @@ export async function listAdminOrders(params) {
 export async function getOrderForUser(orderId, user) {
   const order = await decorateOrder(orderId);
   if (!order) throw new ApiError(404, "Không tìm thấy đơn thuê.");
-  if (String(order.customerId._id) !== String(user._id) && !["admin", "staff", "owner"].includes(user.role)) {
+  if (String(order.customerId._id) !== String(user._id) && !isAdminRole(user.role)) {
     throw new ApiError(403, "Bạn không có quyền xem đơn thuê này.");
   }
   return order;
@@ -1122,10 +1157,14 @@ export async function cancelOrder(orderId, user) {
     const query = RentalOrder.findById(orderId);
     const order = session ? await query.session(session) : await query;
     if (!order) throw new ApiError(404, "Không tìm thấy đơn thuê.");
-    if (String(order.customerId) !== String(user._id) && !["admin", "staff", "owner"].includes(user.role)) {
+    const adminActor = isAdminRole(user.role);
+    if (adminActor && !hasAdminPermission(user, ADMIN_PERMISSIONS.ORDERS_OVERRIDE)) {
+      throw new ApiError(403, "Tài khoản không có quyền hủy đơn thuê.");
+    }
+    if (String(order.customerId) !== String(user._id) && !adminActor) {
       throw new ApiError(403, "Bạn không có quyền hủy đơn này.");
     }
-    if (!canonicalStatuses(["pending", "confirmed"]).includes(order.status)) {
+    if (!["pending_payment", ...canonicalStatuses(["pending", "confirmed"])].includes(order.status)) {
       throw new ApiError(400, "Đơn thuê hiện không còn được phép hủy.");
     }
 
@@ -1147,7 +1186,7 @@ export async function cancelOrder(orderId, user) {
       Reservation.updateMany({ orderId: order._id, status: { $nin: ["completed", "cancelled", "expired"] } }, { $set: { status: "cancelled" } }, session ? { session } : {}),
       TransportReservation.updateMany({ orderId: order._id, status: { $nin: ["completed", "cancelled", "expired"] } }, { $set: { status: "cancelled" } }, session ? { session } : {})
     ]);
-    const byAdmin = ["admin", "staff", "owner"].includes(user.role);
+    const byAdmin = isAdminRole(user.role);
     if (byAdmin) {
       await createNotificationOnce({
         recipientId: order.customerId,
@@ -1181,7 +1220,8 @@ export async function approveOrder(orderId, adminId) {
           order = sessionArg ? await RentalOrder.findById(orderId).session(sessionArg) : await RentalOrder.findById(orderId);
           if (!order) throw new ApiError(404, "Không tìm thấy đơn thuê.");
           if (order.status === "expired") throw new ApiError(409, "Đơn thuê đã hết thời gian giữ chỗ và không thể duyệt. Khách hàng cần tạo đơn mới.");
-          if (!canonicalStatuses(["pending"]).includes(order.status)) throw new ApiError(400, "Chỉ được duyệt đơn đang chờ xác nhận.");
+          if (!["pending_payment", ...canonicalStatuses(["pending"])].includes(order.status)) throw new ApiError(400, "Chỉ được duyệt đơn đang chờ xác nhận.");
+          if (order.status === "pending_payment" && !(order.pickupMethod === "store_pickup" && order.paymentPreference === "cash")) throw new ApiError(409, "Đơn chưa có khoản thanh toán hợp lệ để xác nhận.");
           if (order.holdExpiresAt && order.holdExpiresAt <= new Date()) throw new ApiError(409, "Thời gian giữ chỗ của đơn đã hết hạn.");
           const items = sessionArg ? await RentalOrderItem.find({ orderId }).session(sessionArg) : await RentalOrderItem.find({ orderId });
           for (const item of items) {
@@ -1222,7 +1262,7 @@ export async function rejectOrder(orderId, adminId, reason) {
     const query = RentalOrder.findById(orderId);
     const order = session ? await query.session(session) : await query;
     if (!order) throw new ApiError(404, "Không tìm thấy đơn thuê.");
-    if (!canonicalStatuses(["pending", "confirmed"]).includes(order.status)) {
+    if (!["pending_payment", ...canonicalStatuses(["pending", "confirmed"])].includes(order.status)) {
       throw new ApiError(400, "Chỉ được hủy đơn đang chờ xác nhận hoặc đã xác nhận.");
     }
     await cancelActivePaymentsForOrder(order, session, "Cửa hàng đã từ chối đơn thuê.");
@@ -1252,12 +1292,12 @@ export async function transitionOrder(orderId, action) {
   const rules = {
     readyForPickup: {
       from: ["confirmed", "deposit_paid"],
-      status: "ready_to_pickup",
+      status: "ready_for_handover",
       stamp: "readyForPickupAt"
     },
 
     pickedUp: {
-      from: ["ready_to_pickup"],
+      from: ["ready_for_handover", "ready_to_pickup"],
       status: "renting",
       stamp: "pickedUpAt"
     },
@@ -1270,16 +1310,30 @@ export async function transitionOrder(orderId, action) {
   };
   const rule = rules[action];
   const order = await RentalOrder.findById(orderId);
-  if (order && action === "pickedUp" && order.paymentPreference === "cash" && !["paid", "fully_paid"].includes(order.paymentStatus)) throw new ApiError(409, "Vui lòng dùng thao tác xác nhận thu tiền và khách nhận đồ.");
-  if (order && action === "pickedUp" && order.paymentPreference === "bank_transfer" && !["paid", "fully_paid", "deposit_paid", "deposited"].includes(order.paymentStatus)) throw new ApiError(409, "Khoản chuyển khoản chưa được xác nhận.");
   if (!order) throw new ApiError(404, "Không tìm thấy đơn thuê.");
+  if (action === "pickedUp") {
+    if (order.pickupMethod !== "store_pickup") throw new ApiError(409, "Đơn giao tận nơi phải xác nhận đã giao cho shipper và khách đã nhận hàng.");
+    if (order.paymentPreference === "cash") throw new ApiError(409, "Vui lòng dùng thao tác xác nhận thu tiền và khách nhận đồ.");
+    const payments = await Payment.find({ orderId: order._id }).lean();
+    const financial = getOrderFinancialSnapshot(order, payments, []);
+    const decision = canStartRental({ order, financial });
+    if (!decision.allowed) { const error = new ApiError(409, decision.message); error.code = decision.code; error.data = decision.details; throw error; }
+  }
   if (!canonicalStatuses(rule.from).includes(order.status)) throw new ApiError(400, "Trạng thái đơn hiện tại không cho phép thao tác này.");
   order.status = rule.status;
   if (rule.stamp) order[rule.stamp] = new Date();
+  if (action === "pickedUp") {
+    const startedAt = order.rentalStartedAt || order.pickedUpAt || new Date();
+    order.rentalStartedAt = startedAt;
+    order.actualRentalStartAt = startedAt;
+    order.rentalDueAt ||= new Date(startedAt.getTime() + Number(order.rentalDurationHours || order.rentalDays * 24 || 24) * 3600000);
+  }
   if (action === "returned") {
     const returnedAt = new Date();
     order.actualReturnDate = returnedAt;
     order.returnedAt = returnedAt;
+    order.actualReturnedToStoreAt = returnedAt;
+    order.billableRentalEndAt ||= returnedAt;
     order.turnaroundUntil = new Date(returnedAt.getTime() + RENTAL_TURNAROUND_MINUTES * 60 * 1000);
   }
   await order.save();
@@ -1309,17 +1363,98 @@ export async function transitionOrder(orderId, action) {
   return decorateOrder(order._id);
 }
 
+function fulfillmentPatch(body = {}) {
+  return {
+    ...(body.carrierName ? { carrierName: String(body.carrierName).trim() } : {}),
+    ...(body.carrierPhone ? { carrierPhone: String(body.carrierPhone).trim() } : {}),
+    ...(body.trackingCode ? { trackingCode: String(body.trackingCode).trim() } : {}),
+    ...(body.note ? { note: String(body.note).trim() } : {})
+  };
+}
+
+export async function dispatchHomeDelivery(orderId, body, adminId) {
+  const order = await RentalOrder.findById(orderId);
+  if (!order) throw new ApiError(404, "Không tìm thấy đơn thuê.");
+  const payments = await Payment.find({ orderId }).lean();
+  const refunds = await DepositRefund.find({ orderId }).lean();
+  const financial = getOrderFinancialSnapshot(order, payments, refunds);
+  const decision = canDispatchHomeDelivery({ order, financial });
+  if (!decision.allowed) { const error = new ApiError(409, decision.message); error.code = decision.code; error.data = decision.details; throw error; }
+  const now = new Date();
+  const updated = await RentalOrder.findOneAndUpdate(
+    { _id: orderId, status: { $in: ["ready_for_handover", "ready_to_pickup", "ready_for_pickup"] }, pickupMethod: "home_delivery", "fulfillment.outbound.handedToCarrierAt": null },
+    { $set: { status: "outbound_in_transit", "fulfillment.outbound.status": "out_for_delivery", "fulfillment.outbound.handedToCarrierAt": now, "fulfillment.outbound.startedAt": now, "fulfillment.outbound.confirmedBy": adminId, ...Object.fromEntries(Object.entries(fulfillmentPatch(body)).map(([key, value]) => [`fulfillment.outbound.${key}`, value])) } },
+    { new: true }
+  );
+  if (!updated) throw new ApiError(409, "Đơn đã được xử lý hoặc không còn sẵn sàng giao cho shipper.");
+  return decorateOrder(updated._id);
+}
+
+export async function confirmCustomerReceived(orderId, body, adminId) {
+  const deliveredAt = new Date(body.deliveredAt || Date.now());
+  if (Number.isNaN(deliveredAt.getTime()) || deliveredAt > new Date(Date.now() + 5 * 60000)) throw new ApiError(400, "Thời điểm khách nhận hàng không hợp lệ.");
+  const order = await RentalOrder.findOne({ _id: orderId, status: "outbound_in_transit", "fulfillment.outbound.deliveredAt": null });
+  if (!order) {
+    const existing = await RentalOrder.findById(orderId);
+    if (existing?.fulfillment?.outbound?.deliveredAt) return decorateOrder(existing._id);
+    throw new ApiError(409, "Đơn không ở trạng thái đang giao tới khách.");
+  }
+  const dueAt = new Date(deliveredAt.getTime() + Number(order.rentalDurationHours || order.rentalDays * 24 || 24) * 3600000);
+  const updated = await RentalOrder.findOneAndUpdate(
+    { _id: orderId, status: "outbound_in_transit", "fulfillment.outbound.deliveredAt": null },
+    { $set: { status: "renting", pickedUpAt: deliveredAt, rentalStartedAt: deliveredAt, actualRentalStartAt: deliveredAt, actualDeliveryAt: deliveredAt, rentalDueAt: dueAt, "schedule.customerReceivedAt": deliveredAt, "fulfillment.outbound.deliveredAt": deliveredAt, "fulfillment.outbound.status": "delivered", "fulfillment.outbound.confirmedBy": adminId, ...Object.fromEntries(Object.entries(fulfillmentPatch(body)).map(([key, value]) => [`fulfillment.outbound.${key}`, value])) } },
+    { new: true }
+  );
+  if (!updated) throw new ApiError(409, "Trạng thái giao hàng vừa được thay đổi. Vui lòng tải lại đơn.");
+  await Reservation.updateMany({ orderId, status: { $nin: ["completed", "cancelled", "expired"] } }, { $set: { status: "active", actualRentalStartAt: deliveredAt } });
+  return decorateOrder(updated._id);
+}
+
+export async function markCustomerHandedToShipper(orderId, body, adminId) {
+  const handedAt = new Date(body.customerHandedOverAt || Date.now());
+  if (Number.isNaN(handedAt.getTime()) || handedAt > new Date(Date.now() + 5 * 60000)) throw new ApiError(400, "Thời điểm khách giao đồ không hợp lệ.");
+  const updated = await RentalOrder.findOneAndUpdate(
+    { _id: orderId, status: { $in: ["renting", "overdue"] }, returnMethod: "home_collection", "fulfillment.returnTrip.customerHandedOverAt": null },
+    { $set: { status: "return_in_transit", billableRentalEndAt: handedAt, actualCollectionAt: handedAt, "schedule.customerReturnShippedAt": handedAt, "fulfillment.returnTrip.customerHandedOverAt": handedAt, "fulfillment.returnTrip.startedAt": handedAt, "fulfillment.returnTrip.status": "picking_up", "fulfillment.returnTrip.confirmedBy": adminId, ...Object.fromEntries(Object.entries(fulfillmentPatch(body)).map(([key, value]) => [`fulfillment.returnTrip.${key}`, value])) } },
+    { new: true }
+  );
+  if (!updated) {
+    const existing = await RentalOrder.findById(orderId);
+    if (existing?.fulfillment?.returnTrip?.customerHandedOverAt) return decorateOrder(existing._id);
+    throw new ApiError(409, "Đơn không cho phép ghi nhận khách giao đồ cho shipper.");
+  }
+  return decorateOrder(updated._id);
+}
+
+export async function confirmReturnReceivedByShop(orderId, body, adminId) {
+  const receivedAt = new Date(body.receivedByShopAt || Date.now());
+  if (Number.isNaN(receivedAt.getTime()) || receivedAt > new Date(Date.now() + 5 * 60000)) throw new ApiError(400, "Thời điểm shop nhận lại đồ không hợp lệ.");
+  const updated = await RentalOrder.findOneAndUpdate(
+    { _id: orderId, status: "return_in_transit", "fulfillment.returnTrip.customerHandedOverAt": { $ne: null }, "fulfillment.returnTrip.receivedByShopAt": null },
+    { $set: { status: "returned", returnedAt: receivedAt, actualReturnDate: receivedAt, actualReturnedToStoreAt: receivedAt, turnaroundUntil: new Date(receivedAt.getTime() + RENTAL_TURNAROUND_MINUTES * 60000), "schedule.shopReceivedBackAt": receivedAt, "fulfillment.returnTrip.receivedByShopAt": receivedAt, "fulfillment.returnTrip.receivedAt": receivedAt, "fulfillment.returnTrip.status": "received", "fulfillment.returnTrip.confirmedBy": adminId, ...Object.fromEntries(Object.entries(fulfillmentPatch(body)).map(([key, value]) => [`fulfillment.returnTrip.${key}`, value])) } },
+    { new: true }
+  );
+  if (!updated) {
+    const existing = await RentalOrder.findById(orderId);
+    if (existing?.fulfillment?.returnTrip?.receivedByShopAt) return decorateOrder(existing._id);
+    throw new ApiError(409, "Đơn không ở trạng thái đang được vận chuyển về shop.");
+  }
+  await Reservation.updateMany({ orderId, status: { $nin: ["completed", "cancelled", "expired"] } }, { $set: { status: "inspection", actualReturnedToStoreAt: receivedAt, billableRentalEndAt: updated.billableRentalEndAt } });
+  return decorateOrder(updated._id);
+}
+
 export async function collectCashAndPickup(orderId, adminId) {
   const resultId = await runFinancialTransaction("thu tiền mặt và bàn giao đồ", async session => {
     const query = RentalOrder.findById(orderId); const order = session ? await query.session(session) : await query;
     if (!order) throw new ApiError(404, "Không tìm thấy đơn thuê.");
     if (order.status === "renting" && order.fullPaymentId && ["paid", "fully_paid"].includes(order.paymentStatus)) return order._id;
-    if (order.status !== "ready_to_pickup" || order.paymentPreference !== "cash") throw new ApiError(400, "Đơn chưa sẵn sàng hoặc không chọn tiền mặt.");
+    if (!["ready_for_handover", "ready_to_pickup", "ready_for_pickup"].includes(order.status) || order.pickupMethod !== "store_pickup" || order.paymentPreference !== "cash") throw new ApiError(400, "Đơn chưa sẵn sàng, không nhận tại shop hoặc không chọn tiền mặt.");
     const expectedAmount = Math.max(0, Number(order.finalAmount || (Number(order.totalRentalPrice || 0) + Number(order.totalDepositAmount || 0))) - Number(order.creditAppliedAmount || 0));
     if (expectedAmount <= 0) throw new ApiError(400, "Số tiền cần thu không hợp lệ.");
     let payment = await Payment.findOne({ idempotencyKey: `cash-pickup:${order._id}` });
     if (!payment) [payment] = await Payment.create([{ orderId: order._id, customerId: order.customerId, paymentType: "full", channel: "direct", method: "cash", amount: expectedAmount, status: "success", active: false, paymentGroup: "rental", provider: "manual", idempotencyKey: `cash-pickup:${order._id}`, paymentReference: `CASH-${order.orderCode}`, confirmedBy: adminId, confirmedAt: new Date(), paidAt: new Date() }], session ? { session } : {});
-    order.fullPaymentId = payment._id; order.latestPaymentId = payment._id; order.paymentStatus = "fully_paid"; order.fullyPaidAt = payment.paidAt; order.status = "renting"; order.pickedUpAt = new Date(); await order.save(session ? { session } : {}); return order._id;
+    const startedAt = new Date();
+    order.fullPaymentId = payment._id; order.latestPaymentId = payment._id; order.paymentStatus = "fully_paid"; order.fullyPaidAt = payment.paidAt; order.status = "renting"; order.pickedUpAt = startedAt; order.rentalStartedAt = startedAt; order.actualRentalStartAt = startedAt; order.rentalDueAt = new Date(startedAt.getTime() + Number(order.rentalDurationHours || order.rentalDays * 24 || 24) * 3600000); await order.save(session ? { session } : {}); return order._id;
   });
   const decorated = await decorateOrder(resultId);
   emitOrderUpdated({ orderId: decorated._id, customerId: decorated.customerId?._id || decorated.customerId, status: decorated.status, paymentStatus: decorated.paymentStatus, reason: "cash_collected_pickup" });
@@ -1338,8 +1473,8 @@ export async function inspectReturn(orderId, payload, checkedBy) {
       throw new ApiError(400, "Chỉ kiểm tra khi đơn đã trả đồ hoặc quá hạn.");
     }
 
-    const actualReturnDate = order.actualReturnDate || order.returnedAt || new Date();
-    const dueAt = new Date(order.schedule?.dueReturnAt || order.returnDate);
+    const actualReturnDate = order.billableRentalEndAt || order.actualReturnDate || order.returnedAt || new Date();
+    const dueAt = new Date(order.rentalDueAt || order.schedule?.dueReturnAt || order.returnDate);
     const lateHours = actualReturnDate > dueAt ? Math.ceil((actualReturnDate - dueAt) / 3600000) : 0;
     const lateDays = lateHours > 0 ? Math.ceil(lateHours / 24) : 0;
     const lateFee = Number(order.extraDayCharge?.finalAmount || 0);
@@ -1433,6 +1568,12 @@ export async function inspectReturn(orderId, payload, checkedBy) {
     { orderId, status: { $nin: ["completed", "cancelled", "expired"] } },
     { $set: { status: inspection?.condition === "damaged" ? "maintenance" : "cleaning" } }
   );
+  if (inspection && Number(inspection.refundAmount || 0) === 0 && Number(inspection.outstandingPenalty || 0) === 0) {
+    const order = await RentalOrder.findById(orderId);
+    const [payments, refunds] = await Promise.all([Payment.find({ orderId }).lean(), DepositRefund.find({ orderId }).lean()]);
+    const financial = getOrderFinancialSnapshot(order, payments, refunds);
+    if (canCompleteOrder({ order, financial }).allowed) await completeOrder(orderId);
+  }
   return ReturnInspection.findById(inspectionId)
     .populate("costumeId")
     .populate("checkedBy", "-password");
@@ -1447,6 +1588,13 @@ export async function completeOrder(orderId) {
     const orderQuery = RentalOrder.findById(orderId);
     const order = session ? await orderQuery.session(session) : await orderQuery;
     if (!order) throw new ApiError(404, "Không tìm thấy đơn thuê.");
+    const paymentQuery = Payment.find({ orderId: order._id });
+    const refundQuery = DepositRefund.find({ orderId: order._id });
+    if (session) { paymentQuery.session(session); refundQuery.session(session); }
+    const [allPayments, refunds] = await Promise.all([paymentQuery.lean(), refundQuery.lean()]);
+    const financial = getOrderFinancialSnapshot(order, allPayments, refunds);
+    const completionDecision = canCompleteOrder({ order, financial });
+    if (!completionDecision.allowed) { const error = new ApiError(409, completionDecision.message); error.code = completionDecision.code; error.data = completionDecision.details; throw error; }
     if (order.status !== "returned") throw new ApiError(400, "Chỉ hoàn tất đơn đã trả đồ.");
     if (!order.inspectedAt) throw new ApiError(400, "Đơn chưa được kiểm tra sau khi trả.");
     if (Number(order.outstandingPenalty || 0) > 0) throw new ApiError(409, "Đơn còn phí phạt chưa thanh toán.");

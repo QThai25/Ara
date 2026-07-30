@@ -1,106 +1,97 @@
 # ARA Pre-Deploy Report
 
-## Final status
+Ngày cập nhật: **30/07/2026**.
 
-READY TO DEPLOY
+## Trạng thái
 
-## Environment
+**Code complete trong phạm vi RBAC/UI và sẵn sàng cho staging verification. Chưa đủ bằng chứng để tuyên bố đã production-ready.**
 
-- Node version: v22.12.0
-- npm version: 10.9.0
-- Branch: `develop`
-- OS: Windows NT 10.0.26200.0
+Không deploy, không kết nối/chỉnh dữ liệu production, không chạy migration apply và không đăng ký webhook trong vòng kiểm tra này.
 
-## Backend
+## Phạm vi thay đổi gần nhất
 
-- `npm ci`: passed after stopping local dev processes that held native Rollup files.
-- Tests: 103 passed, 0 failed.
-- Syntax check: passed (`npm run check` and runtime module checks).
-- Dependency audit: 0 known vulnerabilities after targeted Cloudinary/Nodemailer updates and removal of unused `multer-storage-cloudinary`.
-- Start: passed with payOS, email delivery and seed explicitly disabled for the audit.
-- MongoDB connection: passed; no URI or credential was logged.
-- Bind: `0.0.0.0:4000`, sourced from `HOST`/`PORT`.
-- Health: `GET /api/health` returned HTTP 200 without authentication and exposed only status, environment and timestamp metadata.
-- CORS: localhost ports 5173 and 5174 allowed; requests without `Origin` allowed; unapproved origin rejected; Authorization and guest-token preflight headers preserved.
-- Admin auth smoke check: login passed, protected dashboard returned 200, unauthenticated dashboard returned 401.
-- API exposure checks: user responses did not expose password; payment listing did not expose `rawCallback`.
-- Models: all 25 model modules compiled. The Banner model intentionally has a normal `position` index and a separate partial unique `position` index for the active-primary invariant.
-- Transactions: production rejects unsupported standalone MongoDB transactions; development/test retains the existing safe fallback.
-- Graceful shutdown handlers for SIGINT/SIGTERM are present. Signal delivery was reviewed in code rather than exercised on Windows.
-- Warnings: none blocking.
+- Tách quyền quản trị thành Owner/Staff.
+- Permission policy tập trung cho toàn bộ admin API.
+- Session invalidation bằng Mongo status/tokenVersion cho HTTP và Socket.IO.
+- Staff management, password lifecycle và audit log.
+- Lọc dữ liệu payment/refund/customer nhạy cảm theo permission.
+- Chuẩn hóa AdminFrontend navigation/states/select và dedicated payment/refund/inspection/staff routes.
+- Không đổi state machine, công thức rental/payment/refund hoặc checkout khách hàng.
 
-## Frontend
+## Kết quả kiểm tra
 
-- `npm ci`: passed.
-- Production build: passed with an explicit local `VITE_API_BASE_URL`.
-- Dev server: started on port 5173.
-- SPA smoke routes returning HTTP 200: home, costumes, contact, rental policy and order lookup.
-- Backend catalog call and CORS integration: passed.
-- Warning: generated JavaScript chunk is larger than 500 kB; non-blocking performance follow-up.
+| Project/lệnh | Kết quả |
+|---|---|
+| Backend baseline `npm.cmd test` | 170/170 pass |
+| Backend final `npm.cmd test` | 181/181 pass |
+| Backend `npm.cmd run check` | Pass |
+| Syntax toàn bộ Backend JS | 226 files pass |
+| Customer `npm.cmd run build` | Pass |
+| Admin `npm.cmd test` | 4/4 pass |
+| Admin `npm.cmd run build` | Pass |
+| `git diff --check` theo config repo | Exit 0 |
 
-## AdminFrontend
+Không chạy `npm ci` ở vòng cuối vì `node_modules` đã tồn tại và không có dependency mới. Không có lint script trong ba package. Customer Frontend không có test runner; browser E2E/test DB chưa được cấu hình.
 
-- `npm ci`: passed.
-- Production build: passed with an explicit local `VITE_API_BASE_URL`.
-- Dev server: started on port 5174.
-- SPA smoke routes returning HTTP 200: root, login and orders.
-- Admin login and protected dashboard API integration: passed.
-- Warning: generated JavaScript chunk is larger than 500 kB; non-blocking performance follow-up.
+## Coverage regression
 
-## Security and secrets
+Backend suite bao phủ:
 
-- Real `.env` and `.env.local` files are ignored and not tracked.
-- Tracked env files are examples only.
-- Required `.gitignore` patterns for env files, dependencies, builds, coverage, uploads and logs are present.
-- Tracked-source scan found no assigned JWT, MongoDB credential URI, Cloudinary secret, SMTP password, payOS secret, private SSH key or GitHub token.
-- Actual required env values were checked by state/shape only: no required value is `undefined`, `null` or a known placeholder; JWT and guest-token secrets meet the minimum length check.
-- Production env validation passed with isolated placeholder test values; no real secret was printed.
-- CORS has no wildcard with credentials.
-- Error responses do not expose stack traces. Server-side 5xx logging remains available for PM2.
-- No `/api/api` path was found.
-- No old Render/ngrok/VPS runtime URL was found.
-- Gmail OAuth/refresh-token flow is absent. SMTP can be disabled safely and mail failures remain outside order/payment transactions.
+- Auth rate limit, error sanitization và guest token scope.
+- Owner/Staff permission map và direct API denial.
+- Shared-route bypass prevention.
+- Disabled Staff/tokenVersion/socket invalidation.
+- Staff mass-assignment/role escalation denial.
+- Rental timeline, availability và `allowedActions`.
+- Payment quote/cash/manual bank/payOS/idempotency.
+- Inspection, settlement, refund và financial guard.
+- Customer/notification/catalog behavior.
 
-## Smoke tests
+Admin static tests bao phủ permission-aware navigation, friendly 403, dedicated routes, keyboard-control markers và không còn native `<select>` trong JSX.
 
-Passed:
+## Warning không chặn build
 
-- Backend startup and MongoDB connection.
-- Public health and catalog endpoints.
-- Customer/Admin CORS and preflight behavior.
-- Customer and Admin Vite dev servers and representative SPA routes.
-- Admin authentication and protected dashboard authorization.
-- Password and raw payment callback non-exposure checks.
-- Existing automated coverage for authenticated/guest order flow, rental scheduling, payment calculation/idempotency, notifications, refunds and admin presentation.
+- Customer: `ProductCarousel` vừa dynamic vừa static import.
+- Admin: chart chunk khoảng 594 kB.
+- Git trên Windows cảnh báo LF sẽ đổi thành CRLF ở nhiều file có thay đổi sẵn.
 
-Skipped by design:
+## Security/RBAC
 
-- Creating, mutating or canceling real rental orders.
-- Public lookup against a real order.
-- Creating a payOS or bank transaction.
-- Sending email.
-- Calling or registering a webhook.
-- Uploading a production Cloudinary asset.
-- Destructive database/index/migration operations.
-- Full browser-driven visual interaction; builds, route serving and API integration were tested instead.
+- Owner giữ toàn bộ permission quản trị.
+- Staff chỉ có permission vận hành.
+- `/api/admin/*` luôn qua guard tập trung.
+- Permission denial trả 403 mà không tự xóa session hợp lệ.
+- Block/reset/logout/change password làm access token cũ mất hiệu lực.
+- Password, token, secret, OTP, cookie, encrypted field và đầy đủ STK bị loại khỏi audit.
+- Demo seed không còn password hard-code; cần env password tối thiểu khi chủ động bật.
 
-## Files changed
+## Chưa xác minh
 
-- `Backend/package.json`
-- `Backend/package-lock.json`
-- `Backend/src/config/cloudinary.js`
-- `PRE_DEPLOY_REPORT.md`
+- Migration dry-run trên Atlas/staging.
+- Atlas backup/restore, network allowlist và transaction support thực tế.
+- Startup/health/CORS/WebSocket trên VPS production.
+- Browser interaction desktop/tablet/mobile.
+- Cloudinary upload thực tế.
+- SMTP gửi hóa đơn.
+- payOS sandbox/webhook thực tế sau thay đổi.
+- Order/payment/refund concurrency với MongoDB test database thật.
+- Dependency audit mới nhất qua registry/CI.
 
-## Remaining manual deployment steps
+## Mâu thuẫn/rủi ro nghiệp vụ đã ghi nhận
 
-- Review and commit the current working tree before deployment.
-- Create the VPS production env with production URLs, strong secrets and `NODE_ENV=production`; keep `SEED_DEMO_DATA=false`.
-- Set production `CORS_ORIGINS` to the final customer/admin domains without wildcard.
-- Allow the VPS public IP in MongoDB Atlas and verify replica-set transaction support.
-- Configure Cloudinary, SMTP and payOS production credentials only if those features will be enabled.
-- Point Nginx to `http://127.0.0.1:4000`, enable proxy headers and validate the config.
-- Start the Backend through PM2 using `Backend/ecosystem.config.cjs`.
-- Configure DNS and HTTPS certificates.
-- Configure Vercel environment values for both frontends and verify SPA rewrites.
-- Register production webhook only during the controlled deployment step if payOS is enabled.
-- Run a production smoke test without exposing secrets, then perform one explicitly authorized low-value payment test separately.
+- Tài liệu payment cũ từng ghi MoMo/VNPay; tài liệu hiện tại đã đồng bộ rằng chỉ cash, manual bank transfer và payOS được hỗ trợ.
+- Legacy dashboard revenue có thể dựa trên completed orders, trong khi report hiện hành dựa trên Payment success và refund deductions. Không dùng legacy endpoint để đối soát và không sửa business ngoài scope.
+
+## Bước triển khai thủ công còn lại
+
+1. Review/commit working tree và chạy lại test/build trên commit release.
+2. Tạo staging env với secrets riêng, `SEED_DEMO_DATA=false`.
+3. Backup Atlas, chạy `npm run migrate:admin-roles` dry-run trên staging copy.
+4. Smoke Owner/Staff, direct 403, password change và session revocation.
+5. Smoke order/payment/inspection/settlement/refund bằng dữ liệu thử.
+6. Xác minh Cloudinary, SMTP và payOS sandbox nếu bật.
+7. Build/deploy immutable Backend, Vercel previews và kiểm tra CORS/deep links.
+8. Chỉ sau phê duyệt mới chạy migration apply/đăng ký webhook production.
+9. Giữ sẵn rollback image/Vercel deployment và Atlas restore procedure.
+
+Chi tiết: [Deployment readiness](docs/deployment-readiness.md), [Deployment guide](docs/deployment-guide.md), [RBAC](docs/ADMIN_RBAC.md).

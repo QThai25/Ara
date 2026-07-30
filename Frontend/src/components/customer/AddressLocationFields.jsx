@@ -66,15 +66,18 @@ function LocationSelect({ label, value, items, placeholder, disabled, onChange }
   </label>;
 }
 
-export function AddressLocationFields({ provinceCode, districtCode, communeCode, onChange }) {
+export function AddressLocationFields({ provinceCode, districtCode, communeCode, onChange, allowedProvinceCodes = null }) {
   const [provinces, setProvinces] = useState([]);
   const [districts, setDistricts] = useState([]);
   const [communes, setCommunes] = useState([]);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    listProvinces().then((result) => setProvinces(result.data?.items || [])).catch(() => setError("Không tải được danh sách tỉnh/thành phố."));
-  }, []);
+    listProvinces().then((result) => {
+      const items = result.data?.items || [];
+      setProvinces(Array.isArray(allowedProvinceCodes) ? items.filter((item) => allowedProvinceCodes.includes(String(item.code))) : items);
+    }).catch(() => setError("Không tải được danh sách tỉnh/thành phố."));
+  }, [allowedProvinceCodes?.join(",")]);
   useEffect(() => {
     if (!provinceCode) { setDistricts([]); return; }
     listDistricts(provinceCode).then((result) => { setDistricts(result.data?.items || []); setError(""); }).catch(() => { setDistricts([]); setError("Không tải được danh sách quận/huyện."); });

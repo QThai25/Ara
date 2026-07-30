@@ -1,7 +1,10 @@
 import {
   ArrowLeft,
   CalendarClock,
+  ChevronLeft,
+  ChevronRight,
   CircleDollarSign,
+  Expand,
   FileText,
   Image as ImageIcon,
   Package,
@@ -16,6 +19,7 @@ import React, {
   useMemo,
   useState
 } from "react";
+import { createPortal } from "react-dom";
 
 import {
   useNavigate,
@@ -28,25 +32,44 @@ import {
   AdminStatusBadge
 } from "../components/common/AdminUI.jsx";
 
+import { ADMIN_PERMISSIONS as P } from "../constants/adminPermissions.js";
+import { useAdminAuth } from "../context/AdminAuthContext.jsx";
 import { StateMessage } from "../components/common/StateMessage.jsx";
-import { getById } from "../services/adminCostumeService.js";
+import { getById, update as updateCostume } from "../services/adminCostumeService.js";
+import { getAdminBrands } from "../services/brandService.js";
+import { getAdminCategories } from "../services/categoryService.js";
+import { getAdminOccasions, getAdminStyles } from "../services/filterOptionService.js";
 
 import {
   formatDateTime,
   money,
+  normalizeCostume,
   resolveImageUrl
 } from "../utils/format.js";
+import { normalizeCostumeEditorPayload } from "../utils/costumeEditor.js";
+import { CostumeFormModal } from "./AdminPage.jsx";
 
 const EMPTY_TEXT = "Chưa có";
 
-export function AdminCostumeDetailPage() {
+export function AdminCostumeDetailPage({ notify = () => {} }) {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { can } = useAdminAuth();
+  const canManageCatalog = can(P.CATALOG_MANAGE);
 
   const [item, setItem] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [activeImageIndex, setActiveImageIndex] = useState(0);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editorCatalogLoading, setEditorCatalogLoading] = useState(canManageCatalog);
+  const [editorCatalog, setEditorCatalog] = useState({
+    categories: [],
+    brands: [],
+    occasions: [],
+    styles: []
+  });
 
   useEffect(() => {
     let alive = true;
@@ -85,6 +108,56 @@ export function AdminCostumeDetailPage() {
     };
   }, [id]);
 
+  useEffect(() => {
+    if (!canManageCatalog) {
+      setEditorCatalogLoading(false);
+      return undefined;
+    }
+
+    let alive = true;
+    setEditorCatalogLoading(true);
+
+    Promise.all([
+      getAdminCategories(),
+      getAdminBrands(),
+      getAdminOccasions(),
+      getAdminStyles()
+    ])
+      .then(([categories, brands, occasions, styles]) => {
+        if (!alive) return;
+        setEditorCatalog({ categories, brands, occasions, styles });
+      })
+      .catch((error) => {
+        if (alive) notify(error.message || "Không thể tải dữ liệu biểu mẫu.", "error");
+      })
+      .finally(() => {
+        if (alive) setEditorCatalogLoading(false);
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, [canManageCatalog, notify]);
+
+  const saveCostume = async (payload) => {
+    try {
+      const response = await updateCostume(
+        id,
+        normalizeCostumeEditorPayload(payload)
+      );
+      const updated = response?.data
+        ? normalizeCostume(response.data)
+        : await getById(id);
+
+      setItem(updated);
+      setEditorOpen(false);
+      notify(response?.message || "Cập nhật trang phục thành công.");
+    } catch (error) {
+      notify(error.message || "Không thể cập nhật trang phục.", "error");
+      throw error;
+    }
+  };
+
   const images = useMemo(() => {
     const source = item?.images?.length
       ? item.images
@@ -99,6 +172,38 @@ export function AdminCostumeDetailPage() {
     images[activeImageIndex] ||
     images[0] ||
     "";
+
+  const changeImage = (direction) => {
+    if (images.length < 2) return;
+
+    setActiveImageIndex((current) =>
+      (current + direction + images.length) %
+      images.length
+    );
+  };
+
+  useEffect(() => {
+    if (!lightboxOpen) return undefined;
+
+    const previousOverflow = document.body.style.overflow;
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") {
+        setLightboxOpen(false);
+      } else if (event.key === "ArrowLeft") {
+        changeImage(-1);
+      } else if (event.key === "ArrowRight") {
+        changeImage(1);
+      }
+    };
+
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [images.length, lightboxOpen]);
 
   const brandName = getRelationName(
     item?.brandName,
@@ -206,27 +311,60 @@ export function AdminCostumeDetailPage() {
                 {images.length > 0 ? (
                   <div className="admin-costume-media">
                     <div className="admin-costume-main-image">
-                      <img
-                        className="admin-costume-image-backdrop"
-                        src={resolveImageUrl(activeImage)}
-                        alt=""
-                        aria-hidden="true"
-                        onError={handleImageError}
-                      />
+                      <button
+                        type="button"
+                        className="admin-costume-image-open"
+                        onClick={() => setLightboxOpen(true)}
+                        aria-label={`Mở ảnh ${activeImageIndex + 1} ở kích thước lớn`}
+                      >
+                        <img
+                          className="admin-costume-image-backdrop"
+                          src={resolveImageUrl(activeImage)}
+                          alt=""
+                          aria-hidden="true"
+                          onError={handleImageError}
+                        />
 
-                      <img
-                        className="admin-costume-image-content"
-                        src={resolveImageUrl(activeImage)}
-                        alt={item.name || "Trang phục"}
-                        onError={handleImageError}
-                      />
+                        <img
+                          className="admin-costume-image-content"
+                          src={resolveImageUrl(activeImage)}
+                          alt={item.name || "Trang phục"}
+                          onError={handleImageError}
+                        />
 
-                      <span>
+                        <span className="admin-costume-image-open-hint">
+                          <Expand size={16} />
+                          Xem ảnh lớn
+                        </span>
+                      </button>
+
+                      {images.length > 1 && (
+                        <>
+                          <button
+                            type="button"
+                            className="admin-costume-image-nav is-previous"
+                            onClick={() => changeImage(-1)}
+                            aria-label="Xem ảnh trước"
+                          >
+                            <ChevronLeft size={19} />
+                          </button>
+                          <button
+                            type="button"
+                            className="admin-costume-image-nav is-next"
+                            onClick={() => changeImage(1)}
+                            aria-label="Xem ảnh tiếp theo"
+                          >
+                            <ChevronRight size={19} />
+                          </button>
+                        </>
+                      )}
+
+                      <span className="admin-costume-image-counter">
                         Ảnh {activeImageIndex + 1}/{images.length}
                       </span>
                     </div>
 
-                    {images.length > 1 && (
+                    {images.length > 0 && (
                       <div className="admin-costume-thumbnail-list">
                         {images.map((image, index) => (
                           <button
@@ -241,6 +379,10 @@ export function AdminCostumeDetailPage() {
                             aria-pressed={
                               index === activeImageIndex
                             }
+                            onDoubleClick={() => {
+                              setActiveImageIndex(index);
+                              setLightboxOpen(true);
+                            }}
                             onClick={() =>
                               setActiveImageIndex(index)
                             }
@@ -251,10 +393,16 @@ export function AdminCostumeDetailPage() {
                                 }`}
                               onError={handleImageError}
                             />
+                            <span>{index + 1}</span>
                           </button>
                         ))}
                       </div>
                     )}
+
+                    <p className="admin-costume-gallery-help">
+                      <Expand size={14} />
+                      Bấm vào ảnh chính để xem toàn màn hình. Bấm đúp thumbnail để mở nhanh.
+                    </p>
                   </div>
                 ) : (
                   <div className="admin-costume-gallery-empty">
@@ -412,16 +560,17 @@ export function AdminCostumeDetailPage() {
                   </div>
 
                   <div className="admin-costume-action-buttons">
-                    <button
-                      type="button"
-                      className="admin-costume-edit-button"
-                      onClick={() =>
-                        navigate(`/costumes/${id}/edit`)
-                      }
-                    >
-                      <Pencil size={17} />
-                      Sửa trang phục
-                    </button>
+                    {canManageCatalog && (
+                      <button
+                        type="button"
+                        className="admin-costume-edit-button"
+                        disabled={editorCatalogLoading}
+                        onClick={() => setEditorOpen(true)}
+                      >
+                        <Pencil size={17} />
+                        {editorCatalogLoading ? "Đang chuẩn bị..." : "Sửa trang phục"}
+                      </button>
+                    )}
 
                     <button
                       type="button"
@@ -455,6 +604,50 @@ export function AdminCostumeDetailPage() {
             </div>
           </div>
         </>
+      )}
+
+      {editorOpen && item && (
+        <CostumeFormModal
+          title="Sửa trang phục"
+          initial={item}
+          categories={editorCatalog.categories}
+          brands={editorCatalog.brands}
+          occasions={editorCatalog.occasions}
+          styles={editorCatalog.styles}
+          notify={notify}
+          onClose={() => setEditorOpen(false)}
+          onSave={saveCostume}
+        />
+      )}
+
+      {lightboxOpen && item && activeImage && createPortal(
+        <div
+          className="admin-costume-image-lightbox"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Xem hình ảnh ${item.name || "trang phục"}`}
+          onClick={(event) => {
+            if (event.target === event.currentTarget) {
+              setLightboxOpen(false);
+            }
+          }}
+        >
+          <button
+            type="button"
+            className="admin-costume-image-lightbox-close"
+            onClick={() => setLightboxOpen(false)}
+          >
+            Đóng
+          </button>
+
+          <img
+            src={resolveImageUrl(activeImage)}
+            alt={`${item.name || "Trang phục"} - ảnh ${activeImageIndex + 1}`}
+            onClick={(event) => event.stopPropagation()}
+            onError={handleImageError}
+          />
+        </div>,
+        document.body
       )}
     </section>
   );

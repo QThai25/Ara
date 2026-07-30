@@ -67,6 +67,14 @@ test("rental balance never charges the deposit a second time", () => {
   assert.equal(quote.payableAmount, 500000);
 });
 
+test("rental balance is payable immediately after a deposit confirms the canonical order", () => {
+  for (const status of ["confirmed", "preparing", "ready_for_handover"]) {
+    const quote = calculatePaymentQuoteFromData(order({ status, paymentStatus: "deposit_paid" }), "rental_balance", [payment("deposit", 300000)]);
+    assert.equal(quote.canPay, true, status);
+    assert.equal(quote.payableAmount, 500000, status);
+  }
+});
+
 test("partial rental balance only charges the remaining rental amount", () => {
   const quote = calculatePaymentQuoteFromData(
     order({ status: "ready_to_pickup", paymentStatus: "deposit_paid" }),
@@ -206,13 +214,21 @@ test("cancel and reject order cancel pending payments through the payment servic
   assert.match(source, /runFinancialTransaction\("từ chối đơn thuê"/);
 });
 
+test("new orders are not stamped as approved before payment succeeds", () => {
+  const rental = fs.readFileSync(new URL("../src/services/rentalOrder.service.js", import.meta.url), "utf8");
+  const paymentService = fs.readFileSync(new URL("../src/services/payment.service.js", import.meta.url), "utf8");
+  assert.match(rental, /status: "pending_payment"/);
+  assert.match(rental, /approvedAt: null/);
+  assert.match(paymentService, /order\.approvedAt \|\|= paidAt/);
+});
+
 test("checkout exposes bank transfer and payOS but removes MoMo and VNPay", () => {
   const backend = fs.readFileSync(new URL("../src/services/payment.service.js", import.meta.url), "utf8");
   const frontend = fs.readFileSync(new URL("../../Frontend/src/pages/customer/MyOrderDetailPage.jsx", import.meta.url), "utf8");
   assert.match(backend, /Thanh toán online đang phát triển/);
   assert.match(backend, /paymentMethodsAvailability/);
   assert.match(frontend, /method: "bank_transfer"/);
-  assert.match(frontend, /method: "payos"/);
+  assert.match(frontend, /method: "payos_qr"/);
   assert.doesNotMatch(frontend, /method: "momo"/);
   assert.doesNotMatch(frontend, /method: "vnpay"/);
 });

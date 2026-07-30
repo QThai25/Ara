@@ -13,3 +13,10 @@ export async function uploadImages(files) {
   const response = await apiClient.post("/uploads", body);
   return response.data || response;
 }
+
+export async function uploadInspectionImages(files) {
+  const body = new FormData();
+  files.forEach((file) => body.append("images", file));
+  const response = await apiClient.post("/uploads/inspection", body);
+  return response.data || response;
+}

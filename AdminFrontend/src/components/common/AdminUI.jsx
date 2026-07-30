@@ -1,8 +1,74 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Check, ChevronDown, MoreVertical, RotateCcw, Search } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, Inbox, LoaderCircle, MoreVertical, RotateCcw, Search, ShieldX } from "lucide-react";
 import { StatusBadge } from "./StatusBadge.jsx";
 import { ModalSelect } from "./AdminControls.jsx";
+
+export function AdminPageLayout({ children, className = "" }) {
+  return <div className={`admin-page admin-page-layout ${className}`.trim()}>{children}</div>;
+}
+
+export function AdminSection({ title, description, action, children, className = "" }) {
+  return (
+    <section className={`admin-section ${className}`.trim()}>
+      {(title || description || action) && (
+        <header className="admin-section__header">
+          <div>
+            {title && <h2>{title}</h2>}
+            {description && <p>{description}</p>}
+          </div>
+          {action}
+        </header>
+      )}
+      {children}
+    </section>
+  );
+}
+
+export function AdminCard({ children, className = "" }) {
+  return <section className={`admin-card ${className}`.trim()}>{children}</section>;
+}
+
+export function AdminButton({ children, variant = "secondary", className = "", ...props }) {
+  return <button className={`admin-button admin-button--${variant} ${className}`.trim()} {...props}>{children}</button>;
+}
+
+export function AdminFormField({ label, required, help, error, children }) {
+  return (
+    <label className={`admin-form-field ${error ? "has-error" : ""}`}>
+      <span>{label}{required && <b aria-hidden="true"> *</b>}</span>
+      {children}
+      {help && !error && <small>{help}</small>}
+      {error && <small role="alert">{error}</small>}
+    </label>
+  );
+}
+
+export function LoadingState({ message = "Đang tải dữ liệu..." }) {
+  return <div className="admin-state-panel is-loading" role="status"><LoaderCircle /><strong>{message}</strong></div>;
+}
+
+export function EmptyState({ title = "Chưa có dữ liệu", description = "Dữ liệu phù hợp sẽ xuất hiện tại đây.", action }) {
+  return <div className="admin-state-panel"><Inbox /><strong>{title}</strong><p>{description}</p>{action}</div>;
+}
+
+export function ErrorState({ message = "Không thể tải dữ liệu.", onRetry }) {
+  return <div className="admin-state-panel is-error" role="alert"><AlertTriangle /><strong>Đã xảy ra lỗi</strong><p>{message}</p>{onRetry && <AdminButton type="button" onClick={onRetry}>Thử lại</AdminButton>}</div>;
+}
+
+export function PermissionDenied({ permission }) {
+  return (
+    <AdminPageLayout className="admin-permission-page">
+      <div className="admin-state-panel is-permission" role="alert">
+        <ShieldX />
+        <strong>Bạn không có quyền truy cập</strong>
+        <p>Tài khoản hiện tại không được cấp quyền cho khu vực này.</p>
+        {permission && <code>{permission}</code>}
+        <AdminButton type="button" onClick={() => window.history.back()}>Quay lại</AdminButton>
+      </div>
+    </AdminPageLayout>
+  );
+}
 
 export function AdminPageHeader({ eyebrow, title, description, action }) {
   return (
@@ -47,14 +113,14 @@ export function AdminSelectFilter({ value, onChange, options, allLabel = "Tất 
   return <AdminSelect value={value} onChange={onChange} options={[["", allLabel], ...options]} placeholder={allLabel} />;
 }
 
-export function AdminDataTable({ columns, rows, getRowKey, emptyText = "Không có dữ liệu.", page, pageSize = rows.length || 1, totalPages, total, onPageChange }) {
+export function AdminDataTable({ columns, rows, getRowKey, emptyText = "Không có dữ liệu.", page, pageSize = rows.length || 1, totalPages, total, onPageChange, className = "", tableClassName = "" }) {
   const from = total ? (page - 1) * pageSize + 1 : 0;
   const to = total ? Math.min(total, (page - 1) * pageSize + rows.length) : 0;
 
   return (
-    <section className="admin-data-card">
+    <section className={`admin-data-card ${className}`.trim()}>
       <div className="admin-data-scroll">
-        <table className="admin-data-table">
+        <table className={`admin-data-table ${tableClassName}`.trim()}>
           <thead>
             <tr>{columns.map((column) => <th key={column.key}>{column.label}</th>)}</tr>
           </thead>

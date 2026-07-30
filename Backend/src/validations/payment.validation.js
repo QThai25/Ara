@@ -2,8 +2,8 @@ import { body, header, param, query } from "express-validator";
 
 const PAYMENT_TYPES = ["deposit", "full", "rental_balance", "penalty", "refund"];
 const PAYMENT_CHANNELS = ["online", "direct"];
-const PAYMENT_METHODS = ["payos", "bank_transfer", "cash"];
-const VALID_METHODS = { online: ["payos"], direct: ["cash", "bank_transfer"] };
+const PAYMENT_METHODS = ["payos_qr", "payos", "bank_transfer", "cash"];
+const VALID_METHODS = { online: ["payos_qr", "payos"], direct: ["cash", "bank_transfer"] };
 
 export const createPaymentValidation = [
   header("Idempotency-Key").optional().isUUID().withMessage("Idempotency-Key phải là UUID hợp lệ."),
@@ -15,7 +15,7 @@ export const createPaymentValidation = [
   body("amount").not().exists().withMessage("Số tiền do hệ thống tính, khách hàng không được gửi amount."),
   body().custom((value, { req }) => {
     if (!req.get("Idempotency-Key") && !value.idempotencyKey) throw new Error("Thiếu idempotencyKey.");
-    const channel = value.channel || (value.method === "payos" ? "online" : "direct");
+    const channel = value.channel || (["payos", "payos_qr"].includes(value.method) ? "online" : "direct");
     if (!VALID_METHODS[channel]?.includes(value.method)) throw new Error("Kênh và phương thức thanh toán không tương thích.");
     return true;
   })

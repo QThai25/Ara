@@ -4,7 +4,7 @@ export const orderLabels = Object.fromEntries(orderStatusOptions);
 export const costumeLabels = Object.fromEntries(costumeStatusOptions);
 export { getStatusLabel, normalizeStatus, statusAliases, statusLabels };
 
-export const steps = ["confirmed", "ready_to_pickup", "renting", "returned", "completed"];
+export const steps = ["pending_payment", "confirmed", "ready_for_handover", "outbound_in_transit", "renting", "return_in_transit", "returned", "completed"];
 
 export function formatCurrency(value) {
   const number = Number(value || 0);
@@ -66,9 +66,24 @@ export function todayPlus(days) {
 
 export function normalizeCostume(costume) {
   if (!costume || typeof costume !== "object") return {};
-  const assetImages = Array.isArray(costume.imageAssets) ? costume.imageAssets.map((asset) => asset?.url).filter(Boolean) : [];
-  const image = costume.image || costume.thumbnail || assetImages[0] || costume.images?.[0] || "";
-  const images = Array.isArray(costume.images) && costume.images.length ? costume.images : assetImages.length ? assetImages : [image].filter(Boolean);
+  const imageValue = (value) => typeof value === "string" ? value : value?.url || value?.image || "";
+  const assetImages = Array.isArray(costume.imageAssets)
+    ? [...costume.imageAssets]
+      .sort((left, right) => Number(left?.sortOrder || 0) - Number(right?.sortOrder || 0))
+      .map(imageValue)
+      .filter(Boolean)
+    : [];
+  const storedImages = Array.isArray(costume.images)
+    ? costume.images.map(imageValue).filter(Boolean)
+    : [];
+  const images = Array.from(new Set([
+    imageValue(costume.image),
+    imageValue(costume.imageUrl),
+    imageValue(costume.thumbnail),
+    ...assetImages,
+    ...storedImages
+  ].filter(Boolean)));
+  const image = images[0] || "";
   return { ...costume, image, images, category: costume.category || costume.categoryId };
 }
 

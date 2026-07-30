@@ -6,6 +6,7 @@ import {
     costumeName,
     money
 } from "../../utils/format.js";
+import { uploadInspectionImages } from "../../services/uploadService.js";
 import { ModalSelect, MoneyThousandsInput, PlainNumberInput } from "./AdminControls.jsx";
 
 const idOf = (item) => item?.id || item?._id || "";
@@ -44,13 +45,15 @@ export function ReturnInspectionModal({
     order,
     loading = false,
     onClose,
-    onSubmit
+    onSubmit,
+    presentation = "dialog"
 }) {
     const [lateHours, setLateHours] = useState(0);
     const [lateFee, setLateFee] = useState(0);
     const [note, setNote] = useState("");
     const [items, setItems] = useState([]);
     const [error, setError] = useState("");
+    const [uploadingIndex, setUploadingIndex] = useState(null);
 
     useEffect(() => {
         if (!open || !order) return;
@@ -110,6 +113,29 @@ export function ReturnInspectionModal({
     const totalPenaltyFee =
         Number(lateFee || 0) + Number(totalDamageFee || 0);
 
+    const uploadEvidence = async (index, fileList) => {
+        const files = Array.from(fileList || []).slice(0, 5);
+        if (!files.length) return;
+        setUploadingIndex(index);
+        setError("");
+        try {
+            const uploaded = await uploadInspectionImages(files);
+            const urls = uploaded?.urls || (uploaded?.images || []).map((image) => image.url).filter(Boolean);
+            setItems((current) => current.map((item, itemIndex) => (
+                itemIndex === index
+                    ? {
+                        ...item,
+                        evidenceUrls: [item.evidenceUrls, ...urls].filter(Boolean).join("\n")
+                    }
+                    : item
+            )));
+        } catch (uploadError) {
+            setError(uploadError.message || "Không thể tải ảnh bằng chứng.");
+        } finally {
+            setUploadingIndex(null);
+        }
+    };
+
     const validate = () => {
         if (!items.length) {
             return "Đơn thuê không có trang phục để kiểm tra.";
@@ -151,6 +177,11 @@ export function ReturnInspectionModal({
     const submit = async (event) => {
         event.preventDefault();
 
+        if (uploadingIndex !== null) {
+            setError("Vui lòng chờ tải ảnh bằng chứng hoàn tất.");
+            return;
+        }
+
         const validationError = validate();
 
         if (validationError) {
@@ -191,13 +222,15 @@ export function ReturnInspectionModal({
     };
 
     if (!open || !order) return null;
+    const pageMode = presentation === "page";
 
     return (
-        <div className="admin-modal-backdrop">
+        <div className={pageMode ? "return-inspection-page-shell" : "admin-modal-backdrop"}>
             <div
-                className="return-inspection-modal"
-                role="dialog"
-                aria-modal="true"
+                className={`return-inspection-modal${pageMode ? " is-page" : ""}`}
+                role={pageMode ? "region" : "dialog"}
+                aria-modal={pageMode ? undefined : "true"}
+                aria-label={pageMode ? "Biên bản kiểm tra trả đồ" : undefined}
             >
                 <div className="return-inspection-header">
                     <div>
@@ -294,6 +327,20 @@ export function ReturnInspectionModal({
                                                 <MoneyThousandsInput label="Phí sửa chữa" value={inspectionItem.repairFee || ""} onChange={value => updateItem(index, "repairFee", value)} />
                                                 <MoneyThousandsInput label="Giá thanh lý" value={inspectionItem.liquidationPrice || ""} onChange={value => updateItem(index, "liquidationPrice", value)} />
                                                 <label className="inspection-full-field">Ảnh/video bằng chứng<textarea value={inspectionItem.evidenceUrls || ""} onChange={e => updateItem(index, "evidenceUrls", e.target.value)} placeholder="Mỗi URL một dòng"/></label>
+                                                <label className="inspection-full-field">
+                                                    Tải ảnh bằng chứng
+                                                    <input
+                                                        type="file"
+                                                        accept="image/jpeg,image/png,image/webp"
+                                                        multiple
+                                                        disabled={loading || uploadingIndex === index}
+                                                        onChange={(event) => {
+                                                            uploadEvidence(index, event.target.files);
+                                                            event.target.value = "";
+                                                        }}
+                                                    />
+                                                    <small>{uploadingIndex === index ? "Đang tải ảnh…" : "Tối đa 5 ảnh JPG, PNG hoặc WEBP; mỗi ảnh không quá 5MB."}</small>
+                                                </label>
 
                                                 <label>
                                                     Phụ kiện bị mất
@@ -386,7 +433,7 @@ export function ReturnInspectionModal({
                             type="button"
                             className="admin-modal-cancel"
                             onClick={onClose}
-                            disabled={loading}
+                            disabled={loading || uploadingIndex !== null}
                         >
                             Hủy
                         </button>
@@ -394,9 +441,9 @@ export function ReturnInspectionModal({
                         <button
                             type="submit"
                             className="admin-modal-confirm primary"
-                            disabled={loading}
+                            disabled={loading || uploadingIndex !== null}
                         >
-                            {loading ? "Đang lưu..." : "Lưu biên bản"}
+                            {loading ? "Đang lưu..." : uploadingIndex !== null ? "Đang tải ảnh..." : "Lưu biên bản"}
                         </button>
                     </div>
                 </form>

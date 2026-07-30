@@ -16,8 +16,9 @@ export function initializeSocket(server, corsOrigins = []) {
         return next();
       }
       const payload = jwt.verify(token, process.env.JWT_SECRET || "dev-secret");
-      const user = await User.findById(payload.id).select("_id role status");
+      const user = await User.findById(payload.id).select("_id role status +tokenVersion");
       if (!user || user.status === "blocked") return next(new Error("Không có quyền kết nối."));
+      if (Number(payload.tokenVersion || 0) !== Number(user.tokenVersion || 0)) return next(new Error("Phiên đăng nhập đã hết hiệu lực."));
       socket.user = user;
       next();
     } catch {
@@ -87,6 +88,11 @@ export function emitNotification(notification, unreadCount) {
   const room = `user:${notification.recipientId}`;
   io.to(room).emit("notification:new", notification);
   io.to(room).emit("notification:unread-count", { count: unreadCount });
+}
+
+export function disconnectUserSessions(userId) {
+  if (!io || !userId) return;
+  io.in(`user:${userId}`).disconnectSockets(true);
 }
 
 export function emitOrderUpdated(payload = {}) {

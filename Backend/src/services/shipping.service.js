@@ -4,6 +4,8 @@ import { AuditLog } from "../models/AuditLog.js";
 import { ApiError } from "../utils/ApiError.js";
 import { resolveShippingZone, previewZoneDuration } from "./transportTime.service.js";
 import { resolveLegacyAddressLocation, validateLocation } from "./locationCatalog.service.js";
+import { EXTERNAL_CARRIER_NOTICE } from "../config/fulfillment.config.js";
+import { isSupportedFulfillmentProvinceCode } from "../utils/fulfillmentProvince.js";
 
 export const METHODS = [
   { code: "store_pickup_store_return", pickupMethod: "store_pickup", returnMethod: "store_return", name: "Tự nhận – tự trả tại cửa hàng", requiresDeliveryAddress: false, requiresCollectionAddress: false },
@@ -64,24 +66,35 @@ export async function quote(user, body = {}) {
   const collectionInput = body.collectionAddress || (body.collectionSameAsDelivery !== false ? deliveryInput : {});
   const delivery = method.requiresDeliveryAddress ? await resolveAddress(user, deliveryInput) : null;
   const collection = method.requiresCollectionAddress ? await resolveAddress(user, collectionInput) : null;
-  const addressForZone = delivery?.address || collection?.address;
+  for (const resolvedAddress of [delivery?.address, collection?.address].filter(Boolean)) {
+    if (!isSupportedFulfillmentProvinceCode(resolvedAddress.provinceCode)) {
+      const error = new ApiError(422, "Hiện tại shop chỉ hỗ trợ giao và nhận tận nơi trong TP.HCM. Bạn có thể chọn nhận/trả tại shop hoặc sử dụng địa chỉ tại TP.HCM.");
+      error.code = "FULFILLMENT_PROVINCE_UNSUPPORTED";
+      throw error;
+    }
+  }
+  const addressForZone = null;
   const resolved = addressForZone ? await resolveShippingZone(addressForZone) : { supported: true, zone: null };
   if (!resolved.supported) {
     const error = new ApiError(422, "ARA chưa hỗ trợ giao nhận tại khu vực này.");
     error.code = resolved.reasonCode;
     throw error;
   }
-  const zone = resolved.zone;
-  const outboundFee = method.requiresDeliveryAddress ? Number(zone?.deliveryFee ?? zone?.outboundFee ?? 0) : 0;
-  const returnFee = method.requiresCollectionAddress ? Number(zone?.collectionFee ?? zone?.returnFee ?? 0) : 0;
+  const zone = null;
+  const usesExternalCarrier = method.requiresDeliveryAddress || method.requiresCollectionAddress;
+  const outboundFee = usesExternalCarrier ? null : 0;
+  const returnFee = usesExternalCarrier ? null : 0;
   const legacyMethod = method.pickupMethod === "store_pickup" && method.returnMethod === "store_return" ? "store_pickup"
     : method.pickupMethod === "home_delivery" && method.returnMethod === "store_return" ? "delivery_store_return" : "two_way_delivery";
   return {
     fulfillmentMethod: legacyMethod, pickupMethod: method.pickupMethod, returnMethod: method.returnMethod,
-    outboundFee, returnFee, totalShippingFee: outboundFee + returnFee,
+    outboundFee, returnFee, totalShippingFee: usesExternalCarrier ? null : 0,
     outboundTransportMinutes: method.requiresDeliveryAddress ? Number(zone?.fallbackOutboundMinutes || 0) : 0,
     inboundTransportMinutes: method.requiresCollectionAddress ? Number(zone?.fallbackInboundMinutes || 0) : 0,
-    currency: "VND", zone, zoneReasonCode: resolved.reasonCode,
+    currency: "VND", zone, zoneReasonCode: "EXTERNAL_CARRIER",
+    feeMode: usesExternalCarrier ? "external_direct_payment" : "not_applicable",
+    feeAmount: usesExternalCarrier ? null : 0, chargedByShop: false,
+    feePaymentMode: usesExternalCarrier ? "direct_to_carrier" : "none", externalCarrierNotice: usesExternalCarrier ? EXTERNAL_CARRIER_NOTICE : "",
     receiver: delivery?.receiver || collection?.receiver || null,
     deliveryAddress: delivery?.address || null, collectionAddress: collection?.address || null,
     address: delivery?.address || collection?.address || null

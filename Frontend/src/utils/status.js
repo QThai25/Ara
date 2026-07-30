@@ -18,6 +18,7 @@ export const statusLabels = {
   repairing: "Đang bảo trì",
   hidden: "Đã ẩn",
   pending: "Chờ xác nhận",
+  pending_payment: "Chờ thanh toán",
   pending_confirmation: "Chờ xác nhận",
   confirmed: "Đã xác nhận",
   deposited: "Đã đặt cọc",
@@ -37,6 +38,9 @@ export const statusLabels = {
   ready: "Sẵn sàng nhận đồ",
   ready_to_pickup: "Sẵn sàng nhận đồ",
   ready_for_pickup: "Sẵn sàng nhận đồ",
+  ready_for_handover: "Sẵn sàng bàn giao",
+  outbound_in_transit: "Đã giao cho shipper — chưa bắt đầu tính thuê",
+  return_in_transit: "Đồ đang trên đường về shop — đã dừng tính thuê",
   renting: "Đang thuê",
   returned: "Đã trả đồ",
   completed: "Hoàn tất",
@@ -48,10 +52,11 @@ export const statusLabels = {
 };
 
 export const statusAliases = {
+  ready_to_pickup: "ready_for_handover",
+  ready_for_pickup: "ready_for_handover",
   pending_confirmation: "pending",
   deposited: "deposit_paid",
-  ready: "ready_to_pickup",
-  ready_for_pickup: "ready_to_pickup",
+  ready: "ready_for_handover",
   cancelled: "canceled",
   rejected: "canceled",
   washing: "laundry",
@@ -72,6 +77,9 @@ export const statusTone = {
   confirmed: "warning",
   deposit_paid: "warning",
   ready_to_pickup: "warning",
+  ready_for_handover: "warning",
+  outbound_in_transit: "info",
+  return_in_transit: "info",
   laundry: "info",
   returned: "info",
   fully_paid: "success",
@@ -93,11 +101,15 @@ export const statusTone = {
 };
 
 export const orderStatusOptions = [
+  ["pending_payment", statusLabels.pending_payment],
   ["pending", statusLabels.pending],
   ["confirmed", statusLabels.confirmed],
   ["deposit_paid", statusLabels.deposit_paid],
   ["ready_to_pickup", statusLabels.ready_to_pickup],
+  ["ready_for_handover", statusLabels.ready_for_handover],
+  ["outbound_in_transit", statusLabels.outbound_in_transit],
   ["renting", statusLabels.renting],
+  ["return_in_transit", statusLabels.return_in_transit],
   ["returned", statusLabels.returned],
   ["completed", statusLabels.completed],
   ["expired", statusLabels.expired],

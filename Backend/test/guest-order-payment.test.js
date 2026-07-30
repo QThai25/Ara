@@ -21,5 +21,5 @@ test("guest order token rejects a wrong signature and missing scope", () => {
 });
 
 test("checkout exposes cash, configured bank transfer and optional payOS", () => {
-  assert.deepEqual(getPaymentMethods().options.map(item => item.method), ["bank_transfer", "cash", "payos"]);
+  assert.deepEqual(getPaymentMethods().options.map(item => item.method), ["bank_transfer", "cash", "payos_qr"]);
 });

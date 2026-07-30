@@ -7,13 +7,16 @@ const categorySchema = new mongoose.Schema(
     slug: { type: String, unique: true, trim: true, lowercase: true },
     description: { type: String, default: "" },
     icon: { type: String, default: "" },
+    defaultStyleIds: [{ type: mongoose.Schema.Types.ObjectId, ref: "Style" }],
     defaultStyleId: { type: mongoose.Schema.Types.ObjectId, ref: "Style", default: null },
     defaultStyleName: { type: String, default: "", trim: true },
     defaultStyleSlug: { type: String, default: "", trim: true, lowercase: true },
+    defaultOccasionIds: [{ type: mongoose.Schema.Types.ObjectId, ref: "Occasion" }],
     defaultOccasionId: { type: mongoose.Schema.Types.ObjectId, ref: "Occasion", default: null },
     defaultOccasionName: { type: String, default: "", trim: true },
     defaultOccasionSlug: { type: String, default: "", trim: true, lowercase: true },
     classificationDefaultsInitialized: { type: Boolean, default: false },
+    multiClassificationDefaultsInitialized: { type: Boolean, default: false },
     status: { type: String, enum: ["active", "inactive", "hidden"], default: "active" }
   },
   { timestamps: true }

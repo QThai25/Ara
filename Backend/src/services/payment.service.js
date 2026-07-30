@@ -21,13 +21,87 @@ import { requestInvoiceDelivery } from "./invoice.service.js";
 import { emitOrderUpdated, emitPaymentUpdated } from "../realtime/socket.js";
 import { DepositRefund } from "../models/DepositRefund.js";
 import { RefundDestination } from "../models/RefundDestination.js";
-import { adminDestination } from "./accountAsset.service.js";
+import { adminDestination, revealDestinationSnapshot } from "./accountAsset.service.js";
 import { AuditLog } from "../models/AuditLog.js";
 import { storeBusinessStatus, storeConfig } from "../config/store.config.js";
+import { buildVietQrDataUrl } from "./vietQr.service.js";
+import { listSupportedBanks } from "./bankCatalog.service.js";
+import { cloudinary } from "../config/cloudinary.js";
+import sharp from "sharp";
+import { ADMIN_PERMISSIONS, hasAdminPermission, isAdminRole } from "../utils/adminPermissions.js";
 
-const ADMIN_ROLES = ["admin", "staff", "owner"];
 const TERMINAL_PAYMENT_STATUSES = ["success", "failed", "canceled", "expired", "refunded"];
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const isPayosMethod = (method) => ["payos", "payos_qr"].includes(method);
+
+async function configuredTransferBankBin(transfer) {
+  if (/^\d{6}$/.test(paymentConfig.bankTransfer.bankBin)) return paymentConfig.bankTransfer.bankBin;
+  const needle = String(transfer.bankName || "").toLocaleLowerCase("vi");
+  const banks = await listSupportedBanks();
+  return banks.find((bank) => [bank.code, bank.shortName, bank.name].some((value) => needle.includes(String(value || "").toLocaleLowerCase("vi"))))?.bin || "";
+}
+
+function paymentProofAccessUrl(asset) {
+  if (!asset?.publicId) return "";
+  const format = String(asset.mimeType || "image/jpeg").split("/")[1].replace("jpeg", "jpg");
+  return cloudinary.utils.private_download_url(asset.publicId, format, { resource_type: "image", type: "authenticated", expires_at: Math.floor(Date.now() / 1000) + 600 });
+}
+
+function safeUser(value) {
+  if (!value || typeof value !== "object") return value;
+  const user = value?.toObject ? value.toObject({ virtuals: true }) : { ...value };
+  delete user.password;
+  delete user.tokenVersion;
+  delete user.defaultRefundDestination;
+  return user;
+}
+
+function safeOrder(value) {
+  if (!value || typeof value !== "object") return value;
+  const order = value?.toObject ? value.toObject({ virtuals: true }) : { ...value };
+  if (order.customerId && typeof order.customerId === "object") order.customerId = safeUser(order.customerId);
+  if (order.refundDestinationSnapshot) {
+    order.refundDestinationSnapshot = {
+      ...order.refundDestinationSnapshot,
+      accountNumber: undefined,
+      encryptedAccountNumber: undefined
+    };
+  }
+  return order;
+}
+
+function presentPayment(payment, { includeProof = true } = {}) {
+  const value = payment?.toObject ? payment.toObject({ virtuals: true }) : payment;
+  if (value?.customerId && typeof value.customerId === "object") value.customerId = safeUser(value.customerId);
+  if (value?.confirmedBy && typeof value.confirmedBy === "object") value.confirmedBy = safeUser(value.confirmedBy);
+  if (value?.orderId && typeof value.orderId === "object") value.orderId = safeOrder(value.orderId);
+  if (!includeProof) {
+    delete value.proofAsset;
+    delete value.proofUrl;
+  }
+  return {
+    ...value,
+    ...(includeProof ? { proofAccessUrl: paymentProofAccessUrl(value?.proofAsset) } : {})
+  };
+}
+
+function uploadPrivatePaymentProof(file, paymentId) {
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream({ folder: `ara_payment_proofs/${paymentId}`, resource_type: "image", type: "authenticated", access_mode: "authenticated", overwrite: false }, (error, result) => error ? reject(error) : resolve(result));
+    stream.end(file.buffer);
+  });
+}
+
+async function refreshManualTransferQr(payment) {
+  if (payment?.method !== "bank_transfer" || !payment.transferInstructions?.accountNumber) return payment;
+  if (String(payment.transferInstructions.qrUrl || "").startsWith("data:image/png;base64,")) return payment;
+  const bankBin = await configuredTransferBankBin(payment.transferInstructions);
+  if (!bankBin) throw new ApiError(503, "Chưa xác định được mã ngân hàng để tạo VietQR. Vui lòng cấu hình PAYMENT_BANK_BIN.");
+  const qrUrl = await buildVietQrDataUrl({ bankBin, accountNumber: payment.transferInstructions.accountNumber, amount: payment.amount, description: payment.paymentReference });
+  await Payment.updateOne({ _id: payment._id }, { $set: { "transferInstructions.qrUrl": qrUrl } });
+  payment.transferInstructions.qrUrl = qrUrl;
+  return payment;
+}
 
 const detailPopulate = [
   { path: "customerId", select: "-password" },
@@ -48,8 +122,11 @@ function withSession(query, session) {
 }
 
 function isAdmin(user) {
-  return ADMIN_ROLES.includes(user?.role);
+  return isAdminRole(user?.role);
 }
+
+const canAdjustPayments = (user) => hasAdminPermission(user, ADMIN_PERMISSIONS.PAYMENTS_ADJUST);
+const canProcessRefunds = (user) => hasAdminPermission(user, ADMIN_PERMISSIONS.REFUNDS_PROCESS);
 
 function isGuestForOrder(user, orderId) {
   const scopes = Array.isArray(user?.scopes) ? user.scopes : user?.scope ? [user.scope] : [];
@@ -107,7 +184,7 @@ function supportedMethods() {
   const availability = paymentMethodsAvailability();
   return {
     direct: ["cash", ...(bank.configured && storeConfig.enableManualBankTransfer ? ["bank_transfer"] : [])],
-    online: [...(availability.payos ? ["payos"] : [])],
+    online: [...(availability.payos ? ["payos_qr"] : [])],
     onlineAvailable: availability.payos,
     availability,
     bankTransferConfigured: bank.configured
@@ -123,12 +200,12 @@ export function getPaymentMethods() {
     options: [
       { method: "bank_transfer", channel: "direct", provider: "manual", name: "Chuyển khoản ngân hàng", description: businessHours.isOpen ? "ARA xác nhận sau khi nhận được tiền." : `Có thể chuyển ngay; ARA sẽ xác nhận sau ${businessHours.openingTime}.`, enabled: methods.direct.includes("bank_transfer"), recommended: true },
       { method: "cash", channel: "direct", provider: "manual", name: "Tiền mặt", description: "Thanh toán trực tiếp theo chính sách đơn thuê.", enabled: true },
-      { method: "payos", channel: "online", provider: "payos", name: "PayOS", description: "Thanh toán nhanh và xác nhận tự động.", enabled: methods.availability.payos }
+      { method: "payos_qr", channel: "online", provider: "payos", name: "QR PayOS", description: "Quét VietQR PayOS và xác nhận tự động bằng webhook.", enabled: methods.availability.payos }
     ],
     expiryMinutes: paymentConfig.paymentExpiryMinutes
   };
   return { methods, options: [
-    { method: "payos", channel: "online", provider: "payos", name: "QR ngân hàng", description: "Quét VietQR và tự động xác nhận thanh toán", enabled: methods.availability.payos, ...(methods.availability.payos ? {} : { disabledReason: "Phương thức chưa được cấu hình." }) },
+    { method: "payos_qr", channel: "online", provider: "payos", name: "QR PayOS", description: "Quét VietQR PayOS và tự động xác nhận qua webhook", enabled: methods.availability.payos, ...(methods.availability.payos ? {} : { disabledReason: "Phương thức chưa được cấu hình." }) },
     { method: "bank_transfer", channel: "direct", provider: "manual", name: "Chuyển khoản ngân hàng", description: "ARA xác nhận sau khi nhận được tiền", enabled: methods.direct.includes("bank_transfer"), ...(methods.direct.includes("bank_transfer") ? {} : { disabledReason: "Phương thức chưa được cấu hình." }) }
   ], expiryMinutes: paymentConfig.paymentExpiryMinutes };
 }
@@ -199,9 +276,12 @@ export async function getPaymentQuote(user, { orderId, paymentType }) {
   const order = await loadOrder(orderId);
   if (!order) throw new ApiError(404, "Không tìm thấy đơn thuê.");
   assertOrderAccess(order, user);
-  if (paymentType === "refund" && !isAdmin(user)) throw new ApiError(403, "Chỉ cửa hàng được tạo giao dịch hoàn cọc.");
+  if (isAdmin(user) && !canAdjustPayments(user) && !canProcessRefunds(user)) {
+    throw new ApiError(403, "Nhân viên chỉ được xem trạng thái thanh toán và dùng command thu tiền mặt tại quầy.");
+  }
+  if (paymentType === "refund" && !canProcessRefunds(user)) throw new ApiError(403, "Chỉ Chủ tiệm được tạo giao dịch hoàn cọc.");
 
-  const quote = await calculatePaymentQuote(order, paymentType, { isAdmin: isAdmin(user) });
+  const quote = await calculatePaymentQuote(order, paymentType, { isAdmin: canAdjustPayments(user) || canProcessRefunds(user) });
   const active = await getActivePayments(order._id);
   const conflicting = active.find((payment) => payment.paymentGroup === paymentGroup(paymentType));
   if (conflicting) {
@@ -225,8 +305,11 @@ export async function getPaymentQuote(user, { orderId, paymentType }) {
 export async function createPayment(user, payload, idempotencyKey, requestMeta = {}) {
   idempotencyKey ||= payload.idempotencyKey;
   payload = { ...payload };
-  payload.channel ||= payload.method === "payos" ? "online" : "direct";
-  if (user?.role === "guest" && (!["deposit", "full"].includes(payload.paymentType) || !["payos", "bank_transfer"].includes(payload.method))) {
+  if (isAdmin(user) && !canAdjustPayments(user) && !canProcessRefunds(user)) {
+    throw new ApiError(403, "Nhân viên không được tạo hoặc điều chỉnh giao dịch tài chính.");
+  }
+  payload.channel ||= isPayosMethod(payload.method) ? "online" : "direct";
+  if (user?.role === "guest" && (!["deposit", "full"].includes(payload.paymentType) || !["payos", "payos_qr", "bank_transfer"].includes(payload.method))) {
     throw new ApiError(400, "Phương thức hoặc loại thanh toán không được hỗ trợ cho khách vãng lai.");
   }
   if (["momo", "vnpay", "bank_gateway"].includes(payload.method)) {
@@ -242,8 +325,8 @@ export async function createPayment(user, payload, idempotencyKey, requestMeta =
   if (payload.channel === "online" && !availability[payload.method]) {
     throw new ApiError(503, `Phương thức ${payload.method} chưa được cấu hình.`);
   }
-  if (payload.paymentType === "refund" && !isAdmin(user)) {
-    throw new ApiError(403, "Chỉ cửa hàng được tạo giao dịch hoàn cọc.");
+  if (payload.paymentType === "refund" && !canProcessRefunds(user)) {
+    throw new ApiError(403, "Chỉ Chủ tiệm được tạo giao dịch hoàn cọc.");
   }
 
   const transfer = bankTransferConfig();
@@ -270,12 +353,21 @@ export async function createPayment(user, payload, idempotencyKey, requestMeta =
       const order = await loadOrder(payload.orderId, session);
       if (!order) throw new ApiError(404, "Không tìm thấy đơn thuê.");
       assertOrderAccess(order, user);
+      const requiresRefundDestination = Number(order.totalDepositAmount || order.depositAmount || 0) > 0
+        && ["deposit", "full", "rental_balance"].includes(payload.paymentType)
+        && payload.method !== "cash";
+      if (requiresRefundDestination) {
+        const destination = order.refundDestinationSnapshot;
+        if (!destination?.bankBin || (!destination?.encryptedAccountNumber && !destination?.accountNumber) || !destination?.accountName || !destination?.confirmedAt) {
+          throw new ApiError(422, "Vui lòng xác nhận tài khoản nhận hoàn cọc trước khi tạo thanh toán.");
+        }
+      }
       if (payload.method === "cash" && ["deposit", "full", "rental_balance"].includes(payload.paymentType)) throw new ApiError(400, "Tiền mặt chỉ được ghi nhận khi khách nhận đồ tại ARA.");
-      if (["bank_transfer", "payos"].includes(order.paymentPreference) && !["bank_transfer", "payos"].includes(payload.method)) throw new ApiError(400, "Đơn này đã chọn phương thức chuyển khoản ngân hàng.");
+      if (["bank_transfer", "payos"].includes(order.paymentPreference) && payload.method !== "bank_transfer" && !isPayosMethod(payload.method)) throw new ApiError(400, "Đơn này đã chọn phương thức chuyển khoản ngân hàng.");
 
       const quote = await calculatePaymentQuote(order, payload.paymentType, {
         session,
-        isAdmin: isAdmin(user)
+        isAdmin: canAdjustPayments(user) || canProcessRefunds(user)
       });
       if (!quote.canPay || quote.payableAmount <= 0) {
         throw new ApiError(400, quote.reason || "Không còn số tiền cần thanh toán.");
@@ -295,10 +387,16 @@ export async function createPayment(user, payload, idempotencyKey, requestMeta =
 
       const reference = createPaymentReference(order, payload.paymentType);
       const online = payload.channel === "online";
-      const payosOrderCode = payload.method === "payos" ? await nextPayosOrderCode() : undefined;
+      const payosOrderCode = isPayosMethod(payload.method) ? await nextPayosOrderCode() : undefined;
       const expiresMinutes = payload.method === "cash"
         ? Math.max(15, Number(process.env.PAYMENT_CASH_EXPIRES_MINUTES || 1440))
         : paymentConfig.paymentExpiryMinutes;
+      let dynamicTransferQr = "";
+      if (payload.method === "bank_transfer") {
+        const bankBin = await configuredTransferBankBin(transfer);
+        if (!bankBin) throw new ApiError(503, "Chưa xác định được mã ngân hàng để tạo VietQR. Vui lòng cấu hình PAYMENT_BANK_BIN.");
+        dynamicTransferQr = await buildVietQrDataUrl({ bankBin, accountNumber: transfer.accountNumber, amount: quote.payableAmount, description: reference });
+      }
       const values = {
         orderId: order._id,
         customerId: order.customerId,
@@ -309,7 +407,7 @@ export async function createPayment(user, payload, idempotencyKey, requestMeta =
         amount: quote.payableAmount,
         status: online ? "pending" : "awaiting_confirmation",
         active: true,
-        provider: online ? payload.method : "manual",
+        provider: online ? (isPayosMethod(payload.method) ? "payos" : payload.method) : "manual",
         providerOrderId: online ? `${reference}-${Date.now()}` : undefined,
         providerOrderCode: payosOrderCode,
         requestId: online ? crypto.randomUUID() : undefined,
@@ -324,16 +422,14 @@ export async function createPayment(user, payload, idempotencyKey, requestMeta =
             accountNumber: transfer.accountNumber,
             accountHolder: transfer.accountHolder,
             accountName: transfer.accountName,
-            qrUrl: transfer.qrUrl
-              ? transfer.qrUrl.replaceAll("{amount}", String(quote.payableAmount)).replaceAll("{reference}", encodeURIComponent(reference))
-              : undefined
+            qrUrl: dynamicTransferQr
           }
         } : {})
       };
       const [payment] = await Payment.create([values], session ? { session } : {});
 
       order.latestPaymentId = payment._id;
-      if (["payos", "bank_transfer"].includes(payload.method)) order.paymentPreference = payload.method;
+      if (payload.method === "bank_transfer" || isPayosMethod(payload.method)) order.paymentPreference = isPayosMethod(payload.method) ? "payos" : payload.method;
       order.paymentMethod = payload.method;
       order.paymentExpiresAt = payment.expiresAt;
       order.paymentStatus = online ? "pending" : payload.method === "bank_transfer" ? "pending" : "unpaid";
@@ -356,6 +452,7 @@ export async function createPayment(user, payload, idempotencyKey, requestMeta =
   }
 
   let populated = await populatePayment(paymentId);
+  if (populated.method === "bank_transfer") populated = await refreshManualTransferQr(populated);
   if (populated.channel === "online" && !populated.payUrl && populated.status === "pending") {
     try {
       let providerResult;
@@ -401,7 +498,7 @@ async function paginate(query, { page = 1, limit = 20 } = {}) {
   const total = await query.model.countDocuments(query.getFilter());
   const items = await query.skip((safePage - 1) * safeLimit).limit(safeLimit).populate(detailPopulate);
   return {
-    items,
+    items: items.map((item) => presentPayment(item, { includeProof: false })),
     pagination: {
       page: safePage,
       limit: safeLimit,
@@ -417,24 +514,29 @@ export async function listMyPayments(customerId, params = {}) {
   if (params.orderId && mongoose.isValidObjectId(params.orderId)) filter.orderId = params.orderId;
   if (params.status) filter.status = params.status;
   if (params.paymentType) filter.paymentType = params.paymentType;
-  return paginate(Payment.find(filter).sort({ createdAt: -1 }), params);
+  return paginate(
+    Payment.find(filter)
+      .select("-proofAsset -proofUrl -qrCode -transferInstructions.qrUrl")
+      .sort({ createdAt: -1 }),
+    params
+  );
 }
 
-export async function getPaymentForUser(id, user) {
+export async function getPaymentForUser(id, user, { raw = false } = {}) {
   await expirePayment(id);
   const payment = await populatePayment(id);
   if (!payment) throw new ApiError(404, "Không tìm thấy thanh toán.");
   assertPaymentAccess(payment, user);
-  return payment;
+  return raw ? payment : presentPayment(payment);
 }
 
 export async function getPaymentStatus(id, user) {
-  const payment = await getPaymentForUser(id, user);
+  const payment = await getPaymentForUser(id, user, { raw: true });
+  if (payment.method === "bank_transfer" && ["pending", "awaiting_confirmation"].includes(payment.status)) await refreshManualTransferQr(payment);
   if (payment.provider === "payos" && payment.status === "pending" && payment.providerOrderId) {
     try {
       const remote = await getPayosPaymentStatus(payment.providerOrderId);
-      if (remote.status === "PAID") await completeProviderPayment(payment, remote.transactions?.[0]?.reference, { providerStatus: remote.status });
-      else if (["CANCELLED", "EXPIRED", "FAILED"].includes(remote.status) && payment.active) {
+      if (["CANCELLED", "EXPIRED", "FAILED"].includes(remote.status) && payment.active) {
         payment.status = remote.status === "CANCELLED" ? "canceled" : remote.status === "EXPIRED" ? "expired" : "failed";
         payment.active = false; await payment.save();
       }
@@ -444,7 +546,10 @@ export async function getPaymentStatus(id, user) {
   return { id: fresh.id, status: fresh.status, provider: fresh.provider, method: fresh.method, paymentType: fresh.paymentType, amount: fresh.amount, paidAt: fresh.paidAt, failureReason: fresh.failureReason, expiresAt: fresh.expiresAt, paymentReference: fresh.paymentReference, payUrl: fresh.payUrl, qrCode: fresh.qrCode, transferInstructions: fresh.transferInstructions };
 }
 
-export async function reportManualTransfer(id, user, { proofUrl = "" } = {}) {
+export async function reportManualTransfer(id, user, _body = {}, file = null) {
+  if (isAdmin(user) && !hasAdminPermission(user, ADMIN_PERMISSIONS.PAYMENTS_CONFIRM_BANK_TRANSFER)) {
+    throw new ApiError(403, "Tài khoản không có quyền xử lý chuyển khoản ngân hàng.");
+  }
   const payment = await Payment.findById(id);
   if (!payment) throw new ApiError(404, "Không tìm thấy thanh toán.");
   assertPaymentAccess(payment, user);
@@ -456,8 +561,15 @@ export async function reportManualTransfer(id, user, { proofUrl = "" } = {}) {
     throw new ApiError(400, "Giao dịch không còn ở trạng thái có thể báo chuyển khoản.");
   }
 
+  if (!file) throw new ApiError(400, "Vui lòng tải ảnh biên lai hoặc ảnh giao dịch trước khi gửi xác nhận.");
+  let metadata;
+  try { metadata = await sharp(file.buffer).metadata(); } catch { throw new ApiError(400, "Minh chứng tải lên không phải ảnh hợp lệ."); }
+  const actualMime = ({ jpeg: "image/jpeg", png: "image/png", webp: "image/webp" })[metadata.format];
+  if (!actualMime) throw new ApiError(400, "Minh chứng chỉ hỗ trợ PNG, JPG, JPEG hoặc WEBP.");
+  const uploaded = await uploadPrivatePaymentProof(file, payment._id);
   payment.status = "awaiting_confirmation";
-  payment.proofUrl = String(proofUrl || payment.proofUrl || "").trim();
+  payment.proofUrl = "";
+  payment.proofAsset = { publicId: uploaded.public_id, mimeType: actualMime, uploadedAt: new Date() };
   payment.proofSubmittedAt = new Date();
   await payment.save();
 
@@ -475,12 +587,15 @@ export async function reportManualTransfer(id, user, { proofUrl = "" } = {}) {
     entityType: "payment",
     entityId: payment._id,
     before: { status: "pending" },
-    after: { status: "awaiting_verification", proofUrl: payment.proofUrl }
+    after: { status: "awaiting_verification", proofAssetId: payment.proofAsset.publicId }
   });
-  return populatePayment(payment._id);
+  return presentPayment(await populatePayment(payment._id));
 }
 
 export async function cancelPayment(id, user) {
+  if (isAdmin(user) && !canAdjustPayments(user)) {
+    throw new ApiError(403, "Tài khoản không có quyền điều chỉnh giao dịch thanh toán.");
+  }
   const payment = await Payment.findById(id);
   if (!payment) throw new ApiError(404, "Không tìm thấy thanh toán.");
   assertPaymentAccess(payment, user);
@@ -488,8 +603,7 @@ export async function cancelPayment(id, user) {
   if (payment.provider === "payos") {
     const remote = await getPayosPaymentStatus(payment.providerOrderId || payment.providerOrderCode);
     if (remote.status === "PAID") {
-      await completeProviderPayment(payment, remote.transactions?.[0]?.reference, { providerStatus: remote.status });
-      throw new ApiError(409, "Giao dịch đã được thanh toán và không thể hủy.");
+      throw new ApiError(409, "PayOS đã ghi nhận tiền. Hệ thống đang chờ webhook xác thực và không thể hủy giao dịch.");
     }
     await cancelPayosPayment(payment.providerOrderId || payment.providerOrderCode);
   }
@@ -500,13 +614,21 @@ export async function cancelPayment(id, user) {
   await payment.save();
   const order = await RentalOrder.findById(payment.orderId);
   if (order) { await refreshOrderPaymentStatus(order, null, payment._id); await order.save(); }
-  return populatePayment(payment._id);
+  return presentPayment(await populatePayment(payment._id));
 }
 
 export async function changeOrderPaymentPreference(orderId, method, user) {
+  if (isAdmin(user) && !canAdjustPayments(user)) {
+    throw new ApiError(403, "Tài khoản không có quyền thay đổi phương thức thanh toán.");
+  }
   if (method !== "cash") throw new ApiError(400, "Phương thức thanh toán không hợp lệ.");
   const order = await RentalOrder.findById(orderId);
   if (!order) throw new ApiError(404, "Không tìm thấy đơn thuê.");
+  if (order.pickupMethod === "home_delivery") {
+    const error = new ApiError(422, "Không hỗ trợ thanh toán tiền thuê bằng tiền mặt khi giao tận nơi.");
+    error.code = "RENTAL_CASH_HOME_DELIVERY_FORBIDDEN";
+    throw error;
+  }
   assertOrderAccess(order, user);
   if (["canceled", "completed", "expired"].includes(order.status)) {
     throw new ApiError(400, "Trạng thái đơn hiện tại không cho phép đổi phương thức thanh toán.");
@@ -525,7 +647,7 @@ export async function changeOrderPaymentPreference(orderId, method, user) {
   order.latestPaymentId = null;
   await order.save();
   emitOrderUpdated({ orderId: order._id, customerId: order.customerId, status: order.status, paymentStatus: order.paymentStatus, paymentPreference: "cash" });
-  return order;
+  return safeOrder(order);
 }
 
 async function completeProviderPayment(payment, transactionId, rawCallback) {
@@ -577,14 +699,28 @@ export async function handlePayosWebhook(payload) {
   const payment = await Payment.findOne({ provider: "payos", providerOrderCode: Number(data.orderCode) }).select("+rawCallback");
   if (!payment) throw new ApiError(404, "Không tìm thấy giao dịch payOS.");
   if (Number(data.amount) !== payment.amount) throw new ApiError(400, "Số tiền webhook payOS không hợp lệ.");
-  if (data.paymentLinkId && payment.providerOrderId && data.paymentLinkId !== payment.providerOrderId) throw new ApiError(400, "Mã liên kết payOS không hợp lệ.");
+  if (!data.paymentLinkId || !payment.providerOrderId || data.paymentLinkId !== payment.providerOrderId) throw new ApiError(400, "Mã liên kết payOS không hợp lệ.");
   if (payment.status === "success") return { success: true };
   if (data.code === "00") {
     const duplicate = data.reference ? await Payment.exists({ _id: { $ne: payment._id }, providerTransactionId: data.reference }) : null;
     if (duplicate) throw new ApiError(409, "Mã giao dịch payOS đã được sử dụng.");
+    const order = await RentalOrder.findById(payment.orderId).select("refundDestinationSnapshot").lean();
+    const payerNumber = String(data.counterAccountNumber || "").trim();
+    const payerBank = String(data.counterAccountBankId || "").trim();
+    const destination = revealDestinationSnapshot(order?.refundDestinationSnapshot);
+    const payerAccountMatchStatus = !payerNumber || !payerBank
+      ? "unavailable"
+      : payerNumber === String(destination?.accountNumber || "") && payerBank === String(destination?.bankBin || destination?.bankCode || "")
+        ? "matched" : "different";
+    payment.payerAccountMatchStatus = payerAccountMatchStatus;
+    payment.payerCounterAccount = { bankId: payerBank, bankName: String(data.counterAccountBankName || ""), accountNumberLast4: payerNumber.slice(-4), accountName: String(data.counterAccountName || "") };
+    await payment.save();
     await completeProviderPayment(payment, data.reference, {
       orderCode: data.orderCode, amount: data.amount, reference: data.reference,
-      transactionDateTime: data.transactionDateTime, paymentLinkId: data.paymentLinkId, code: data.code
+      transactionDateTime: data.transactionDateTime, paymentLinkId: data.paymentLinkId, code: data.code,
+      counterAccountBankId: payerBank, counterAccountBankName: data.counterAccountBankName || "",
+      counterAccountNumberLast4: payerNumber.slice(-4), counterAccountName: data.counterAccountName || "",
+      payerAccountMatchStatus
     });
   }
   return { success: true };
@@ -592,24 +728,35 @@ export async function handlePayosWebhook(payload) {
 
 export async function listAdminPayments(params = {}) {
   await expireStalePayments();
-  const filter = {};
-  for (const key of ["status", "channel", "method", "paymentType", "orderId"]) {
+  // Deposit refunds have their own workflow and admin screen. Legacy refund
+  // Payment documents stay in the database for audit purposes, but must not be
+  // mixed into the customer-to-shop payment ledger.
+  const filter = { paymentType: { $ne: "refund" } };
+  for (const key of ["status", "channel", "method", "orderId"]) {
     if (params[key]) filter[key] = params[key];
   }
-  return paginate(Payment.find(filter).sort({ createdAt: -1 }), params);
+  if (params.paymentType && params.paymentType !== "refund") {
+    filter.paymentType = params.paymentType;
+  }
+  return paginate(
+    Payment.find(filter)
+      .select("-proofAsset -proofUrl -qrCode -transferInstructions.qrUrl")
+      .sort({ createdAt: -1 }),
+    params
+  );
 }
 
-export async function getAdminPayment(id) {
+export async function getAdminPayment(id, { includeRefundSensitive = true, includeProof = true } = {}) {
   await expirePayment(id);
   const payment = await populatePayment(id);
   if (!payment) throw new ApiError(404, "Không tìm thấy thanh toán.");
-  if (payment.paymentType !== "refund") return payment;
+  if (payment.paymentType !== "refund" || !includeRefundSensitive) return presentPayment(payment, { includeProof });
   const orderId = payment.orderId?._id || payment.orderId;
   const refund = await DepositRefund.findOne({ orderId }).sort({ createdAt: -1 });
   const destination = refund?.destinationId
     ? await RefundDestination.findById(refund.destinationId).select("+encryptedAccountNumber")
     : await RefundDestination.findOne({ userId: payment.customerId?._id || payment.customerId, isDefault: true, isEnabled: true }).select("+encryptedAccountNumber");
-  const value = payment.toObject({ virtuals: true });
+  const value = presentPayment(payment, { includeProof });
   return {
     ...value,
     refundCode: refund?.refundCode || payment.paymentReference,
@@ -691,6 +838,11 @@ export async function markPaymentSuccessful(id, options = {}) {
         : "settled";
       order.paymentStatus = order.settlementStatus === "settled" ? "refunded" : "settlement_pending";
     }
+    if (order.status === "pending_payment" && ["deposit", "full"].includes(payment.paymentType)) {
+      order.status = "confirmed";
+      order.bookingStatus = "confirmed";
+      order.approvedAt ||= paidAt;
+    }
     await order.save(session ? { session } : {});
 
     const template = paymentNotification("success", payment, order);
@@ -753,10 +905,7 @@ export async function reconcilePendingPayosPayments() {
     for (const payment of pending) {
       try {
         const remote = await getPayosPaymentStatus(payment.providerOrderId || payment.providerOrderCode);
-        if (remote.status === "PAID") {
-          await completeProviderPayment(payment, remote.transactions?.[0]?.reference, { providerStatus: remote.status, reconciled: true });
-          updated += 1;
-        } else if (["CANCELLED", "EXPIRED", "FAILED"].includes(remote.status)) {
+        if (["CANCELLED", "EXPIRED", "FAILED"].includes(remote.status)) {
           payment.status = remote.status === "CANCELLED" ? "canceled" : remote.status === "EXPIRED" ? "expired" : "failed";
           payment.active = false;
           await payment.save();

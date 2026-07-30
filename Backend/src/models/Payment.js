@@ -49,7 +49,7 @@ const paymentSchema = new mongoose.Schema(
       enum: [
         "momo",
         "vnpay",
-        "payos",
+        "payos", "payos_qr",
         "bank_gateway",
         "bank_transfer",
         "cash"
@@ -164,6 +164,11 @@ const paymentSchema = new mongoose.Schema(
       qrUrl: { type: String, trim: true }
     },
     proofUrl: { type: String, default: "", trim: true },
+    proofAsset: {
+      publicId: { type: String, default: "", trim: true },
+      mimeType: { type: String, default: "", trim: true },
+      uploadedAt: { type: Date, default: null }
+    },
     proofSubmittedAt: { type: Date, default: null },
 
     /*
@@ -212,6 +217,11 @@ const paymentSchema = new mongoose.Schema(
 
     rawRequest: { type: mongoose.Schema.Types.Mixed, default: null, select: false },
     metadata: { type: mongoose.Schema.Types.Mixed, default: null, select: false },
+    payerAccountMatchStatus: { type: String, enum: ["matched", "different", "unavailable"], default: "unavailable" },
+    payerCounterAccount: {
+      bankId: { type: String, default: "" }, bankName: { type: String, default: "" },
+      accountNumberLast4: { type: String, default: "" }, accountName: { type: String, default: "" }
+    },
 
     /*
      * Khóa chống tạo lặp payment khi người dùng

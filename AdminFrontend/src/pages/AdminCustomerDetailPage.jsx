@@ -38,6 +38,8 @@ import {
   costumeName,
   money
 } from "../utils/format.js";
+import { useAdminAuth } from "../context/AdminAuthContext.jsx";
+import { ADMIN_PERMISSIONS as P } from "../constants/adminPermissions.js";
 
 const EMPTY_TEXT = "Chưa cập nhật";
 
@@ -128,6 +130,8 @@ function formatAddress(address) {
 }
 
 export function AdminCustomerDetailPage() {
+  const { can } = useAdminAuth();
+  const canViewSensitive = can(P.CUSTOMERS_MANAGE_SENSITIVE);
   const { id } = useParams();
   const navigate = useNavigate();
 
@@ -316,11 +320,11 @@ export function AdminCustomerDetailPage() {
                 value={orderCount}
               />
 
-              <AdminStatCard
+              {canViewSensitive && <AdminStatCard
                 icon={<CreditCard />}
                 label="Tổng chi tiêu"
                 value={money(totalSpent)}
-              />
+              />}
 
               <AdminStatCard
                 icon={<CalendarDays />}
@@ -395,11 +399,11 @@ export function AdminCustomerDetailPage() {
                   </div>
                 </AdminDetailSection>
 
-                <AdminDetailSection icon={<Landmark />} title="Điểm nhận hoàn cọc">
+                {canViewSensitive && <AdminDetailSection icon={<Landmark />} title="Điểm nhận hoàn cọc">
                   <div className="admin-customer-info-grid">
                     {(customer.refundDestinations || []).length ? customer.refundDestinations.map(destination => <Info key={destination._id} label={`${destination.label}${destination.isDefault ? " · Mặc định" : ""}`} value={destination.type === "bank_account" ? `${destination.bankName} · ${destination.accountHolderName} · ${destination.maskedAccountNumber}` : "Ảnh VietQR đã được khách cung cấp"} wide/>) : <Info label="Hoàn cọc" value="Khách chưa thêm điểm nhận hoàn cọc" wide/>}
                   </div>
-                </AdminDetailSection>
+                </AdminDetailSection>}
 
                 <AdminDetailSection
                   icon={<History />}
@@ -524,7 +528,7 @@ export function AdminCustomerDetailPage() {
                 </AdminDetailSection>
               </div>
 
-              <aside className="admin-customer-side-column">
+              {canViewSensitive && <aside className="admin-customer-side-column">
                 <AdminDetailSection
                   icon={<WalletCards />}
                   title="Tổng quan thanh toán"
@@ -615,7 +619,7 @@ export function AdminCustomerDetailPage() {
                     />
                   </div>
                 </AdminDetailSection>
-              </aside>
+              </aside>}
             </div>
           </>
         )}

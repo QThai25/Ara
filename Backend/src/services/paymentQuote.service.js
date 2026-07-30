@@ -9,7 +9,7 @@ export const PAYMENT_TYPES = [
 ];
 
 export const ACTIVE_PAYMENT_STATUSES = ["pending", "awaiting_confirmation"];
-export const SUCCESS_PAYMENT_STATUSES = ["success", "refunded"];
+export const SUCCESS_PAYMENT_STATUSES = ["success"];
 
 const money = (value) => Math.max(0, Number(value || 0));
 
@@ -86,8 +86,8 @@ export function calculatePaymentQuoteFromData(order, paymentType, payments = [],
     originalAmount = money(order.totalDepositAmount);
     paidAmount = paid.depositPaidAmount;
     payableAmount = Math.max(0, originalAmount - paidAmount);
-    canPay = orderStatus === "confirmed" && paid.totalSuccessfulAmount === 0 && payableAmount > 0;
-    reason = canPay ? "" : orderStatus !== "confirmed"
+    canPay = ["pending_payment", "confirmed"].includes(orderStatus) && paid.totalSuccessfulAmount === 0 && payableAmount > 0;
+    reason = canPay ? "" : !["pending_payment", "confirmed"].includes(orderStatus)
       ? "Chỉ có thể đặt cọc sau khi đơn được xác nhận."
       : paid.totalSuccessfulAmount > 0
       ? "Đơn đã có khoản thanh toán thành công."
@@ -96,17 +96,17 @@ export function calculatePaymentQuoteFromData(order, paymentType, payments = [],
     originalAmount = money(order.totalRentalPrice) + money(order.totalDepositAmount);
     paidAmount = paid.depositPaidAmount + paid.rentalPaidAmount;
     payableAmount = Math.max(0, originalAmount - paidAmount);
-    canPay = orderStatus === "confirmed" && paid.totalSuccessfulAmount === 0 && payableAmount > 0;
+    canPay = ["pending_payment", "confirmed"].includes(orderStatus) && paid.totalSuccessfulAmount === 0 && payableAmount > 0;
     reason = canPay ? "" : paid.totalSuccessfulAmount > 0
       ? "Đơn đã có thanh toán trước đó; hãy dùng thanh toán phần còn lại."
-      : orderStatus !== "confirmed"
+      : !["pending_payment", "confirmed"].includes(orderStatus)
       ? "Chỉ có thể thanh toán toàn bộ sau khi đơn được xác nhận."
       : "Đơn không còn số tiền cần thanh toán.";
   } else if (paymentType === "rental_balance") {
     originalAmount = money(order.totalRentalPrice);
     paidAmount = paid.rentalPaidAmount;
     payableAmount = Math.max(0, originalAmount - paidAmount);
-    const allowedStatus = ["deposit_paid", "ready_to_pickup", "renting", "returned"].includes(orderStatus);
+    const allowedStatus = ["confirmed", "preparing", "deposit_paid", "ready_for_handover", "ready_to_pickup", "ready_for_pickup", "renting", "returned"].includes(orderStatus);
     canPay = allowedStatus && paid.depositPaidAmount > 0 && payableAmount > 0;
     reason = canPay ? "" : paid.depositPaidAmount <= 0
       ? "Đơn chưa có khoản đặt cọc thành công."

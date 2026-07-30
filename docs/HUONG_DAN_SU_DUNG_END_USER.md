@@ -1,6 +1,6 @@
 # Hướng dẫn sử dụng ARA Costume Rental
 
-Tài liệu này dành cho khách hàng thuê trang phục trên website ARA.
+Phiên bản: **30/07/2026**. Tài liệu này dành cho khách hàng thuê trang phục trên website ARA.
 
 ## 1. Đăng ký và đăng nhập
 
@@ -58,14 +58,17 @@ Trong giỏ thuê, kiểm tra lại:
 - Ngày, giờ nhận và trả.
 - Phương thức giao nhận.
 - Địa chỉ giao nhận nếu sử dụng dịch vụ vận chuyển.
-- Tiền thuê, tiền cọc và phí vận chuyển.
+- Tiền thuê và tiền cọc.
+
+ARA chỉ hỗ trợ giao/nhận tận nơi trong TP.HCM. Cửa hàng sẽ liên hệ đơn vị vận chuyển; phí thực tế do khách thanh toán trực tiếp cho shipper và không nằm trong tổng tiền đơn thuê.
 
 ## 5. Tạo đơn thuê
 
 1. Nhập đầy đủ thông tin liên hệ.
 2. Chọn phương thức thanh toán:
-   - **Tiền mặt:** thanh toán khi nhận đồ theo hướng dẫn của ARA.
-   - **Chuyển khoản:** thanh toán bằng thông tin ngân hàng hoặc mã QR hiển thị trên website.
+   - **Tiền mặt:** chỉ áp dụng khi nhận đồ tại cửa hàng và hệ thống cho phép.
+   - **Chuyển khoản thủ công:** dùng thông tin ngân hàng/mã QR hiển thị trên website, sau đó báo đã chuyển.
+   - **payOS:** dùng link/QR payOS nếu phương thức này đang được ARA bật.
 3. Chọn nhận hóa đơn điện tử nếu cần và nhập đúng email.
 4. Đọc chính sách thuê đồ.
 5. Đánh dấu **Tôi đã đọc và đồng ý với chính sách thuê đồ**.
@@ -85,7 +88,9 @@ Sau khi tạo yêu cầu chuyển khoản, hệ thống hiển thị:
 
 Thực hiện chuyển khoản đúng số tiền và đúng nội dung. Sau đó chọn **Tôi đã chuyển khoản**.
 
-Khi gửi xác nhận thành công, cửa sổ thanh toán sẽ đóng và trang chi tiết đơn hiển thị **Chờ cửa hàng xác nhận**. ARA sẽ kiểm tra giao dịch trước khi cập nhật thanh toán thành công.
+Với chuyển khoản thủ công, sau khi gửi xác nhận, trang chi tiết đơn hiển thị **Chờ cửa hàng xác nhận**. ARA sẽ đối chiếu giao dịch trước khi cập nhật thanh toán thành công.
+
+Với payOS, trình duyệt quay lại trang kết quả không đồng nghĩa tiền đã được ghi nhận. Hệ thống chờ Backend xác minh webhook/trạng thái nhà cung cấp rồi mới cập nhật.
 
 ### Mở lại mã chuyển khoản
 
@@ -105,7 +110,7 @@ Vào **Tài khoản → Đơn thuê của tôi**, sau đó chọn một đơn đ
 - Tiến trình xử lý đơn.
 - Lịch nhận và trả đồ.
 - Trang phục trong đơn.
-- Tiền thuê, tiền cọc, phí vận chuyển và phí phát sinh.
+- Tiền thuê, tiền cọc và phí phát sinh trong phạm vi đơn.
 - Trạng thái thanh toán.
 - Trạng thái giao nhận và hoàn cọc.
 - Lịch sử giao dịch.
@@ -137,6 +142,8 @@ Các trạng thái thanh toán thường gặp:
 - Bảo đảm địa chỉ và số điện thoại chính xác.
 - Có mặt trong khung giờ giao nhận.
 - Kiểm tra trang phục ngay khi nhận.
+- Thanh toán đủ tiền thuê và cọc theo yêu cầu trước khi cửa hàng giao cho shipper.
+- Thanh toán phí giao/nhận trực tiếp cho shipper theo thực tế; phí này không thuộc payment/refund của ARA.
 
 ### Trả đồ
 
@@ -194,7 +201,7 @@ Mở chi tiết đơn và chọn **Mở lại thông tin chuyển khoản**.
 
 ### Đã chuyển khoản nhưng trạng thái chưa đổi
 
-Kiểm tra đã bấm **Tôi đã chuyển khoản** hay chưa. Sau khi bấm, trạng thái chuyển thành **Chờ cửa hàng xác nhận**. Thời gian xác nhận phụ thuộc vào việc đối soát của ARA/ngân hàng.
+Với chuyển khoản thủ công, kiểm tra đã bấm **Tôi đã chuyển khoản** hay chưa. Sau khi bấm, trạng thái chuyển thành **Chờ cửa hàng xác nhận**. Với payOS, chờ hệ thống xác minh giao dịch. Không tạo payment mới hoặc chuyển tiền lần hai khi giao dịch cũ vẫn đang xử lý.
 
 ### Giao dịch hết hạn
 
@@ -210,4 +217,4 @@ Chờ vài giây hoặc mở lại chi tiết đơn. Nếu trạng thái vẫn s
 
 ---
 
-Phiên bản tài liệu: 28/07/2026. Chính sách hiển thị trực tiếp trên website tại thời điểm đặt thuê là căn cứ áp dụng cho đơn hàng.
+Chính sách hiển thị trực tiếp trên website tại thời điểm đặt thuê là căn cứ áp dụng cho đơn hàng.

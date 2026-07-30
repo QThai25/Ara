@@ -1,11 +1,21 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { ADMIN_TOKEN_KEY, ADMIN_USER_KEY, clearAdminSession, getCurrentUser, isAdminRole, loginAdmin, logoutAdmin } from "../services/authService.js";
+import { hasPermission } from "../constants/adminPermissions.js";
 
 const AdminAuthContext = createContext(null);
 
+function storedAdminUser() {
+  try {
+    return JSON.parse(localStorage.getItem(ADMIN_USER_KEY) || "null");
+  } catch {
+    clearAdminSession();
+    return null;
+  }
+}
+
 export function AdminAuthProvider({ children }) {
   const [token, setToken] = useState(localStorage.getItem(ADMIN_TOKEN_KEY) || "");
-  const [adminUser, setAdminUser] = useState(JSON.parse(localStorage.getItem(ADMIN_USER_KEY) || "null"));
+  const [adminUser, setAdminUser] = useState(storedAdminUser);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -57,14 +67,23 @@ export function AdminAuthProvider({ children }) {
     setAdminUser(null);
   };
 
+  const clearSession = () => {
+    clearAdminSession();
+    setToken("");
+    setAdminUser(null);
+  };
+
   const value = useMemo(() => ({
     adminUser,
     token,
     loading,
     login,
     logout,
+    clearSession,
     isAuthenticated: Boolean(token && adminUser),
-    isAdmin: isAdminRole(adminUser)
+    isAdmin: isAdminRole(adminUser),
+    isOwner: adminUser?.role === "owner" || adminUser?.role === "admin",
+    can: (permission) => hasPermission(adminUser, permission)
   }), [adminUser, token, loading]);
 
   return <AdminAuthContext.Provider value={value}>{children}</AdminAuthContext.Provider>;
