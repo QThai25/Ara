@@ -96,7 +96,7 @@ export async function respondToCustomer(conversation, customerMessage, user = nu
   } else if (classification.intent === "find_costume") {
     const products = await productCards(customerMessage.content);
     response = products.length
-      ? {type:"product_carousel",content:"Mình tìm thấy một vài mẫu từ catalog ARA. Bạn chọn mẫu để xem chi tiết hoặc kiểm tra lịch nhé.",payload:{products,actions:["Xem thêm","Đổi tiêu chí","Gặp nhân viên hỗ trợ"]}}
+      ? {type:"product_carousel",content:"Mình tìm thấy một vài mẫu từ catalog ARA. Bạn chọn mẫu để xem chi tiết hoặc kiểm tra lịch nhé.",payload:{products}}
       : {type:"text",content:"Mình chưa tìm thấy mẫu phù hợp với tiêu chí này. Bạn thử cho mình biết dịp mặc, size hoặc ngân sách nhé."};
   } else if (classification.intent === "track_order") {
     if (!user?._id) response={type:"quick_reply",content:"Để bảo vệ thông tin đơn thuê, bạn cần đăng nhập trước khi xem đơn.",payload:{quickReplies:["Đăng nhập","Gặp nhân viên hỗ trợ"],actions:[{label:"Đăng nhập",url:"/auth"}]}};

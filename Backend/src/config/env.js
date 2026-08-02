@@ -31,7 +31,7 @@ export const env = Object.freeze({
   mongoSocketTimeoutMs: integer("MONGODB_SOCKET_TIMEOUT_MS", 45000, { min: 5000, max: 300000 }),
   mongoMaxIdleTimeMs: integer("MONGODB_MAX_IDLE_TIME_MS", 60000, { min: 10000, max: 600000 }),
   shutdownTimeoutMs: integer("SHUTDOWN_TIMEOUT_MS", 10000, { min: 1000, max: 60000 }),
-  corsOrigins: origins(value("CORS_ORIGINS", value("CLIENT_URLS", value("CLIENT_URL", "http://localhost:5173,http://localhost:5174")))),
+  corsOrigins: origins(value("CORS_ORIGINS", value("CLIENT_URLS", value("CLIENT_URL", "http://localhost:5173,http://localhost:5174,https://tsw6wlqc-5173.asse.devtunnels.ms")))),
   payosEnabled: boolean("PAYOS_ENABLED", false)
 });
 

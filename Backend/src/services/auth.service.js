@@ -42,7 +42,7 @@ export function publicUser(user) {
 export async function register(payload) {
   const phoneNormalized = normalizePhone(payload.phone);
   const normalizedEmail = String(payload.email || "").trim().toLowerCase();
-  const emailOwner = await User.findOne({ email: normalizedEmail });
+  const emailOwner = normalizedEmail ? await User.findOne({ email: normalizedEmail }) : null;
   const phoneOwner = await User.findOne({ phoneNormalized });
 
   if (emailOwner && String(emailOwner._id) !== String(phoneOwner?._id)) {
@@ -55,7 +55,7 @@ export async function register(payload) {
       throw new ApiError(409, "Email hoặc số điện thoại đã được sử dụng.");
     }
     phoneOwner.name = payload.name;
-    phoneOwner.email = normalizedEmail;
+    if (normalizedEmail) phoneOwner.email = normalizedEmail;
     phoneOwner.phone = payload.phone;
     phoneOwner.password = password;
     phoneOwner.authMode = "password";
@@ -67,7 +67,7 @@ export async function register(payload) {
 
   const user = await User.create({
     ...payload,
-    email: normalizedEmail,
+    email: normalizedEmail || undefined,
     phoneNormalized,
     password,
     role: "customer",

@@ -5,6 +5,26 @@ import { listCommunes, listDistricts, listProvinces } from "../../services/locat
 
 const normalize = (value = "") => String(value).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/đ/g, "d").trim();
 
+const getMenuPosition = (element) => {
+  const rect = element?.getBoundingClientRect();
+  if (!rect) return null;
+
+  const viewportGap = 12;
+  const menuGap = 6;
+  const width = Math.min(rect.width, window.innerWidth - viewportGap * 2);
+  const left = Math.max(viewportGap, Math.min(rect.left, window.innerWidth - width - viewportGap));
+  const availableHeight = Math.max(96, window.innerHeight - rect.bottom - viewportGap - menuGap);
+
+  return {
+    position: "fixed",
+    left,
+    top: rect.bottom + menuGap,
+    width,
+    maxHeight: Math.min(330, availableHeight),
+    zIndex: 5000,
+  };
+};
+
 function LocationSelect({ label, value, items, placeholder, disabled, onChange }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -16,13 +36,8 @@ function LocationSelect({ label, value, items, placeholder, disabled, onChange }
   useEffect(() => {
     if (!open) return undefined;
     const place = () => {
-      const rect = trigger.current?.getBoundingClientRect();
-      if (!rect) return;
-      const width = Math.min(rect.width, window.innerWidth - 24);
-      const left = Math.max(12, Math.min(rect.left, window.innerWidth - width - 12));
-      const menuHeight = 330;
-      const top = rect.bottom + menuHeight > window.innerHeight ? Math.max(12, rect.top - menuHeight - 6) : rect.bottom + 6;
-      setPosition({ position: "fixed", left, top, width, zIndex: 5000 });
+      const nextPosition = getMenuPosition(trigger.current);
+      if (nextPosition) setPosition(nextPosition);
     };
     place();
     window.addEventListener("resize", place);
@@ -34,16 +49,8 @@ function LocationSelect({ label, value, items, placeholder, disabled, onChange }
   }, [open]);
   const toggle = () => {
     if (!open) {
-      const rect = trigger.current?.getBoundingClientRect();
-      if (rect) {
-        const width = Math.min(rect.width, window.innerWidth - 24);
-        const left = Math.max(12, Math.min(rect.left, window.innerWidth - width - 12));
-        const menuHeight = 330;
-        const top = rect.bottom + menuHeight > window.innerHeight
-          ? Math.max(12, rect.top - menuHeight - 6)
-          : rect.bottom + 6;
-        setPosition({ position: "fixed", left, top, width, zIndex: 5000 });
-      }
+      const nextPosition = getMenuPosition(trigger.current);
+      if (nextPosition) setPosition(nextPosition);
     }
     setOpen((current) => !current);
   };

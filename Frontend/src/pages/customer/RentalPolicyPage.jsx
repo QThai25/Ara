@@ -10,14 +10,6 @@ const rentalPolicies = [
         label: "Xác nhận giữ lịch",
         text: "Lịch thuê chỉ được giữ sau khi khách hàng hoàn tất khoản đặt cọc theo hướng dẫn của ARA."
       },
-      {
-        label: "Khoảng đệm vệ sinh",
-        text: "Sau thời điểm hoàn trả, trang phục được khóa thêm 3 giờ để kiểm tra và vệ sinh."
-      },
-      {
-        label: "Đặt lịch tiếp theo",
-        text: "Khách hàng vẫn có thể chọn và đặt những ngày bắt đầu sau khi khoảng vệ sinh 3 giờ kết thúc."
-      }
     ]
   },
   {

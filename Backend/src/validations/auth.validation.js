@@ -2,7 +2,7 @@ import { body } from "express-validator";
 
 export const registerValidation = [
   body("name").notEmpty().withMessage("Vui lòng nhập họ tên."),
-  body("email").isEmail().withMessage("Email không hợp lệ."),
+  body("email").optional({ checkFalsy: true }).isEmail().withMessage("Email không hợp lệ."),
   body("phone").notEmpty().withMessage("Vui lòng nhập số điện thoại."),
   body("password").isLength({ min: 6 }).withMessage("Mật khẩu phải có ít nhất 6 ký tự.")
 ];

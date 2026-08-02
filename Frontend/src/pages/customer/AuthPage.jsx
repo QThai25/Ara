@@ -295,7 +295,7 @@ export function AuthPage({
 
             {!isPhoneLogin && (
             <label className="ara-auth-field">
-              <span>Email</span>
+              <span>{isLogin ? "Email" : "Email (không bắt buộc)"}</span>
 
               <div>
                 <Mail
@@ -311,7 +311,7 @@ export function AuthPage({
                   )}
                   placeholder="example@email.com"
                   autoComplete="email"
-                  required
+                  required={isLogin}
                 />
               </div>
             </label>

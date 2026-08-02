@@ -35,6 +35,7 @@ Cập nhật: **30/07/2026**. `Pass` chỉ áp dụng cho test/lệnh đã chạ
 | TAX-01 | Costume taxonomy | Create with category defaults | Owner | Active taxonomy | Unit | Default style/occasion arrays applied | Pass |
 | TAX-02 | Costume taxonomy | Update existing costume | Owner | Saved arrays | Unit | Defaults do not overwrite saved values | Pass |
 | CHAT-01 | ARI | Customer requests staff | Customer/guest | Conversation exists | Unit | Conversation transitions to waiting state | Pass |
+| CHAT-02 | ARI | Open customer chat | Customer/guest | Chat API available | Static/API contract + build | Conversation and recent history load through one bootstrap request; initial socket connection does not refetch history | Pass; live latency pending |
 | NOTIF-01 | Notification | User reads own notification | Customer | Owned notification | Unit/static | Recipient scope retained | Pass |
 | E2E-01 | Checkout | Browse → schedule → order → payment | Customer | Seeded DB and browser | Playwright | End-to-end state consistency | Blocked: Playwright/test DB not configured |
 | E2E-02 | Admin rental | Customer order → admin action → customer refresh | Both | Seeded DB and browser | Playwright | State and notification synchronize | Blocked: Playwright/test DB not configured |
