@@ -2,7 +2,7 @@ import mongoose from "mongoose";
 import { query } from "express-validator";
 import { GROUP_BY_VALUES } from "../utils/reportDateRange.js";
 
-const paymentTypes = ["all", "deposit", "full", "rental_balance", "penalty", "refund"];
+const paymentTypes = ["all", "deposit", "full", "rental_balance", "penalty"];
 const paymentMethods = ["all", "cash", "bank_transfer", "payos"];
 const channels = ["all", "direct", "online"];
 const sorts = ["newest", "oldest", "amount_desc", "amount_asc"];

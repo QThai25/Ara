@@ -21,6 +21,7 @@ export const ADMIN_PERMISSIONS = Object.freeze({
   PRICING_MANAGE: "pricing.manage",
   CUSTOMERS_VIEW_OPERATIONAL: "customers.view_operational",
   CUSTOMERS_MANAGE_SENSITIVE: "customers.manage_sensitive",
+  CUSTOMERS_RESET_PASSWORD: "customers.reset_password",
   NOTIFICATIONS_SEND_ORDER: "notifications.send_order",
   NOTIFICATIONS_MANAGE: "notifications.manage",
   CONTENT_MANAGE: "content.manage",
@@ -33,3 +34,38 @@ export const ADMIN_PERMISSIONS = Object.freeze({
 export const hasPermission = (user, permission) => (
   Boolean(permission && Array.isArray(user?.permissions) && user.permissions.includes(permission))
 );
+
+export const ADMIN_PERMISSION_LABELS = Object.freeze({
+  [ADMIN_PERMISSIONS.DASHBOARD_VIEW_OPERATIONAL]: "xem tổng quan vận hành",
+  [ADMIN_PERMISSIONS.DASHBOARD_VIEW_FINANCIAL]: "xem số liệu tài chính",
+  [ADMIN_PERMISSIONS.ORDERS_VIEW]: "xem đơn thuê",
+  [ADMIN_PERMISSIONS.ORDERS_OPERATE]: "xử lý đơn thuê",
+  [ADMIN_PERMISSIONS.ORDERS_OVERRIDE]: "điều chỉnh đặc biệt đơn thuê",
+  [ADMIN_PERMISSIONS.PAYMENTS_VIEW_STATUS]: "xem trạng thái thanh toán",
+  [ADMIN_PERMISSIONS.PAYMENTS_COLLECT_CASH]: "ghi nhận thanh toán tiền mặt",
+  [ADMIN_PERMISSIONS.PAYMENTS_CONFIRM_BANK_TRANSFER]: "xác nhận chuyển khoản",
+  [ADMIN_PERMISSIONS.PAYMENTS_ADJUST]: "điều chỉnh thanh toán",
+  [ADMIN_PERMISSIONS.INSPECTIONS_CREATE]: "kiểm tra trang phục trả về",
+  [ADMIN_PERMISSIONS.INSPECTIONS_SUBMIT]: "hoàn tất kiểm tra trả đồ",
+  [ADMIN_PERMISSIONS.SETTLEMENT_APPROVE]: "phê duyệt quyết toán",
+  [ADMIN_PERMISSIONS.REFUNDS_VIEW_STATUS]: "xem trạng thái hoàn cọc",
+  [ADMIN_PERMISSIONS.REFUNDS_VIEW_SENSITIVE]: "xem và xử lý thông tin hoàn cọc",
+  [ADMIN_PERMISSIONS.REFUNDS_PROCESS]: "xử lý hoàn cọc",
+  [ADMIN_PERMISSIONS.REFUNDS_COMPLETE]: "xác nhận hoàn cọc",
+  [ADMIN_PERMISSIONS.INVENTORY_VIEW]: "xem kho trang phục",
+  [ADMIN_PERMISSIONS.INVENTORY_OPERATE]: "vận hành kho trang phục",
+  [ADMIN_PERMISSIONS.CATALOG_MANAGE]: "quản lý danh mục trang phục",
+  [ADMIN_PERMISSIONS.PRICING_MANAGE]: "quản lý giá thuê",
+  [ADMIN_PERMISSIONS.CUSTOMERS_VIEW_OPERATIONAL]: "xem thông tin vận hành khách hàng",
+  [ADMIN_PERMISSIONS.CUSTOMERS_MANAGE_SENSITIVE]: "quản lý thông tin nhạy cảm của khách hàng",
+  [ADMIN_PERMISSIONS.CUSTOMERS_RESET_PASSWORD]: "mở hoặc hủy quyền đặt lại mật khẩu của khách hàng",
+  [ADMIN_PERMISSIONS.NOTIFICATIONS_SEND_ORDER]: "gửi thông báo đơn thuê",
+  [ADMIN_PERMISSIONS.NOTIFICATIONS_MANAGE]: "quản lý thông báo",
+  [ADMIN_PERMISSIONS.CONTENT_MANAGE]: "quản lý nội dung",
+  [ADMIN_PERMISSIONS.REPORTS_VIEW]: "xem báo cáo",
+  [ADMIN_PERMISSIONS.STAFF_MANAGE]: "quản lý nhân viên",
+  [ADMIN_PERMISSIONS.SETTINGS_MANAGE]: "quản lý cài đặt",
+  [ADMIN_PERMISSIONS.AUDIT_VIEW]: "xem nhật ký hoạt động"
+});
+
+export const permissionLabel = (permission) => ADMIN_PERMISSION_LABELS[permission] || "sử dụng chức năng này";

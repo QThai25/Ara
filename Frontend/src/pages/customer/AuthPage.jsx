@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { Link } from "react-router-dom";
 import {
   ArrowRight,
   CalendarCheck,
@@ -35,7 +36,8 @@ export function AuthPage({
     name: "",
     email: "",
     phone: "",
-    password: ""
+    password: "",
+    confirmPassword: ""
   });
 
   const [showPassword, setShowPassword] =
@@ -43,11 +45,13 @@ export function AuthPage({
 
   const [loading, setLoading] =
     useState(false);
+  const [formError, setFormError] = useState("");
 
   const isLogin = mode === "login";
   const isPhoneLogin = mode === "phone";
 
   const updateField = (field) => (event) => {
+    setFormError("");
     setForm((current) => ({
       ...current,
       [field]: event.target.value
@@ -69,7 +73,13 @@ export function AuthPage({
   const submit = async (event) => {
     event.preventDefault();
 
+    if (!isLogin && !isPhoneLogin && form.password !== form.confirmPassword) {
+      setFormError("Mật khẩu xác nhận chưa khớp.");
+      return;
+    }
+
     setLoading(true);
+    setFormError("");
 
     try {
       const response = isPhoneLogin
@@ -99,6 +109,7 @@ export function AuthPage({
 
       setView(views.home, paths.home);
     } catch (error) {
+      setFormError(error.message || "Không thể xử lý yêu cầu.");
       notify(
         error.message ||
           "Không thể xử lý yêu cầu.",
@@ -398,7 +409,31 @@ export function AuthPage({
                 </button>
               </div>
             </label>
+
+            {!isLogin && !isPhoneLogin && (
+              <label className="ara-auth-field">
+                <span>Xác nhận mật khẩu</span>
+                <div>
+                  <ShieldCheck size={18} strokeWidth={1.6} />
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    value={form.confirmPassword}
+                    onChange={updateField("confirmPassword")}
+                    placeholder="Nhập lại mật khẩu"
+                    autoComplete="new-password"
+                    minLength={6}
+                    required
+                  />
+                </div>
+              </label>
+            )}
           </div>
+
+          {(isLogin || isPhoneLogin) && (
+            <Link className="ara-auth-forgot-link" to="/forgot-password">Quên mật khẩu?</Link>
+          )}
+
+          {formError && <p className="ara-auth-form-error" role="alert">{formError}</p>}
 
           <button
             className="ara-auth-submit"

@@ -32,6 +32,7 @@ test("staff permission map allows operations and denies owner-only finance and s
     P.INVENTORY_VIEW,
     P.INVENTORY_OPERATE,
     P.CUSTOMERS_VIEW_OPERATIONAL,
+    P.CUSTOMERS_RESET_PASSWORD,
     P.NOTIFICATIONS_SEND_ORDER
   ];
   const denied = [
@@ -83,6 +84,10 @@ test("route policy distinguishes staff operations from owner-only direct API acc
   assert.equal(resolveAdminRoutePermission("/admin/refunds", request("GET", "/abc")), P.REFUNDS_VIEW_SENSITIVE);
   assert.equal(resolveAdminRoutePermission("/admin/refunds", request("PATCH", "/abc/complete")), P.REFUNDS_COMPLETE);
   assert.equal(resolveAdminRoutePermission("/admin/reports", request("GET", "/overview")), P.REPORTS_VIEW);
+  assert.equal(resolveAdminRoutePermission("/admin/customers", request("GET", "/")), P.CUSTOMERS_VIEW_OPERATIONAL);
+  assert.equal(resolveAdminRoutePermission("/admin/customers", request("POST", "/customer-id/password-reset-grant")), P.CUSTOMERS_RESET_PASSWORD);
+  assert.equal(resolveAdminRoutePermission("/admin/customers", request("DELETE", "/customer-id/password-reset-grant")), P.CUSTOMERS_RESET_PASSWORD);
+  assert.equal(resolveAdminRoutePermission("/admin/customers", request("DELETE", "/customer-id")), P.CUSTOMERS_MANAGE_SENSITIVE);
   assert.equal(resolveAdminRoutePermission("/admin/staff", request("GET", "/")), P.STAFF_MANAGE);
   assert.equal(resolveAdminRoutePermission("/admin/audit-logs", request("GET", "/")), P.AUDIT_VIEW);
 });

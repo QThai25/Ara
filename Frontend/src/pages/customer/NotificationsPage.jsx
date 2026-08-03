@@ -10,7 +10,7 @@ const STATUS_OPTIONS = [["", "Tất cả"], ["false", "Chưa đọc"], ["true", 
 const RANGE_OPTIONS = [["all", "Tất cả thời gian"], ["today", "Hôm nay"], ["7d", "7 ngày gần nhất"], ["30d", "30 ngày gần nhất"], ["custom", "Khoảng ngày tùy chọn"]];
 const SORT_OPTIONS = [["newest", "Mới nhất"], ["oldest", "Cũ nhất"]];
 
-export function NotificationsPage() {
+export function NotificationsPage({ notify }) {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const [items, setItems] = useState([]);
@@ -19,9 +19,13 @@ export function NotificationsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
+  const [openingIds, setOpeningIds] = useState(() => new Set());
+  const [markingAll, setMarkingAll] = useState(false);
   const [search, setSearch] = useState(params.get("search") || "");
   const debouncedSearch = useDebouncedValue(search, 400);
   const requestRef = useRef(0);
+  const openingIdsRef = useRef(new Set());
+  const markingAllRef = useRef(false);
   const value = (key, fallback = "") => params.get(key) || fallback;
   const page = Math.max(1, Number(value("page", "1")) || 1);
   const category = value("category");
@@ -59,15 +63,57 @@ export function NotificationsPage() {
   }, [params.toString(), reloadKey]);
 
   const openItem = async (item) => {
-    if (!item.isRead) { await readNotification(item.id || item._id); setCounts((current) => ({ ...current, unread: Math.max(0, current.unread - 1), read: current.read + 1 })); }
+    const id = item.id || item._id;
+    if (openingIdsRef.current.has(id)) return;
     const link = notificationDeeplink(item);
-    if (link) navigate(link); else setReloadKey((key) => key + 1);
+    if (item.isRead) {
+      if (link) navigate(link); else setReloadKey((key) => key + 1);
+      return;
+    }
+    openingIdsRef.current.add(id);
+    setOpeningIds(new Set(openingIdsRef.current));
+    setItems((current) => current.map((entry) => (entry.id || entry._id) === id ? { ...entry, isRead: true } : entry));
+    setCounts((current) => ({ ...current, unread: Math.max(0, current.unread - 1), read: current.read + 1 }));
+    if (link) navigate(link);
+    try {
+      await readNotification(id);
+      if (!link) setReloadKey((key) => key + 1);
+    } catch (readError) {
+      notify?.("Đã mở nội dung nhưng chưa thể đánh dấu thông báo là đã đọc.", "error");
+      if (!link) {
+        setItems((current) => current.map((entry) => (entry.id || entry._id) === id ? { ...entry, isRead: false } : entry));
+        setCounts((current) => ({ ...current, unread: current.unread + 1, read: Math.max(0, current.read - 1) }));
+      }
+    } finally {
+      openingIdsRef.current.delete(id);
+      setOpeningIds(new Set(openingIdsRef.current));
+    }
+  };
+  const markAllRead = async () => {
+    if (markingAllRef.current || counts.unread === 0) return;
+    markingAllRef.current = true;
+    const previousItems = items;
+    const previousCounts = counts;
+    setMarkingAll(true);
+    setItems((current) => current.map((item) => ({ ...item, isRead: true })));
+    setCounts((current) => ({ ...current, read: current.read + current.unread, unread: 0 }));
+    try {
+      await readAllNotifications();
+      setReloadKey((key) => key + 1);
+    } catch (readError) {
+      setItems(previousItems);
+      setCounts(previousCounts);
+      notify?.(readError.message || "Không thể đánh dấu tất cả thông báo là đã đọc.", "error");
+    } finally {
+      markingAllRef.current = false;
+      setMarkingAll(false);
+    }
   };
   const clear = () => { setSearch(""); setParams({ page: "1" }, { replace: true }); };
   const subtypeOptions = NOTIFICATION_SUBTYPES[category] || [["", "Tất cả chi tiết"]];
 
   return <section className="notifications-page">
-    <header><div><span>ARA MEMBER CARE</span><h1>Thông báo</h1><p>Cập nhật về đơn thuê, thanh toán và các mốc cần lưu ý.</p></div><button type="button" onClick={async () => { await readAllNotifications(); setReloadKey((key) => key + 1); }}><CheckCheck size={16}/> Đánh dấu tất cả đã đọc</button></header>
+    <header><div><span>ARA MEMBER CARE</span><h1>Thông báo</h1><p>Cập nhật về đơn thuê, thanh toán và các mốc cần lưu ý.</p></div><button type="button" disabled={markingAll || counts.unread === 0} onClick={markAllRead}><CheckCheck size={16}/> {markingAll ? "Đang cập nhật..." : "Đánh dấu tất cả đã đọc"}</button></header>
     <div className="notification-status-tabs">{STATUS_OPTIONS.map(([key, label]) => <button type="button" className={value("status") === key ? "active" : ""} key={label} onClick={() => update({ status: key })}>{label}<small>{key === "false" ? counts.unread : key === "true" ? counts.read : counts.all}</small></button>)}</div>
     <div className="notification-filter-panel">
       <NotificationSelect label="Loại thông báo" value={category} options={NOTIFICATION_CATEGORIES} onChange={(next) => update({ category: next, subtype: "" })}/>
@@ -82,7 +128,7 @@ export function NotificationsPage() {
       {loading && Array.from({ length: 4 }, (_, index) => <div className="notification-skeleton" key={index}/>) }
       {!loading && error && <div className="notification-empty is-error"><strong>Không thể tải thông báo</strong><p>{error}</p><button onClick={() => setReloadKey((key) => key + 1)}>Thử lại</button></div>}
       {!loading && !error && !items.length && <div className="notification-empty"><strong>{params.toString() && params.toString() !== "page=1" ? "Không tìm thấy kết quả phù hợp" : "Bạn chưa có thông báo"}</strong><p>Hãy thử thay đổi hoặc xóa bộ lọc hiện tại.</p></div>}
-      {!loading && !error && items.map((item) => <button key={item.id || item._id} className={`${item.isRead ? "" : "unread"} category-${item.category}`} onClick={() => openItem(item)} title={formatNotificationTime(item.createdAt)}><span className="notifications-page__icon"><NotificationTypeIcon category={item.category}/></span><span><strong>{item.title}</strong><small>{item.message || item.content}</small>{!item.isRead && <i>Chưa đọc</i>}</span><time>{formatNotificationTime(item.createdAt)}</time></button>)}
+      {!loading && !error && items.map((item) => <button disabled={openingIds.has(item.id || item._id)} key={item.id || item._id} className={`${item.isRead ? "" : "unread"} category-${item.category}`} onClick={() => openItem(item)} title={formatNotificationTime(item.createdAt)}><span className="notifications-page__icon"><NotificationTypeIcon category={item.category}/></span><span><strong>{item.title}</strong><small>{item.message || item.content}</small>{!item.isRead && <i>Chưa đọc</i>}</span><time>{formatNotificationTime(item.createdAt)}</time></button>)}
     </div>
     {pagination.totalPages > 1 && <div className="pagination"><button disabled={page <= 1} onClick={() => update({ page: String(page - 1) }, false)}>Trước</button><span>{page}/{pagination.totalPages}</span><button disabled={page >= pagination.totalPages} onClick={() => update({ page: String(page + 1) }, false)}>Sau</button></div>}
   </section>;

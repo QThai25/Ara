@@ -1,5 +1,5 @@
 import { CalendarDays, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, X } from "lucide-react";
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 const normalizeOptions = (options = []) => options.map((option) => Array.isArray(option)
@@ -29,7 +29,7 @@ function usePortalPosition(open, triggerRef, width = null) {
   return style;
 }
 
-export function ModalSelect({ label, value, options = [], onChange, placeholder = "Chọn một giá trị", disabled = false, clearable = false, searchable = false, searchPlaceholder = "Tìm lựa chọn…", className = "" }) {
+export function ModalSelect({ label, value, options = [], onChange, placeholder = "Chọn một giá trị", disabled = false, clearable = false, searchable = false, searchPlaceholder = "Tìm lựa chọn…", className = "", remoteSearch = false, onSearchChange, onLoadMore, hasMore = false, loading = false }) {
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const [query, setQuery] = useState("");
@@ -38,17 +38,18 @@ export function ModalSelect({ label, value, options = [], onChange, placeholder 
   const normalized = useMemo(() => normalizeOptions(options), [options]);
   const visibleOptions = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase("vi");
-    return needle
+    return needle && !remoteSearch
       ? normalized.filter((option) => option.label.toLocaleLowerCase("vi").includes(needle))
       : normalized;
-  }, [normalized, query]);
+  }, [normalized, query, remoteSearch]);
   const selected = normalized.find((option) => String(option.value) === String(value ?? ""));
   const selectable = useMemo(() => clearable ? [{ value: "", label: placeholder }, ...visibleOptions] : visibleOptions, [clearable, visibleOptions, placeholder]);
   useEffect(() => {
-    if (!open) {
+    if (!open && !remoteSearch) {
       setQuery("");
       return;
     }
+    if (!open) return;
     const selectedIndex = selectable.findIndex((option) => String(option.value) === String(value ?? ""));
     setActiveIndex(Math.max(0, selectedIndex));
   }, [open, selectable, value]);
@@ -88,12 +89,14 @@ export function ModalSelect({ label, value, options = [], onChange, placeholder 
     {label && <span className="admin-control-label">{label}</span>}
     <button ref={triggerRef} type="button" className={`modal-select-trigger ${open ? "is-open" : ""} ${selected ? "" : "is-placeholder"}`} disabled={disabled} aria-haspopup="listbox" aria-expanded={open} onKeyDown={keyDown} onClick={() => setOpen((current) => !current)}><span>{selected?.label || placeholder}</span><ChevronDown size={17}/></button>
     {open && createPortal(<div ref={menuRef} className="modal-select-menu" style={menuStyle} role="listbox" aria-label={label || placeholder} onKeyDown={keyDown}>
-      {searchable && <input autoFocus className="modal-select-search" value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => {
+      {searchable && <input autoFocus className="modal-select-search" value={query} onChange={(event) => { setQuery(event.target.value); onSearchChange?.(event.target.value); }} onKeyDown={(event) => {
         if (!["ArrowDown", "ArrowUp", "Home", "End", "Enter", "Escape", "Tab"].includes(event.key)) event.stopPropagation();
       }} placeholder={searchPlaceholder} aria-label={searchPlaceholder}/>}
       {clearable && <button type="button" role="option" aria-selected={!selected} className={`${!selected ? "is-selected" : ""} ${activeIndex === 0 ? "is-keyboard-active" : ""}`} onMouseEnter={() => setActiveIndex(0)} onClick={() => choose("")}><span>{placeholder}</span>{!selected && <CheckCircle2 size={16}/>}</button>}
-      {!visibleOptions.length && <p>Không có lựa chọn phù hợp</p>}
+      {!visibleOptions.length && !loading && <p>Không có lựa chọn phù hợp</p>}
       {visibleOptions.map((option, index) => { const active = String(option.value) === String(value ?? ""); const optionIndex = index + (clearable ? 1 : 0); return <button type="button" role="option" aria-selected={active} className={`${active ? "is-selected" : ""} ${activeIndex === optionIndex ? "is-keyboard-active" : ""}`} key={String(option.value)} onMouseEnter={() => setActiveIndex(optionIndex)} onClick={() => choose(option.value)}><span>{option.label}</span>{active && <CheckCircle2 size={16}/>}</button>; })}
+      {loading && <p role="status">Đang tải lựa chọn...</p>}
+      {hasMore && !loading && <button type="button" role="option" aria-selected="false" onClick={onLoadMore}><span>Tải thêm lựa chọn</span></button>}
     </div>, document.body)}
   </label>;
 }
@@ -196,6 +199,33 @@ export function MoneyThousandsInput({ label, value, onChange = () => {}, require
 }
 
 export function AdminModal({ title, children, footer = null, onClose, className = "" }) {
+  const dialogRef = useRef(null);
+  const previousFocusRef = useRef(null);
+  const titleId = useId();
   useEffect(()=>{const close=e=>{if(e.key==="Escape")onClose();};window.addEventListener("keydown",close);const previous=document.body.style.overflow;document.body.style.overflow="hidden";return()=>{window.removeEventListener("keydown",close);document.body.style.overflow=previous;};},[onClose]);
-  return createPortal(<div className="admin-modal-backdrop" role="presentation" onPointerDown={e=>{if(e.target===e.currentTarget)onClose();}}><section className={`admin-modal ${footer ? "admin-modal--with-footer" : ""} ${className}`.trim()} role="dialog" aria-modal="true" aria-label={title}><header className="admin-modal-head"><h2>{title}</h2><button type="button" aria-label="Đóng" onClick={onClose}><X size={20}/></button></header><div className="admin-modal-body">{children}</div>{footer && <footer className="admin-modal-footer">{footer}</footer>}</section></div>,document.body);
+  useEffect(() => {
+    previousFocusRef.current = document.activeElement;
+    const frame = requestAnimationFrame(() => {
+      const first = dialogRef.current?.querySelector('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])');
+      (first || dialogRef.current)?.focus();
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+      previousFocusRef.current?.focus?.();
+    };
+  }, []);
+  const trapFocus = (event) => {
+    if (event.key !== "Tab") return;
+    const focusable = [...(dialogRef.current?.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])') || [])]
+      .filter((element) => element.getClientRects().length > 0);
+    if (!focusable.length) {
+      event.preventDefault();
+      dialogRef.current?.focus();
+      return;
+    }
+    const first = focusable[0], last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+  };
+  return createPortal(<div className="admin-modal-backdrop" role="presentation" onPointerDown={e=>{if(e.target===e.currentTarget)onClose();}}><section ref={dialogRef} tabIndex={-1} className={`admin-modal ${footer ? "admin-modal--with-footer" : ""} ${className}`.trim()} role="dialog" aria-modal="true" aria-labelledby={titleId} onKeyDown={trapFocus}><header className="admin-modal-head"><h2 id={titleId}>{title}</h2><button type="button" aria-label="Đóng" onClick={onClose}><X size={20}/></button></header><div className="admin-modal-body">{children}</div>{footer && <footer className="admin-modal-footer">{footer}</footer>}</section></div>,document.body);
 }

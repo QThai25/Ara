@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import mongoose from "mongoose";
 import { Payment } from "../models/Payment.js";
 import { RentalOrder } from "../models/RentalOrder.js";
+import { User } from "../models/User.js";
 import { ApiError } from "../utils/ApiError.js";
 import { runFinancialTransaction } from "../utils/financialTransaction.js";
 import {
@@ -33,6 +34,7 @@ import { ADMIN_PERMISSIONS, hasAdminPermission, isAdminRole } from "../utils/adm
 const TERMINAL_PAYMENT_STATUSES = ["success", "failed", "canceled", "expired", "refunded"];
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const isPayosMethod = (method) => ["payos", "payos_qr"].includes(method);
+const escapeRegex = (value = "") => String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 async function configuredTransferBankBin(transfer) {
   if (/^\d{6}$/.test(paymentConfig.bankTransfer.bankBin)) return paymentConfig.bankTransfer.bankBin;
@@ -494,7 +496,7 @@ export async function createPayment(user, payload, idempotencyKey, requestMeta =
 
 async function paginate(query, { page = 1, limit = 20 } = {}) {
   const safePage = Math.max(1, Number(page) || 1);
-  const safeLimit = Math.min(100, Math.max(1, Number(limit) || 20));
+  const safeLimit = Math.min(50, Math.max(1, Number(limit) || 20));
   const total = await query.model.countDocuments(query.getFilter());
   const items = await query.skip((safePage - 1) * safeLimit).limit(safeLimit).populate(detailPopulate);
   return {
@@ -737,6 +739,24 @@ export async function listAdminPayments(params = {}) {
   }
   if (params.paymentType && params.paymentType !== "refund") {
     filter.paymentType = params.paymentType;
+  }
+  const search = String(params.search || "").trim();
+  if (search) {
+    const regex = new RegExp(escapeRegex(search), "i");
+    const [orders, customers] = await Promise.all([
+      RentalOrder.find({ orderCode: regex }).select("_id").lean(),
+      User.find({
+        role: "customer",
+        $or: [{ name: regex }, { email: regex }, { phone: regex }, { phoneNormalized: regex }]
+      }).select("_id").lean()
+    ]);
+    filter.$or = [
+      { paymentReference: regex },
+      { providerOrderId: regex },
+      { providerTransactionId: regex },
+      { orderId: { $in: orders.map((order) => order._id) } },
+      { customerId: { $in: customers.map((customer) => customer._id) } }
+    ];
   }
   return paginate(
     Payment.find(filter)

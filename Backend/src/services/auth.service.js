@@ -8,6 +8,7 @@ import { canonicalAdminRole, isAdminRole, permissionsForRole, roleDisplayName } 
 import { maskPhone, normalizePhone } from "../utils/phone.js";
 import { recordAuditEvent } from "./auditLog.service.js";
 import { disconnectUserSessions } from "../realtime/socket.js";
+import { deliverPhoneOtp } from "./otpDelivery.service.js";
 
 function signToken(user) {
   return jwt.sign(
@@ -150,6 +151,53 @@ function hashOtp(phoneNormalized, otp) {
     .digest("hex");
 }
 
+export async function consumePhoneOtp({ phone, otp, purpose }) {
+  const phoneNormalized = normalizePhone(phone);
+  if (!phoneNormalized || !otp) throw new ApiError(400, "Vui lòng nhập số điện thoại và mã OTP.");
+  const now = new Date();
+  const record = await PhoneOtp.findOne({
+    phoneNormalized,
+    purpose,
+    consumedAt: null,
+    expiresAt: { $gt: now }
+  }).sort({ createdAt: -1 }).select("_id maxAttempts");
+  if (!record) throw new ApiError(401, "Mã OTP không hợp lệ hoặc đã hết hạn.");
+  const baseFilter = {
+    _id: record._id,
+    consumedAt: null,
+    expiresAt: { $gt: now },
+    $expr: { $lt: ["$attempts", "$maxAttempts"] }
+  };
+  const otpHash = hashOtp(phoneNormalized, otp);
+  const consumed = await PhoneOtp.findOneAndUpdate(
+    { ...baseFilter, otpHash },
+    { $set: { consumedAt: now } },
+    { new: true }
+  );
+  if (consumed) return phoneNormalized;
+
+  const failed = await PhoneOtp.findOneAndUpdate(
+    { ...baseFilter, otpHash: { $ne: otpHash } },
+    { $inc: { attempts: 1 } },
+    { new: true }
+  );
+  if (failed) {
+    if (Number(failed.attempts) >= Number(failed.maxAttempts)) {
+      throw new ApiError(429, "Mã OTP đã vượt quá số lần thử.");
+    }
+    throw new ApiError(401, "Mã OTP không hợp lệ hoặc đã hết hạn.");
+  }
+
+  const exhausted = await PhoneOtp.exists({
+    _id: record._id,
+    consumedAt: null,
+    expiresAt: { $gt: now },
+    $expr: { $gte: ["$attempts", "$maxAttempts"] }
+  });
+  if (exhausted) throw new ApiError(429, "Mã OTP đã vượt quá số lần thử.");
+  throw new ApiError(401, "Mã OTP không hợp lệ hoặc đã hết hạn.");
+}
+
 export async function requestPhoneOtp({ phone, purpose = "login", ip = "" }) {
   const phoneNormalized = normalizePhone(phone);
   if (!phoneNormalized) throw new ApiError(400, "Vui lòng nhập số điện thoại.");
@@ -172,6 +220,7 @@ export async function requestPhoneOtp({ phone, purpose = "login", ip = "" }) {
     ? String(crypto.randomInt(100000, 999999))
     : (process.env.DEV_OTP_CODE || "123456");
 
+  await deliverPhoneOtp({ phoneNormalized, otp, purpose });
   await PhoneOtp.create({
     phoneNormalized,
     purpose,
@@ -189,29 +238,7 @@ export async function requestPhoneOtp({ phone, purpose = "login", ip = "" }) {
 }
 
 export async function verifyPhoneOtp({ phone, otp, purpose = "login" }) {
-  const phoneNormalized = normalizePhone(phone);
-  if (!phoneNormalized || !otp) {
-    throw new ApiError(400, "Vui lòng nhập số điện thoại và mã OTP.");
-  }
-
-  const record = await PhoneOtp.findOne({
-    phoneNormalized,
-    purpose,
-    consumedAt: null,
-    expiresAt: { $gt: new Date() }
-  }).sort({ createdAt: -1 });
-
-  if (!record) throw new ApiError(401, "Mã OTP không hợp lệ hoặc đã hết hạn.");
-  if (record.attempts >= record.maxAttempts) throw new ApiError(429, "Mã OTP đã vượt quá số lần thử.");
-
-  if (record.otpHash !== hashOtp(phoneNormalized, otp)) {
-    record.attempts += 1;
-    await record.save();
-    throw new ApiError(401, "Mã OTP không hợp lệ hoặc đã hết hạn.");
-  }
-
-  record.consumedAt = new Date();
-  await record.save();
+  const phoneNormalized = await consumePhoneOtp({ phone, otp, purpose });
 
   let user = await User.findOne({ phoneNormalized }).select("+tokenVersion");
   if (!user) {

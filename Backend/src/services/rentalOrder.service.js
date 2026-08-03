@@ -31,6 +31,7 @@ import { Reservation } from "../models/Reservation.js";
 import { TransportReservation } from "../models/TransportReservation.js";
 import { DepositRefund } from "../models/DepositRefund.js";
 import { getAllowedRentalOrderActions, getOrderFinancialSnapshot, canCompleteOrder, canDispatchHomeDelivery, canStartRental } from "./rentalOrderFinancialPolicy.service.js";
+import { releaseVoucherForOrder, reserveVoucherForOrder, voucherSnapshot } from "./voucher.service.js";
 
 const DEFAULT_POLICY_VERSION = RENTAL_POLICY.policyVersion;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -555,7 +556,8 @@ export async function expirePendingOrders({ orderId = null, customerId = null } 
 
     await Promise.all([
       Reservation.updateMany({ orderId: expiredOrder._id, status: "held" }, { $set: { status: "expired" } }),
-      TransportReservation.updateMany({ orderId: expiredOrder._id, status: "held" }, { $set: { status: "expired" } })
+      TransportReservation.updateMany({ orderId: expiredOrder._id, status: "held" }, { $set: { status: "expired" } }),
+      releaseVoucherForOrder(expiredOrder._id, "order_expired")
     ]);
 
     await createNotificationOnce({
@@ -1014,12 +1016,41 @@ export async function createRentalOrder(userOrCustomerId, rawPayload) {
             });
           }
 
-          order.totalRentalPrice = totalRentalPrice;
+          const grossRentalAmount = totalRentalPrice;
+          let discountAmount = 0;
+          let reservedVoucher = null;
+          if (payload.voucherCode) {
+            const voucherItems = items.map((item, index) => ({
+              ...item,
+              costume: preparedItems[index].costume
+            }));
+            reservedVoucher = await reserveVoucherForOrder({
+              code: payload.voucherCode,
+              customerId,
+              customerInfo: resolvedCustomer.customerInfo,
+              items: voucherItems,
+              rentalAmount: grossRentalAmount,
+              currentOrderId: order._id,
+              orderId: order._id,
+              idempotencyKey: payload.idempotencyKey || null,
+              session
+            });
+            discountAmount = reservedVoucher.discountAmount;
+            order.voucher = voucherSnapshot(reservedVoucher);
+          }
+          order.grossRentalAmount = grossRentalAmount;
+          order.discountAmount = discountAmount;
+          order.totalRentalPrice = Math.max(0, grossRentalAmount - discountAmount);
           order.baseRentalAmount = preparedItems.reduce((sum, entry) => sum + resolveStandardPackagePrice(entry.costume) * entry.quantity, 0);
-          order.plannedExtraDayFee = payload.mainUseDate ? totalRentalPrice - order.baseRentalAmount : 0;
+          order.plannedExtraDayFee = payload.mainUseDate ? grossRentalAmount - order.baseRentalAmount : 0;
           order.totalDepositAmount = totalDepositAmount;
-          order.finalAmount = totalRentalPrice + totalDepositAmount;
-          await order.save(sessionOptions(session));
+          order.finalAmount = order.totalRentalPrice + totalDepositAmount;
+          try {
+            await order.save(sessionOptions(session));
+          } catch (saveError) {
+            if (!session && reservedVoucher) await releaseVoucherForOrder(order._id, "order_creation_failed");
+            throw saveError;
+          }
 
           return order;
         };
@@ -1111,18 +1142,35 @@ export async function listMyOrders(customerId, params) {
 export async function listAdminOrders(params) {
   await expirePendingOrders();
   const filter = {};
-  if (params.status) filter.status = { $in: canonicalStatuses([params.status]) };
+  if (params.workflow === "inspection") {
+    filter.status = { $in: canonicalStatuses(["renting", "overdue", "returned"]) };
+  }
+  if (params.status === "returned_pending") {
+    filter.status = { $in: canonicalStatuses(["returned"]) };
+    filter.inspectedAt = null;
+  } else if (params.status === "returned_inspected") {
+    filter.status = { $in: canonicalStatuses(["returned"]) };
+    filter.inspectedAt = { $ne: null };
+  } else if (params.status) {
+    filter.status = { $in: canonicalStatuses([params.status]) };
+  }
   if (params.paymentStatus) filter.paymentStatus = params.paymentStatus;
   if (params.pickupMethod) filter.pickupMethod = params.pickupMethod;
   if (params.returnMethod) filter.returnMethod = params.returnMethod;
   if (params.source) filter.source = params.source;
   if (params.rentalDays) filter.rentalDays = Number(params.rentalDays);
+  if (params.extraDays === "yes") filter.extraDays = { $gt: 0 };
+  if (params.extraDays === "no") filter.extraDays = { $in: [0, null] };
   if (String(params.overdue || "") === "true") filter.status = "overdue";
-  const rangeField = params.dateField === "return" ? "plannedRentalEndAt" : "plannedRentalStartAt";
+  const rangeField = {
+    pickup: "rentalDate",
+    main: "mainUseDate",
+    return: "returnDate"
+  }[params.dateField] || "rentalDate";
   if (params.dateFrom || params.dateTo) {
     filter[rangeField] = {};
-    if (params.dateFrom) filter[rangeField].$gte = new Date(params.dateFrom);
-    if (params.dateTo) filter[rangeField].$lte = new Date(params.dateTo);
+    if (params.dateFrom) filter[rangeField].$gte = parseLocalDateTime(params.dateFrom);
+    if (params.dateTo) filter[rangeField].$lte = parseLocalDateTime(params.dateTo, { endOfDay: true });
   }
   const search = String(params.search || "").trim();
   if (search) {
@@ -1140,7 +1188,36 @@ export async function listAdminOrders(params) {
       { "customerInfo.phone": regex }
     ];
   }
-  return paginate(RentalOrder.find(filter).sort({ createdAt: -1 }), params);
+  const [result, statusRows] = await Promise.all([
+    paginate(RentalOrder.find(filter).sort({ createdAt: -1 }), params),
+    RentalOrder.aggregate([
+      { $match: filter },
+      { $group: {
+        _id: params.workflow === "inspection"
+          ? { status: "$status", inspected: { $ne: ["$inspectedAt", null] } }
+          : "$status",
+        count: { $sum: 1 }
+      } }
+    ])
+  ]);
+  const statusCounts = {};
+  const inspectionCounts = { pending: 0, inspected: 0 };
+  for (const row of statusRows) {
+    const rawStatus = typeof row._id === "object" ? row._id.status : row._id;
+    const key = statusAliases[rawStatus] || rawStatus || "unknown";
+    statusCounts[key] = (statusCounts[key] || 0) + Number(row.count || 0);
+    if (key === "returned" && typeof row._id === "object") {
+      inspectionCounts[row._id.inspected ? "inspected" : "pending"] += Number(row.count || 0);
+    }
+  }
+  return {
+    ...result,
+    summary: {
+      total: result.pagination.total,
+      statusCounts,
+      ...(params.workflow === "inspection" ? { inspectionCounts } : {})
+    }
+  };
 }
 
 export async function getOrderForUser(orderId, user) {
@@ -1182,6 +1259,7 @@ export async function cancelOrder(orderId, user) {
     }
     order.status = "canceled";
     await order.save(session ? { session } : {});
+    await releaseVoucherForOrder(order._id, "order_canceled", session);
     await Promise.all([
       Reservation.updateMany({ orderId: order._id, status: { $nin: ["completed", "cancelled", "expired"] } }, { $set: { status: "cancelled" } }, session ? { session } : {}),
       TransportReservation.updateMany({ orderId: order._id, status: { $nin: ["completed", "cancelled", "expired"] } }, { $set: { status: "cancelled" } }, session ? { session } : {})
@@ -1271,6 +1349,7 @@ export async function rejectOrder(orderId, adminId, reason) {
     order.rejectedAt = new Date();
     order.rejectReason = reason || "Cửa hàng không thể nhận đơn trong thời gian này.";
     await order.save(session ? { session } : {});
+    await releaseVoucherForOrder(order._id, "order_rejected", session);
     await Promise.all([
       Reservation.updateMany({ orderId: order._id, status: { $nin: ["completed", "cancelled", "expired"] } }, { $set: { status: "cancelled" } }, session ? { session } : {}),
       TransportReservation.updateMany({ orderId: order._id, status: { $nin: ["completed", "cancelled", "expired"] } }, { $set: { status: "cancelled" } }, session ? { session } : {})

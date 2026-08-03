@@ -1,13 +1,14 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Banknote, CalendarClock, CreditCard, PackageCheck, ReceiptText, RotateCcw, Shirt, Timer, Users, WalletCards } from "lucide-react";
 import { AdminPageHeader, AdminPageLayout, AdminStatCard, ErrorState, LoadingState } from "../components/common/AdminUI.jsx";
 import { ReportFilterBar } from "../components/reports/ReportFilterBar.jsx";
 import { ReportKpiCard } from "../components/reports/ReportKpiCard.jsx";
-import { BarMoneyChart, DonutBreakdownChart, ReportChartCard, ReportSkeleton, RevenueTrendChart } from "../components/reports/ReportCharts.jsx";
+import { BarMoneyChart, ReportChartCard, ReportSkeleton, RevenueFlowChart, RevenueTrendChart } from "../components/reports/ReportCharts.jsx";
 import { RevenueAnalytics } from "../components/revenue/RevenueAnalytics.jsx";
-import { getOrderStatistics, getPaymentMethods, getReportOverview, getRevenueBreakdown, getRevenueTrend, getTopCostumes } from "../services/adminReportService.js";
+import { getOrderStatistics, getPaymentMethods, getReportOverview, getRevenueTrend, getTopCostumes } from "../services/adminReportService.js";
 import { buildReportQuery, parseReportQuery, presetRange } from "../utils/reportFilters.js";
 import { formatReportCurrency } from "../utils/reportFormat.js";
+import { getRevenueFlow, mapDashboardAnalytics } from "../utils/dashboardReportData.js";
 import { resolveImageUrl } from "../utils/format.js";
 import { useSearchParams } from "react-router-dom";
 import { useAdminAuth } from "../context/AdminAuthContext.jsx";
@@ -24,56 +25,65 @@ export function DashboardPage({ notify }) {
 function OwnerDashboard({ notify }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const [filters, setFilters] = useState(() => parseReportQuery(searchParams));
-  const [state, setState] = useState({ loading: true, error: "", overview: null, trend: null, breakdown: null, methods: null, orders: null, topCostumes: null });
+  const [state, setState] = useState({ loading: true, error: "", overview: null, trend: null, methods: null, orders: null, topCostumes: null });
+  const [reloadKey, setReloadKey] = useState(0);
+  const requestRef = useRef(0);
+  const syncingFromUrlRef = useRef(false);
 
   useEffect(() => {
-    setSearchParams(buildReportQuery(filters, { includeTab: false }), { replace: true });
-  }, [filters, setSearchParams]);
+    const nextFilters = parseReportQuery(searchParams);
+    const currentQuery = buildReportQuery(filters, { includeTab: false }).toString();
+    if (searchParams.toString() !== currentQuery) {
+      syncingFromUrlRef.current = true;
+      setFilters(nextFilters);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
+    if (syncingFromUrlRef.current) {
+      syncingFromUrlRef.current = false;
+      return;
+    }
+    const next = buildReportQuery(filters, { includeTab: false });
+    if (next.toString() !== searchParams.toString()) setSearchParams(next, { replace: true });
+  }, [filters, searchParams, setSearchParams]);
+
+  useEffect(() => {
+    const requestId = ++requestRef.current;
     const controller = new AbortController();
     const params = buildReportQuery(filters);
     setState((current) => ({ ...current, loading: true, error: "" }));
     Promise.all([
       getReportOverview(params, { signal: controller.signal }),
       getRevenueTrend(params, { signal: controller.signal }),
-      getRevenueBreakdown(params, { signal: controller.signal }),
       getPaymentMethods(params, { signal: controller.signal }),
       getOrderStatistics(params, { signal: controller.signal }),
       getTopCostumes({ ...params, limit: 5 }, { signal: controller.signal })
-    ]).then(([overview, trend, breakdown, methods, orders, topCostumes]) => {
-      setState({ loading: false, error: "", overview, trend, breakdown, methods, orders, topCostumes });
+    ]).then(([overview, trend, methods, orders, topCostumes]) => {
+      if (requestRef.current !== requestId) return;
+      setState({ loading: false, error: "", overview, trend, methods, orders, topCostumes });
     }).catch((error) => {
-      if (controller.signal.aborted) return;
+      if (controller.signal.aborted || requestRef.current !== requestId) return;
       setState((current) => ({ ...current, loading: false, error: error.message }));
       notify?.(error.message, "error");
     });
     return () => controller.abort();
-  }, [filters, notify]);
+  }, [filters, notify, reloadKey]);
 
   const kpis = state.overview?.kpis || {};
   const summary = state.overview?.summary || {};
   const trendData = state.trend?.data || [];
-  const breakdown = state.breakdown?.breakdown || [];
-  const analyticsData = useMemo(() => {
-    const trend = state.trend?.data || [];
-    const ordersByPeriod = new Map((state.orders?.data || []).map((row) => [row.period, Number(row.total || 0)]));
-    return {
-      revenue: trend.map((row) => ({
-        label: row.period,
-        netRevenue: Number(row.netRevenue || 0),
-        depositRevenue: Number(row.depositRevenue || 0),
-        rentalRevenue: Number(row.rentalRevenue || 0),
-      })),
-      orders: trend.map((row) => ({
-        label: row.period,
-        totalOrders: ordersByPeriod.get(row.period) || 0,
-      })),
-    };
-  }, [state.trend, state.orders]);
+  const revenueFlow = getRevenueFlow(summary);
+  const analyticsData = useMemo(
+    () => mapDashboardAnalytics(state.trend?.data, state.orders?.data),
+    [state.trend, state.orders]
+  );
 
   const reset = () => setFilters({ ...parseReportQuery(new URLSearchParams()), preset: "last30", ...presetRange("last30") });
-  const chartEmpty = !state.loading && trendData.every((row) => Number(row.netRevenue || 0) === 0);
+  const chartEmpty = !state.loading && trendData.every((row) => ["successfulPayments", "refundedAmount", "depositRevenue", "rentalRevenue", "penaltyRevenue"]
+    .every((key) => Number(row[key] || 0) === 0));
+  const reportWarnings = [...(state.overview?.warnings || []), ...(state.trend?.warnings || [])]
+    .filter((warning, index, warnings) => warnings.findIndex((item) => item.code === warning.code && item.period === warning.period) === index);
 
   return (
     <div className="admin-report-page">
@@ -85,12 +95,14 @@ function OwnerDashboard({ notify }) {
 
       <ReportFilterBar filters={filters} onChange={setFilters} onReset={reset} />
 
-      {state.error && <div className="admin-state error">{state.error}</div>}
-
+      {state.loading && <LoadingState message="Đang tải tổng quan báo cáo..." />}
+      {!state.loading && state.error && <ErrorState message={state.error} onRetry={() => setReloadKey((key) => key + 1)} />}
+      {!state.loading && !state.error && <>
+      {!!reportWarnings.length && <div className="admin-state" role="status">{reportWarnings[0].message}</div>}
       <section className="report-kpi-grid">
-        <ReportKpiCard icon={<Banknote />} label="Doanh thu thực nhận" metric={kpis.netRevenue} money tooltip="Tổng Payment thành công trừ các khoản hoàn cọc." />
-        <ReportKpiCard icon={<WalletCards />} label="Doanh thu tiền cọc" metric={kpis.depositRevenue} money />
-        <ReportKpiCard icon={<CreditCard />} label="Tiền thuê/toàn bộ" metric={kpis.rentalRevenue} money tooltip="Gồm full và rental_balance đã thanh toán thành công." />
+        <ReportKpiCard icon={<Banknote />} label="Doanh thu thực nhận" metric={kpis.netRevenue} money tooltip="Tổng thanh toán thành công trừ các khoản hoàn cọc đã hoàn tất." />
+        <ReportKpiCard icon={<WalletCards />} label="Tổng thanh toán thành công" metric={Number(kpis.successfulPayments?.currentValue || 0) > 0 ? kpis.successfulPayments : revenueFlow.collectedAmount} money tooltip="Tổng các Payment có trạng thái thành công trong khoảng đã chọn." />
+        <ReportKpiCard icon={<CreditCard />} label="Thanh toán đơn thuê" metric={kpis.rentalRevenue} money tooltip="Gồm khoản thanh toán toàn bộ hoặc phần tiền thuê còn lại đã thu thành công." />
         <ReportKpiCard icon={<ReceiptText />} label="Khoản phạt đã thu" metric={kpis.penaltyRevenue} money />
         <ReportKpiCard icon={<RotateCcw />} label="Số tiền đã hoàn" metric={kpis.refundedAmount} money />
         <ReportKpiCard icon={<PackageCheck />} label="Tổng đơn thuê" metric={kpis.totalOrders} />
@@ -100,28 +112,30 @@ function OwnerDashboard({ notify }) {
         <ReportKpiCard icon={<CalendarClock />} label="Giá trị TB mỗi đơn" metric={kpis.averageOrderValue} money />
       </section>
 
-      <RevenueAnalytics revenue={analyticsData.revenue} orders={analyticsData.orders} loading={state.loading} error={state.error || null} periodEyebrow={`Theo ${filters.groupBy === "month" ? "tháng" : filters.groupBy === "week" ? "tuần" : filters.groupBy === "year" ? "năm" : "ngày"}`} />
+      <RevenueAnalytics revenue={analyticsData.revenue} orders={analyticsData.orders} totalNetRevenue={summary.netRevenue} loading={state.loading} error={state.error || null} periodEyebrow={`Theo ${filters.groupBy === "month" ? "tháng" : filters.groupBy === "week" ? "tuần" : filters.groupBy === "year" ? "năm" : "ngày"}`} />
 
       <section className="report-grid-2">
-        <ReportChartCard title="Xu hướng doanh thu" description="Doanh thu lấy từ Payment thành công, hoàn cọc là khoản giảm trừ." empty={chartEmpty}>
+        <ReportChartCard title="Xu hướng doanh thu" description="Doanh thu lấy từ thanh toán thành công; hoàn cọc đã hoàn tất là khoản giảm trừ." empty={chartEmpty}>
           {state.loading ? <ReportSkeleton /> : <RevenueTrendChart data={trendData} />}
         </ReportChartCard>
-        <ReportChartCard title="Cơ cấu doanh thu" description={`Thực nhận: ${formatReportCurrency(summary.netRevenue || 0)}`} empty={!state.loading && breakdown.every((item) => !item.amount)}>
-          {state.loading ? <ReportSkeleton /> : <DonutBreakdownChart data={breakdown} center={<><strong>{formatReportCurrency(summary.netRevenue || 0)}</strong><span>thực nhận</span></>} />}
+        <ReportChartCard title="Cách tính tiền thực nhận" description="Đi từ tổng tiền đã thu, trừ khoản đã hoàn cho khách, để ra số tiền cửa hàng thực nhận.">
+          {state.loading ? <ReportSkeleton /> : <RevenueFlowChart {...revenueFlow} />}
         </ReportChartCard>
         <ReportChartCard title="Phương thức thanh toán" description="Số tiền đã xác nhận theo từng phương thức.">
           {state.loading ? <ReportSkeleton /> : <BarMoneyChart data={state.methods?.breakdown || []} />}
         </ReportChartCard>
-        <ReportChartCard title="Top trang phục được thuê" description="Không tính đơn bị hủy, từ chối hoặc hết hạn.">
+        <ReportChartCard title="Top trang phục thuê đã hoàn tất" description="Chỉ tính số lượng và tiền thuê của item thuộc đơn hoàn tất trong khoảng thời gian đã chọn.">
           {state.loading ? <ReportSkeleton /> : <TopCostumeList items={state.topCostumes?.items || []} />}
         </ReportChartCard>
       </section>
+      </>}
     </div>
   );
 }
 
 function OperationalDashboard({ notify }) {
   const [state, setState] = useState({ loading: true, error: "", summary: null, topCostumes: [] });
+  const [reloadKey, setReloadKey] = useState(0);
   useEffect(() => {
     let active = true;
     Promise.all([getDashboardSummary(), getOperationalTopCostumes()])
@@ -135,7 +149,7 @@ function OperationalDashboard({ notify }) {
         notify?.(error.message, "error");
       });
     return () => { active = false; };
-  }, [notify]);
+  }, [notify, reloadKey]);
 
   const summary = state.summary || {};
   return (
@@ -146,7 +160,7 @@ function OperationalDashboard({ notify }) {
         description="Theo dõi đơn thuê, khách hàng và kho trang phục. Số liệu tài chính chỉ dành cho Chủ tiệm."
       />
       {state.loading && <LoadingState message="Đang tải tổng quan vận hành..." />}
-      {!state.loading && state.error && <ErrorState message={state.error} />}
+      {!state.loading && state.error && <ErrorState message={state.error} onRetry={() => setReloadKey((key) => key + 1)} />}
       {!state.loading && !state.error && (
         <>
           <section className="admin-stat-grid">

@@ -5,6 +5,7 @@ import { RentalOrderItem } from "../models/RentalOrderItem.js";
 import { CustomerAddress } from "../models/CustomerAddress.js";
 import { RefundDestination } from "../models/RefundDestination.js";
 import { ApiError } from "../utils/ApiError.js";
+import { normalizePhone } from "../utils/phone.js";
 import bcrypt from "bcryptjs";
 import { checkAvailability as checkScheduleAvailability } from "./costume.service.js";
 
@@ -35,10 +36,12 @@ export async function getCustomer(id, { includeSensitive = true } = {}) {
 export async function createCustomer(payload) {
   await assertUniqueCustomer(payload.email, payload.phone);
   const password = await bcrypt.hash(payload.password, 10);
+  const normalizedEmail = String(payload.email || "").trim().toLowerCase();
   const customer = await User.create({
     name: payload.name,
-    email: payload.email,
+    email: normalizedEmail || undefined,
     phone: payload.phone,
+    phoneNormalized: normalizePhone(payload.phone),
     password,
     role: "customer",
     status: payload.status || "active"
@@ -50,10 +53,11 @@ export async function updateCustomer(id, payload) {
   const customer = await User.findOne({ _id: id, role: "customer" });
   if (!customer) throw new ApiError(404, "Không tìm thấy khách hàng.");
   await assertUniqueCustomer(payload.email, payload.phone, id);
-  ["name", "email", "phone", "status"].forEach((field) => {
+  ["name", "phone", "status"].forEach((field) => {
     if (payload[field] !== undefined) customer[field] = payload[field];
   });
-  if (payload.password) customer.password = await bcrypt.hash(payload.password, 10);
+  if (payload.email !== undefined) customer.email = String(payload.email || "").trim().toLowerCase() || undefined;
+  if (payload.phone !== undefined) customer.phoneNormalized = normalizePhone(payload.phone);
   await customer.save();
   return getCustomer(customer._id);
 }
@@ -75,17 +79,20 @@ export async function deleteCustomer(id) {
   if (orders || payments) {
     customer.status = "blocked";
     await customer.save();
-    throw new ApiError(400, "Khách hàng đã có lịch sử giao dịch, hệ thống đã khóa tài khoản thay vì xóa.");
+    return { id: String(customer._id), action: "blocked", status: "blocked" };
   }
   await customer.deleteOne();
-  return { id };
+  return { id: String(id), action: "deleted" };
 }
 
 async function assertUniqueCustomer(email, phone, excludeId = null) {
-  const filter = {
-    role: "customer",
-    $or: [{ email: String(email || "").toLowerCase() }, { phone }]
-  };
+  const candidates = [];
+  const normalizedEmail = String(email || "").trim().toLowerCase();
+  const phoneNormalized = normalizePhone(phone);
+  if (normalizedEmail) candidates.push({ email: normalizedEmail });
+  if (phoneNormalized) candidates.push({ phoneNormalized });
+  if (!candidates.length) return;
+  const filter = { role: "customer", $or: candidates };
   if (excludeId) filter._id = { $ne: excludeId };
   const existed = await User.findOne(filter);
   if (existed) throw new ApiError(400, "Email hoặc số điện thoại đã được sử dụng.");

@@ -42,7 +42,7 @@ import {
   getCostume,
   getCostumeBookingGrid,
   getCostumeAvailabilityCalendar,
-  getCostumes,
+  getCostumePage,
   quoteCostumeRental
 } from "../../services/costumeService.js";
 import {
@@ -993,7 +993,7 @@ function getBookingStatusText(product, nearestAvailableAt = null, gridLoaded = f
     return `Đang có lịch thuê${nearestText || (gridLoaded ? " – chưa có khung giờ phù hợp trong lịch đang xem" : "")}`;
   }
   return product.bookingStatusLabel
-    || (product.acceptsFutureBookings ? "Sẵn sàng cho lịch thuê mới" : getStatusLabel(product.bookingStatus || product.status));
+    || (product.acceptsFutureBookings ? "Sẵn sàng cho lịch thuê mới" : getStatusLabel(product.bookingStatus || product.status, product.bookingStatus ? "booking" : "costume"));
 }
 
 const PICKUP_TIME_SLOTS = [
@@ -1397,7 +1397,11 @@ export function CostumeDetailPage({
         setLoading(false);
 
         const loadSuggestions = async () => {
-          const all = await getCostumes("");
+          const suggestionQuery = new URLSearchParams({ limit: "12" });
+          if (item.occasionSlug) suggestionQuery.set("occasion", item.occasionSlug);
+          else if (item.styleSlug) suggestionQuery.set("style", item.styleSlug);
+          else if (item.categorySlug) suggestionQuery.set("category", item.categorySlug);
+          const { items: all } = await getCostumePage(`?${suggestionQuery}`);
           if (!active) return;
           const related = all.filter(
           (candidate) => {

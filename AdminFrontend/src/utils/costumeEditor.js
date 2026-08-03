@@ -1,5 +1,12 @@
 const asArray = (value) => (Array.isArray(value) ? value : []);
 
+export function normalizeReferenceIds(value) {
+  return [...new Set(asArray(value)
+    .map((item) => item?._id || item?.id || item)
+    .map((item) => String(item || "").trim())
+    .filter(Boolean))];
+}
+
 export function normalizeCostumeEditorPayload(payload = {}) {
   const imageAssets = asArray(payload.imageAssets)
     .map((asset, index) => {
@@ -42,8 +49,8 @@ export function normalizeCostumeEditorPayload(payload = {}) {
     categoryId: payload.categoryId,
     size: payload.size,
     color: payload.color,
-    occasionIds: payload.occasionIds,
-    styleIds: payload.styleIds,
+    occasionIds: normalizeReferenceIds(payload.occasionIds),
+    styleIds: normalizeReferenceIds(payload.styleIds),
     material: payload.material,
     images,
     imageAssets,

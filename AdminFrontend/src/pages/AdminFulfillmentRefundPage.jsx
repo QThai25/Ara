@@ -49,8 +49,6 @@ export function AdminFulfillmentRefundPage({ notify }) {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
   const requestRef = useRef(0);
-  const loadingRef = useRef(false);
-  const queuedLoadRef = useRef(null);
 
   const updateParams = useCallback((changes) => {
     const next = new URLSearchParams(params);
@@ -62,30 +60,25 @@ export function AdminFulfillmentRefundPage({ notify }) {
     if ((params.get("search") || "") !== debouncedSearch) updateParams({ search: debouncedSearch, page: 1 });
   }, [debouncedSearch]);
 
-  const load = useCallback(async ({ background = false } = {}) => {
-    if (loadingRef.current) {
-      if (!background) queuedLoadRef.current = () => load();
-      return;
-    }
-    loadingRef.current = true;
+  const load = useCallback(async ({ background = false, signal } = {}) => {
     const requestId = ++requestRef.current;
     background ? setRefreshing(true) : setLoading(true);
     setError("");
     try {
-      const response = await listRefunds({ page, limit: PAGE_SIZE, status: status || undefined, search: debouncedSearch || undefined });
+      const response = await listRefunds({ page, limit: PAGE_SIZE, status: status || undefined, search: debouncedSearch || undefined }, { signal });
       if (requestId === requestRef.current) setData(response.data || response);
     } catch (err) {
-      if (requestId === requestRef.current) { setError(err.message); notify?.(err.message, "error"); }
+      if (!signal?.aborted && requestId === requestRef.current) { setError(err.message); notify?.(err.message, "error"); }
     } finally {
       if (requestId === requestRef.current) { setLoading(false); setRefreshing(false); }
-      loadingRef.current = false;
-      const queuedLoad = queuedLoadRef.current;
-      queuedLoadRef.current = null;
-      queuedLoad?.();
     }
   }, [page, status, debouncedSearch, notify]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    const controller = new AbortController();
+    load({ signal: controller.signal });
+    return () => controller.abort();
+  }, [load]);
 
   const primaryAction = (refund) => {
     navigate(`/refunds/${idOf(refund)}`);
@@ -119,8 +112,9 @@ export function AdminFulfillmentRefundPage({ notify }) {
       {loading && <StateMessage text="Đang tải danh sách hoàn cọc..."/>}
       {!loading && error && <StateMessage text={error} tone="error"/>}
       {!loading && !error && <>
-        <div className="refund-desktop-table">
           <AdminDataTable
+            mobileCards
+            className="refund-desktop-table"
             rows={data.items || []} page={data.pagination?.page || 1} pageSize={data.pagination?.limit || PAGE_SIZE}
             total={data.pagination?.total || 0} totalPages={data.pagination?.totalPages || 1}
             onPageChange={(next) => updateParams({ page: next })} emptyText="Không có khoản hoàn cọc phù hợp."
@@ -129,16 +123,11 @@ export function AdminFulfillmentRefundPage({ notify }) {
               { key: "order", label: "Mã đơn thuê", render: (row) => <button className="refund-order-link" onClick={() => navigate(`/orders/${idOf(row.orderId)}`)}>{orderCode(row)}</button> },
               { key: "customer", label: "Khách hàng", render: (row) => <span className="refund-customer"><strong>{customer(row).name || "Khách hàng"}</strong><small>{customer(row).phone || "Chưa có số điện thoại"}</small></span> },
               { key: "amount", label: "Số tiền", className: "money-cell", render: (row) => money(row.amount) },
-              { key: "status", label: "Trạng thái", render: (row) => <StatusBadge value={row.status}/> },
+              { key: "status", label: "Trạng thái", render: (row) => <StatusBadge type="refund" value={row.status}/> },
               { key: "date", label: "Ngày tạo / cập nhật", render: (row) => <span className="refund-date">{dateTime(row.createdAt)}<small>Cập nhật {dateTime(row.updatedAt)}</small></span> },
               { key: "action", label: "Thao tác", render: (row) => <button className="refund-action" onClick={() => primaryAction(row)}><Eye size={15}/><ActionLabel refund={row}/></button> }
             ]}
           />
-        </div>
-        <div className="refund-mobile-cards">
-          {(data.items || []).map((row) => <article key={idOf(row)}><header><strong>{row.refundCode}</strong><StatusBadge value={row.status}/></header><dl><div><dt>Đơn thuê</dt><dd>{orderCode(row)}</dd></div><div><dt>Khách hàng</dt><dd>{customer(row).name || "Khách hàng"}<small>{customer(row).phone || ""}</small></dd></div><div><dt>Số tiền</dt><dd>{money(row.amount)}</dd></div><div><dt>Cập nhật</dt><dd>{dateTime(row.updatedAt || row.createdAt)}</dd></div></dl><button onClick={() => primaryAction(row)}><ActionLabel refund={row}/></button></article>)}
-          {!data.items?.length && <StateMessage text="Không có khoản hoàn cọc phù hợp."/>}
-        </div>
       </>}
     </section>
 

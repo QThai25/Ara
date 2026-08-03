@@ -9,6 +9,7 @@ import {
   Mail,
   Phone,
   ReceiptText,
+  TicketPercent,
   Trash2,
   UserRound
 } from "lucide-react";
@@ -26,6 +27,7 @@ import {
   createRentalOrder,
   quoteRentalOrder
 } from "../../services/rentalOrderService.js";
+import { applyVoucher } from "../../services/voucherService.js";
 import { listAddresses } from "../../services/accountService.js";
 import { saveGuestOrderSession } from "../../utils/guestOrderSession.js";
 import { fallbackImages } from "../../utils/catalogData.js";
@@ -41,6 +43,7 @@ const RENTAL_POLICY_VERSION = "ARA_RENTAL_POLICY_2026_01";
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 function assistedCheckoutPrefill(){try{return JSON.parse(localStorage.getItem("ara_assisted_checkout")||"{}")}catch{return{}}}
 function scheduledFulfillmentPrefill(){try{return JSON.parse(sessionStorage.getItem("ara_schedule_fulfillment")||"{}")}catch{return{}}}
+function savedCheckoutVoucher(){try{return sessionStorage.getItem("ara_checkout_voucher")||""}catch{return""}}
 
 function SavedAddressPicker({ addresses, value, onChange }) {
   if (!addresses.length) return null;
@@ -631,6 +634,10 @@ export function RentalCartPage(props) {
   const phoneInputRef = useRef(null);
   const invoiceEmailInputRef = useRef(null);
   const fulfillmentRef = useRef(null);
+  const submitRef = useRef(false);
+  const voucherBusyRef = useRef(false);
+  const restoreVoucherRef = useRef(Boolean(savedCheckoutVoucher()));
+  const idempotencyRef = useRef({ fingerprint: "", key: "" });
 
   const [items, setItems] = useState(() => getRentalCart(userId));
   const [agreed, setAgreed] = useState(false);
@@ -680,6 +687,10 @@ export function RentalCartPage(props) {
     } : {})
   });
   const [shippingQuote,setShippingQuote]=useState({feeMode:"external_direct_payment",feeAmount:null,chargedByShop:false,outboundFee:null,returnFee:null,totalShippingFee:null});
+  const [voucherCode, setVoucherCode] = useState(savedCheckoutVoucher);
+  const [appliedVoucher, setAppliedVoucher] = useState(null);
+  const [voucherBusy, setVoucherBusy] = useState(false);
+  const [voucherError, setVoucherError] = useState("");
   const [scheduleError, setScheduleError] = useState("");
   const [savedAddresses,setSavedAddresses]=useState([]);
 
@@ -925,6 +936,88 @@ export function RentalCartPage(props) {
     [items]
   );
 
+  const voucherFingerprint = useMemo(() => JSON.stringify({
+    userId: userId || "guest",
+    phone: guestInfo.phone,
+    items: items.map((item) => ({
+      costumeId: item.product?.id || item.product?._id,
+      quantity: Number(item.quantity) || 1,
+      rentalDate: item.rentalDate,
+      returnDate: item.returnDate,
+      rentalDays: item.rentalDays,
+      mainUseDate: item.mainUseDate,
+      pickupTime: item.pickupTime,
+      returnTime: item.returnTime,
+      extraDays: item.extraDays
+    }))
+  }), [items, userId, guestInfo.phone]);
+
+  async function applyVoucherCode(code, { silent = false } = {}) {
+    const normalizedCode = String(code || "").trim().toUpperCase();
+    if (!user || voucherBusyRef.current || !normalizedCode || !items.length) return;
+    voucherBusyRef.current = true;
+    setVoucherBusy(true);
+    setVoucherError("");
+    try {
+      const first = items[0] || {};
+      const result = await applyVoucher({
+        code: normalizedCode,
+        rentalDays: Number(first.rentalDays) || 1,
+        mainUseDate: first.mainUseDate || "",
+        pickupTime: first.pickupTime || "",
+        returnTime: first.returnTime || "",
+        extraDays: Number(first.extraDays || 0),
+        items: items.map((item) => ({
+          costumeId: item.product?.id || item.product?._id,
+          quantity: Number(item.quantity) || 1
+        }))
+      });
+      setVoucherCode(normalizedCode);
+      setAppliedVoucher({ ...result, fingerprint: voucherFingerprint });
+      sessionStorage.setItem("ara_checkout_voucher", normalizedCode);
+      if (!silent) showNotice("Áp dụng voucher thành công.");
+    } catch (error) {
+      setAppliedVoucher(null);
+      sessionStorage.removeItem("ara_checkout_voucher");
+      setVoucherError(error.message || "Không thể áp dụng voucher.");
+      if (!silent) showNotice(error.message || "Không thể áp dụng voucher.", "error");
+    } finally {
+      voucherBusyRef.current = false;
+      setVoucherBusy(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!user) {
+      setAppliedVoucher(null);
+      setVoucherCode("");
+      sessionStorage.removeItem("ara_checkout_voucher");
+      return undefined;
+    }
+    if (!items.length) {
+      setAppliedVoucher(null);
+      sessionStorage.removeItem("ara_checkout_voucher");
+      return undefined;
+    }
+    const shouldRestore = restoreVoucherRef.current;
+    const shouldRevalidate = Boolean(appliedVoucher?.voucher?.code && appliedVoucher.fingerprint !== voucherFingerprint);
+    if (!shouldRestore && !shouldRevalidate) return undefined;
+    restoreVoucherRef.current = false;
+    const code = appliedVoucher?.voucher?.code || voucherCode;
+    const timer = window.setTimeout(() => applyVoucherCode(code, { silent: true }), 250);
+    return () => window.clearTimeout(timer);
+  }, [user, voucherFingerprint, appliedVoucher?.voucher?.code, appliedVoucher?.fingerprint]);
+
+  const removeVoucherCode = () => {
+    setAppliedVoucher(null);
+    setVoucherCode("");
+    setVoucherError("");
+    sessionStorage.removeItem("ara_checkout_voucher");
+  };
+
+  const discountAmount = Math.max(0, Number(appliedVoucher?.discountAmount) || 0);
+  const checkoutTotal = Math.max(0, total - discountAmount);
+
   const remove = (itemId) => {
     removeFromRentalCart(itemId, userId);
     setItems(getRentalCart(userId));
@@ -932,7 +1025,7 @@ export function RentalCartPage(props) {
   };
 
   const submit = async () => {
-    if (loading) return;
+    if (submitRef.current) return;
 
     const fullName = guestInfo.fullName.trim();
     const phone = guestInfo.phone.trim();
@@ -1075,6 +1168,7 @@ export function RentalCartPage(props) {
         ? Number(first.rentalDays)
         : calculatedRentalDays;
 
+    submitRef.current = true;
     setLoading(true);
 
     try {
@@ -1095,6 +1189,22 @@ export function RentalCartPage(props) {
         }
       }
 
+      const fingerprint = JSON.stringify({
+        userId: userId || "guest",
+        guestInfo,
+        agreed,
+        carrierFeeAccepted,
+        voucherCode: user ? appliedVoucher?.voucher?.code || "" : "",
+        items: items.map((item) => ({
+          costumeId: item.product.id || item.product._id,
+          quantity: Number(item.quantity) || 1,
+          rentalDate: item.rentalDate,
+          returnDate: item.returnDate
+        }))
+      });
+      if (idempotencyRef.current.fingerprint !== fingerprint) {
+        idempotencyRef.current = { fingerprint, key: crypto.randomUUID() };
+      }
       const response = await createRentalOrder({
         customerInfo: {
           fullName,
@@ -1112,7 +1222,8 @@ export function RentalCartPage(props) {
         pickupMethod:guestInfo.pickupMethod,
         returnMethod:guestInfo.returnMethod,
         requestedStartAt:first.rentalDate,
-        idempotencyKey:crypto.randomUUID(),
+        idempotencyKey:idempotencyRef.current.key,
+        voucherCode: user ? appliedVoucher?.voucher?.code || undefined : undefined,
         fulfillment: {
           pickupMethod:guestInfo.pickupMethod,
           returnMethod:guestInfo.returnMethod,
@@ -1135,6 +1246,7 @@ export function RentalCartPage(props) {
       });
 
       clearRentalCart(userId);
+      sessionStorage.removeItem("ara_checkout_voucher");
       localStorage.removeItem("ara_assisted_checkout");
       setItems([]);
 
@@ -1197,13 +1309,6 @@ export function RentalCartPage(props) {
         });
       }
 
-      console.error("CREATE RENTAL ORDER ERROR:", {
-        message: error?.message,
-        status: error?.response?.status,
-        data: responseData,
-        stack: error?.stack
-      });
-
       showNotice(
         responseData?.message ||
         responseData?.error ||
@@ -1212,6 +1317,7 @@ export function RentalCartPage(props) {
         "error"
       );
     } finally {
+      submitRef.current = false;
       setLoading(false);
     }
   };
@@ -1228,10 +1334,10 @@ export function RentalCartPage(props) {
       </div>
 
       {items.length === 0 && (
-        <StateMessage text="Giỏ thuê của bạn đang trống." />
+        <StateMessage text="Giỏ thuê của bạn đang trống. Chọn một trang phục và khung giờ để bắt đầu." actionLabel="Xem trang phục" onAction={() => setView(views.catalog, paths.catalog)} />
       )}
 
-      <div className="cart-layout">
+      {items.length > 0 && <div className="cart-layout">
         <div className="cart-items">
           {items.map((item, index) => {
             const product = item.product || {};
@@ -1655,6 +1761,38 @@ export function RentalCartPage(props) {
             </div>
           </div>
 
+          {user && <div className="cart-voucher-section" aria-labelledby="cart-voucher-title">
+            <div className="cart-voucher-heading">
+              <TicketPercent size={20} aria-hidden="true" />
+              <div><strong id="cart-voucher-title">Mã ưu đãi</strong><span>Giảm trên tiền thuê đủ điều kiện, không giảm tiền cọc.</span></div>
+            </div>
+            <div className="cart-voucher-controls">
+              <input
+                value={voucherCode}
+                onChange={(event) => {
+                  setVoucherCode(event.target.value.toUpperCase());
+                  setAppliedVoucher(null);
+                  setVoucherError("");
+                  sessionStorage.removeItem("ara_checkout_voucher");
+                }}
+                placeholder="Nhập mã ưu đãi"
+                aria-label="Mã ưu đãi"
+                disabled={voucherBusy}
+              />
+              <button type="button" onClick={() => applyVoucherCode(voucherCode)} disabled={voucherBusy || !voucherCode.trim()}>
+                {voucherBusy ? "Đang kiểm tra…" : "Áp dụng"}
+              </button>
+              {appliedVoucher && <button type="button" className="cart-voucher-remove" onClick={removeVoucherCode} disabled={voucherBusy}>Xóa mã</button>}
+            </div>
+            {voucherError && <p className="form-error" role="alert">{voucherError}</p>}
+            {appliedVoucher && (
+              <div className="cart-voucher-applied" role="status">
+                <span><strong>{appliedVoucher.voucher?.code}</strong> · {appliedVoucher.voucher?.name}</span>
+                <strong>-{money(discountAmount)}</strong>
+              </div>
+            )}
+          </div>}
+
           <div className="cart-checkout-summary">
             <div>
               <span>Số trang phục</span>
@@ -1663,7 +1801,7 @@ export function RentalCartPage(props) {
 
             <div className="cart-checkout-total">
               <span>Tổng dự kiến</span>
-              <strong>{money(total)}</strong>
+              <strong>{money(checkoutTotal)}</strong>
               {(guestInfo.pickupMethod==="home_delivery"||guestInfo.returnMethod==="home_collection")&&<small>Phí giao/nhận trả trực tiếp cho shipper, không nằm trong tổng này.</small>}
             </div>
           </div>
@@ -1726,7 +1864,7 @@ export function RentalCartPage(props) {
             </button>
           </div>
         </form>
-      </div>
+      </div>}
     </section>
   );
 }

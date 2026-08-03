@@ -24,12 +24,12 @@ export function WishlistPage({ user, setView, notify }) {
         <h1>Trang phục yêu thích</h1>
         <p>Những mẫu váy bạn đã lưu để xem lại khi cần.</p>
       </div>
-      {items.length === 0 && <StateMessage text="Bạn chưa có trang phục yêu thích." />}
-      <div className="mei-product-grid mei-catalog-grid">
+      {items.length === 0 && <StateMessage text="Bạn chưa có trang phục yêu thích. Hãy khám phá các mẫu đang sẵn sàng nhận lịch." actionLabel="Xem trang phục" onAction={() => setView(views.catalog, paths.catalog)} />}
+      {items.length > 0 && <div className="mei-product-grid mei-catalog-grid">
         {items.map((product, index) => (
           <ProductCard key={product.id || product._id} product={product} index={index} onOpen={(item) => setView(views.detail, paths.detail(item.id || item._id))} onWishlist={remove} wishlisted />
         ))}
-      </div>
+      </div>}
     </section>
   );
 }

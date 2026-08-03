@@ -12,7 +12,7 @@ import * as costumeApi from "../services/adminCostumeService.js";
 import { createBrand, deleteBrand, getAdminBrands, toggleBrandStatus, updateBrand } from "../services/brandService.js";
 import { createCategory, deleteCategory, getAdminCategories, toggleCategoryStatus, updateCategory } from "../services/categoryService.js";
 import { createBanner, getAdminBanners, removeBanner, setPrimaryBanner, toggleBannerStatus, updateBanner } from "../services/bannerService.js";
-import { createVoucher, getAdminVouchers, mockVouchers, removeVoucher, toggleVoucherStatus, updateVoucher } from "../services/voucherService.js";
+import { createVoucher, getAdminVouchers, removeVoucher, toggleVoucherStatus, updateVoucher } from "../services/voucherService.js";
 import { confirmPayment, getAdminPaymentDetail, getAdminPayments as fetchAdminPayments, rejectPayment } from "../services/paymentService.js";
 import { createOccasion, createStyle, deleteOccasion, deleteStyle, getAdminOccasions, getAdminStyles, toggleOccasionStatus, toggleStyleStatus, updateOccasion, updateStyle } from "../services/filterOptionService.js";
 import { createReturnInspection, rejectRentalOrder } from "../services/rentalOrderService.js";
@@ -114,7 +114,7 @@ export function AdminPage({ activeTab, notify, costumeEditor = null }) {
   const [brands, setBrands] = useState([]);
   const [occasions, setOccasions] = useState(fallbackOccasionOptions);
   const [styles, setStyles] = useState(fallbackStyleOptions);
-  const [vouchers, setVouchers] = useState(mockVouchers);
+  const [vouchers, setVouchers] = useState([]);
   const [banners, setBanners] = useState([]);
   const [selectedOrderId, setSelectedOrderId] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -128,15 +128,15 @@ export function AdminPage({ activeTab, notify, costumeEditor = null }) {
     try {
       const jobs = {};
       if ([adminTabs.dashboard, adminTabs.orders, adminTabs.inspections].includes(activeTab)) jobs.orders = getAdminOrders();
-      if ([adminTabs.dashboard, adminTabs.costumes].includes(activeTab)) jobs.costumes = costumeApi.getList();
+      if ([adminTabs.dashboard, adminTabs.costumes, adminTabs.vouchers].includes(activeTab)) jobs.costumes = costumeApi.getList();
       if (activeTab === adminTabs.dashboard) jobs.summary = getAdminDashboard();
-      if (activeTab === adminTabs.customers) jobs.customers = getAdminCustomers();
+      if ([adminTabs.customers, adminTabs.vouchers].includes(activeTab)) jobs.customers = getAdminCustomers();
       if (activeTab === adminTabs.payments) jobs.payments = getAdminPayments();
-      if ([adminTabs.costumes, adminTabs.categories].includes(activeTab)) jobs.categories = getAdminCategories();
+      if ([adminTabs.costumes, adminTabs.categories, adminTabs.vouchers].includes(activeTab)) jobs.categories = getAdminCategories();
       if ([adminTabs.costumes, adminTabs.brands].includes(activeTab)) jobs.brands = getAdminBrands();
-      if ([adminTabs.costumes, adminTabs.occasions, adminTabs.categories].includes(activeTab)) jobs.occasions = getAdminOccasions().catch(() => fallbackOccasionOptions);
+      if ([adminTabs.costumes, adminTabs.occasions, adminTabs.categories, adminTabs.vouchers].includes(activeTab)) jobs.occasions = getAdminOccasions().catch(() => fallbackOccasionOptions);
       if ([adminTabs.costumes, adminTabs.styles, adminTabs.categories].includes(activeTab)) jobs.styles = getAdminStyles().catch(() => fallbackStyleOptions);
-      if (activeTab === adminTabs.vouchers) jobs.vouchers = getAdminVouchers().catch(() => mockVouchers);
+      if (activeTab === adminTabs.vouchers) jobs.vouchers = getAdminVouchers();
       if (activeTab === adminTabs.banners) jobs.banners = getAdminBanners().catch(() => []);
       const keys = Object.keys(jobs);
       const values = await Promise.all(Object.values(jobs));
@@ -177,7 +177,7 @@ export function AdminPage({ activeTab, notify, costumeEditor = null }) {
 
   useEffect(() => {
     load();
-  }, []);
+  }, [activeTab]);
 
   useEffect(() => {
     let timer;
@@ -212,9 +212,7 @@ export function AdminPage({ activeTab, notify, costumeEditor = null }) {
 
   const chrome = (children) => (
     <section className="admin-page">
-      {loading && <LoadingState />}
-      {error && <ErrorState message={error} onRetry={load} />}
-      {children}
+      {loading ? <LoadingState /> : error ? <ErrorState message={error} onRetry={load} /> : children}
     </section>
   );
 
@@ -228,7 +226,7 @@ export function AdminPage({ activeTab, notify, costumeEditor = null }) {
   if (activeTab === adminTabs.inspections) return chrome(<AdminOrders orders={orders.filter((order) => ["renting", "returned", "overdue"].includes(order.status))} selected={selectedOrder} selectedOrderId={selectedOrderId} setSelectedOrderId={setSelectedOrderId} notify={notify} reload={load} inspectionOnly />);
   if (activeTab === adminTabs.payments) return chrome(<PaymentManager rows={payments} notify={notify} reload={load} canConfirm={can(P.PAYMENTS_CONFIRM_BANK_TRANSFER)} />);
   if (activeTab === adminTabs.customers) return chrome(<SimpleResource title="Quản lý khách hàng" rows={customers} columns={["name", "email", "phone", "status"]} labels={["Tên", "Email", "Số điện thoại", "Trạng thái"]} />);
-  if (activeTab === adminTabs.vouchers) return chrome(<VoucherManager items={vouchers} notify={notify} reload={load} />);
+  if (activeTab === adminTabs.vouchers) return chrome(<VoucherManager items={vouchers} categories={categories} occasions={occasions} costumes={costumes} customers={customers} notify={notify} reload={load} />);
   if (activeTab === adminTabs.banners) return chrome(<BannerManager items={banners} notify={notify} reload={load} />);
   return chrome(<Reports stats={dashboardStats} orders={orders} costumes={costumes} summary={summary} />);
 }
@@ -576,7 +574,7 @@ function AdminCostumes({
           item.skuCode,
           item.occasionName,
           item.styleName,
-          getStatusLabel(item.operationalStatus || item.status),
+          getStatusLabel(item.operationalStatus || item.status, "costume"),
           item.currentDisplayStatus
         ]
           .filter(Boolean)
@@ -1253,7 +1251,7 @@ function AdminCostumes({
                         options={costumeStatusOptions}
                         onChange={(value) => changeStatus(row, value)}
                       />
-                    ) : <strong>{getStatusLabel(row.operationalStatus || row.status)}</strong>}
+                    ) : <strong>{getStatusLabel(row.operationalStatus || row.status, "costume")}</strong>}
                   </span>
                   <AdminStatusBadge type="costume" value={row.currentDisplayStatus || "available"} />
                   {row.currentStatusUntil && <small>Đến {formatDateTime(row.currentStatusUntil)}</small>}
@@ -1291,7 +1289,8 @@ function AdminCostumes({
                     if (
                       window.confirm(
                         `Đổi trạng thái trang phục sang "${getStatusLabel(
-                          next
+                          next,
+                          "costume"
                         )}"?`
                       )
                     ) {
@@ -2106,7 +2105,7 @@ function CostumeDetailModal({ item, onClose }) {
     ["Tiền cọc", money(item.depositAmount)],
     ["Số lượng", item.quantity],
     ["SKU", item.skuCode],
-    ["Trạng thái vận hành", getStatusLabel(item.operationalStatus || item.status)],
+    ["Trạng thái vận hành", getStatusLabel(item.operationalStatus || item.status, "costume")],
     ["Trạng thái lịch", item.currentDisplayStatus],
     ["Trạng thái đến", item.currentStatusUntil ? formatDateTime(item.currentStatusUntil) : "-"],
     ["Có thể nhận lịch từ", item.nextAvailableAt ? formatDateTime(item.nextAvailableAt) : "-"]
@@ -2231,63 +2230,181 @@ function TaxonomyForm({ title, initial, showIcon, defaultOptions, onClose, onSav
   );
 }
 
-function VoucherManager({ items, notify, reload }) {
+const voucherEligibilityLabels = {
+  all: "Tất cả khách hàng",
+  first_order: "Khách mới – đơn đầu tiên",
+  returning_customer: "Khách đã từng thuê",
+  specific_customers: "Khách hàng cụ thể"
+};
+
+function voucherDiscount(value) {
+  return value.discountType === "percent" ? `${value.discountValue}%` : money(value.discountValue);
+}
+
+function VoucherManager({ items, categories, occasions, costumes, customers, notify, reload }) {
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebouncedValue(search, 600);
+  const [statusFilter, setStatusFilter] = useState("");
+  const [eligibilityFilter, setEligibilityFilter] = useState("");
   const [modal, setModal] = useState(null);
-  const filtered = items.filter((item) => [item.code, item.name, getStatusLabel(item.status)].join(" ").toLowerCase().includes(debouncedSearch.toLowerCase()));
+  const [busyId, setBusyId] = useState("");
+  const filtered = items.filter((item) => {
+    const matchesSearch = [item.code, item.name].join(" ").toLowerCase().includes(debouncedSearch.toLowerCase());
+    return matchesSearch
+      && (!statusFilter || item.businessStatus === statusFilter)
+      && (!eligibilityFilter || item.eligibilityType === eligibilityFilter);
+  });
   const save = async (payload, editingId) => {
-    if (payload.discountType === "percent" && (Number(payload.discountValue) < 1 || Number(payload.discountValue) > 100)) return notify("Giảm phần trăm phải từ 1 đến 100.", "error");
-    if (payload.endDate && payload.startDate && payload.endDate <= payload.startDate) return notify("Ngày kết thúc phải sau ngày bắt đầu.", "error");
-    const response = editingId ? await updateVoucher(editingId, payload) : await createVoucher(payload);
-    notify(response.message);
-    setModal(null);
-    reload();
+    try {
+      if (payload.discountType === "percent" && (Number(payload.discountValue) < 1 || Number(payload.discountValue) > 100)) return notify("Giảm phần trăm phải từ 1 đến 100.", "error");
+      if (payload.endAt && payload.startAt && new Date(payload.endAt) <= new Date(payload.startAt)) return notify("Ngày kết thúc phải sau ngày bắt đầu.", "error");
+      const response = editingId ? await updateVoucher(editingId, payload) : await createVoucher(payload);
+      notify(response.message);
+      setModal(null);
+      await reload();
+    } catch (error) {
+      notify(error.message || "Không thể lưu voucher.", "error");
+    }
   };
   const remove = async (item) => {
-    if (!confirmAction(`Xóa voucher "${item.code}"?`)) return;
-    const response = await removeVoucher(itemId(item));
-    notify(response.message);
-    reload();
+    if (!confirmAction(`Vô hiệu hóa voucher "${item.code}"? Voucher sẽ không còn được sử dụng.`)) return;
+    setBusyId(itemId(item));
+    try {
+      const response = await removeVoucher(itemId(item));
+      notify(response.message);
+      await reload();
+    } catch (error) {
+      notify(error.message || "Không thể vô hiệu hóa voucher.", "error");
+    } finally {
+      setBusyId("");
+    }
+  };
+  const toggle = async (item) => {
+    const next = item.status === "active" ? "tắt" : "bật";
+    if (!confirmAction(`Bạn có chắc muốn ${next} voucher "${item.code}"?`)) return;
+    setBusyId(itemId(item));
+    try {
+      const response = await toggleVoucherStatus(itemId(item));
+      notify(response.message);
+      await reload();
+    } catch (error) {
+      notify(error.message || "Không thể cập nhật trạng thái voucher.", "error");
+    } finally {
+      setBusyId("");
+    }
   };
   return (
     <>
       <PageHeader title="Quản lý voucher" subtitle="Tạo, chỉnh sửa, bật tắt và kiểm soát hiệu lực voucher." action={<AdminButton variant="primary" onClick={() => setModal({})}><Plus size={16} /> Thêm voucher</AdminButton>} />
       <div className="admin-card">
-        <div className="admin-toolbar admin-toolbar--search-only">
+        <div className="admin-toolbar voucher-toolbar">
           <input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Tìm mã voucher, tên voucher..."
           />
+          <AdminSelect value={statusFilter} onChange={setStatusFilter} options={[["", "Mọi trạng thái"], ["upcoming", "Sắp diễn ra"], ["active", "Đang hoạt động"], ["inactive", "Tạm tắt"], ["expired", "Đã hết hạn"], ["exhausted", "Đã hết lượt"]]} />
+          <AdminSelect value={eligibilityFilter} onChange={setEligibilityFilter} options={[["", "Mọi đối tượng"], ...Object.entries(voucherEligibilityLabels)]} />
         </div>
-        <AdminTable rows={filtered} columns={["code", "name", "discountType", "discountValue", "usage", "status"]} labels={["Code", "Tên", "Loại giảm", "Giá trị", "Đã dùng/Giới hạn", "Trạng thái"]} format={{ usage: (_, row) => `${row.usedCount || 0}/${row.usageLimit || "∞"}`, status: (v) => <StatusBadge value={v} /> }} actions={(row) => <><AdminButton onClick={() => setModal({ item: row })}><Pencil size={14} /> Sửa</AdminButton><AdminButton onClick={async () => { const res = await toggleVoucherStatus(itemId(row)); notify(res.message); reload(); }}>{row.status === "active" ? "Tắt" : "Bật"}</AdminButton><AdminButton variant="danger" onClick={() => remove(row)}><Trash2 size={14} /> Xóa</AdminButton></>} />
+        {filtered.length === 0 ? (
+          <div className="voucher-empty-state" role="status">
+            <div className="voucher-empty-icon"><Plus size={22} aria-hidden="true" /></div>
+            <strong>{items.length ? "Không có voucher khớp bộ lọc" : "Chưa có voucher nào"}</strong>
+            <p>{items.length ? "Thử đổi từ khóa hoặc bộ lọc để xem lại danh sách." : "Tạo voucher đầu tiên để khách có thể xem và áp dụng ở trang Ưu đãi."}</p>
+            {!items.length && <AdminButton variant="primary" onClick={() => setModal({})}><Plus size={15} /> Tạo voucher đầu tiên</AdminButton>}
+          </div>
+        ) : (
+          <AdminTable
+            rows={filtered}
+            columns={["code", "name", "discount", "eligibility", "minimum", "usage", "perCustomer", "validity", "businessStatus"]}
+            labels={["Mã", "Tên", "Mức giảm", "Đối tượng", "Đơn tối thiểu", "Đã dùng/Tổng", "Mỗi khách", "Hiệu lực", "Trạng thái"]}
+            tableClassName="voucher-table"
+            colWidths={["104px", "150px", "104px", "150px", "126px", "126px", "92px", "164px", "124px", "64px"]}
+            format={{
+              discount: (_, row) => voucherDiscount(row),
+              eligibility: (_, row) => voucherEligibilityLabels[row.eligibilityType] || voucherEligibilityLabels.all,
+              minimum: (_, row) => money(row.minimumOrderAmount || 0),
+              usage: (_, row) => `${row.usageCount || 0}/${row.totalUsageLimit == null ? "Không giới hạn" : row.totalUsageLimit}`,
+              perCustomer: (_, row) => `${row.usageLimitPerCustomer || 1} lần`,
+              validity: (_, row) => `${formatDate(row.startAt)} – ${formatDate(row.endAt)}`,
+              businessStatus: (_, row) => <StatusBadge type="voucher" value={row.businessStatus} />
+            }}
+            actions={(row) => (
+              <AdminActionMenu>
+                <button type="button" onClick={() => setModal({ item: row })}><Pencil size={15} /> Sửa</button>
+                <button type="button" disabled={busyId === itemId(row)} onClick={() => toggle(row)}>
+                  {row.status === "active" ? "Tắt voucher" : "Bật voucher"}
+                </button>
+                <button type="button" className="danger" disabled={busyId === itemId(row)} onClick={() => remove(row)}>
+                  <Trash2 size={15} /> Vô hiệu hóa
+                </button>
+              </AdminActionMenu>
+            )}
+          />
+        )}
       </div>
-      {modal && <VoucherForm initial={modal.item} onClose={() => setModal(null)} onSave={save} />}
+      {modal && <VoucherForm initial={modal.item} categories={categories} occasions={occasions} costumes={costumes} customers={customers} onClose={() => setModal(null)} onSave={save} />}
     </>
   );
 }
 
-function VoucherForm({ initial, onClose, onSave }) {
-  const [form, setForm] = useState({ code: initial?.code || "", name: initial?.name || "", description: initial?.description || "", discountType: initial?.discountType || "percent", discountValue: initial?.discountValue ?? "", minOrderValue: initial?.minOrderValue ?? "", maxDiscount: initial?.maxDiscount ?? "", usageLimit: initial?.usageLimit ?? "", startDate: String(initial?.startDate || "").slice(0, 10), endDate: String(initial?.endDate || "").slice(0, 10), status: initial?.status || "active" });
-  const update = (field, value) => setForm((current) => ({ ...current, [field]: value }));
+function VoucherForm({ initial, categories, occasions, costumes, customers, onClose, onSave }) {
+  const [form, setForm] = useState({
+    code: initial?.code || "", name: initial?.name || "", description: initial?.description || "",
+    discountType: initial?.discountType || "percent", discountValue: initial?.discountValue ?? "",
+    minimumOrderAmount: initial?.minimumOrderAmount ?? "", maximumDiscountAmount: initial?.maximumDiscountAmount ?? "",
+    totalUsageLimit: initial?.totalUsageLimit ?? "", usageLimitPerCustomer: initial?.usageLimitPerCustomer ?? 1,
+    eligibilityType: initial?.eligibilityType || "all", eligibleCustomerIds: initial?.eligibleCustomerIds?.map(String) || [],
+    applicableScope: initial?.applicableScope || "all", applicableCategoryIds: initial?.applicableCategoryIds?.map(String) || [],
+    applicableOccasionIds: initial?.applicableOccasionIds?.map(String) || [], applicableProductIds: initial?.applicableProductIds?.map(String) || [],
+    startDate: String(initial?.startAt || "").slice(0, 10), endDate: String(initial?.endAt || "").slice(0, 10),
+    status: initial?.status || "active", isPublic: initial?.isPublic !== false
+  });
+  const update = (field, value) => setForm((current) => ({
+    ...current,
+    [field]: value,
+    ...(field === "eligibilityType" && value === "first_order" ? { usageLimitPerCustomer: 1 } : {})
+  }));
   const nextDate = form.startDate ? (() => { const date = new Date(`${form.startDate}T00:00:00Z`); date.setUTCDate(date.getUTCDate() + 1); return date.toISOString().slice(0, 10); })() : undefined;
+  const submit = (event) => {
+    event.preventDefault();
+    onSave({
+      ...form,
+      startAt: form.startDate ? `${form.startDate}T00:00:00+07:00` : "",
+      endAt: form.endDate ? `${form.endDate}T23:59:59.999+07:00` : "",
+      totalUsageLimit: form.totalUsageLimit === "" ? null : Number(form.totalUsageLimit),
+      maximumDiscountAmount: form.maximumDiscountAmount === "" ? null : Number(form.maximumDiscountAmount),
+      minimumOrderAmount: Number(form.minimumOrderAmount || 0),
+      usageLimitPerCustomer: Number(form.usageLimitPerCustomer || 1),
+      usageCount: undefined
+    }, initial ? itemId(initial) : null);
+  };
+  const options = (values, label) => asArray(values).map((item) => ({ value: itemId(item), label: item[label] || item.name || item.code })).filter((item) => item.value);
   return (
-    <AdminModal title={initial ? "Sửa voucher" : "Thêm voucher"} onClose={onClose}>
-      <form className="admin-form" onSubmit={(event) => { event.preventDefault(); onSave(form, initial ? itemId(initial) : null); }}>
+    <AdminModal title={initial ? "Sửa voucher" : "Thêm voucher"} onClose={onClose} className="voucher-form-modal">
+      <form className="admin-form voucher-form" onSubmit={submit}>
         <div className="form-grid">
           <label>Mã voucher<input required value={form.code} onChange={(e) => update("code", e.target.value.toUpperCase())} /></label>
           <label>Tên voucher<input required value={form.name} onChange={(e) => update("name", e.target.value)} /></label>
           <ModalSelect label="Loại giảm" value={form.discountType} onChange={(value) => update("discountType", value)} options={[["percent", "Phần trăm"], ["fixed", "Số tiền"]]} />
-          {form.discountType === "percent" ? <PlainNumberInput label="Giá trị giảm" value={form.discountValue} min={1} max={100} suffix="%" onChange={(value) => update("discountValue", value)} /> : <MoneyThousandsInput label="Giá trị giảm" value={form.discountValue} onChange={(value) => update("discountValue", value)} />}
-          <MoneyThousandsInput label="Đơn tối thiểu" value={form.minOrderValue} onChange={(value) => update("minOrderValue", value)} />
-          <MoneyThousandsInput label="Giảm tối đa" value={form.maxDiscount} onChange={(value) => update("maxDiscount", value)} />
-          <PlainNumberInput label="Số lượt dùng" value={form.usageLimit} min={0} onChange={(value) => update("usageLimit", value)} />
+          {form.discountType === "percent" ? <PlainNumberInput required label="Giá trị giảm" value={form.discountValue} min={1} max={100} suffix="%" onChange={(value) => update("discountValue", value)} /> : <MoneyThousandsInput required label="Giá trị giảm" value={form.discountValue} onChange={(value) => update("discountValue", value)} />}
+          <MoneyThousandsInput label="Đơn tối thiểu" value={form.minimumOrderAmount} onChange={(value) => update("minimumOrderAmount", value)} />
+          {form.discountType === "percent" && <MoneyThousandsInput label="Giảm tối đa" value={form.maximumDiscountAmount} onChange={(value) => update("maximumDiscountAmount", value)} />}
+          <PlainNumberInput label="Tổng lượt sử dụng tối đa" value={form.totalUsageLimit} min={1} placeholder="Không giới hạn" onChange={(value) => update("totalUsageLimit", value)} />
+          <PlainNumberInput label="Giới hạn mỗi khách" value={form.usageLimitPerCustomer} min={1} readOnly={form.eligibilityType === "first_order"} onChange={(value) => update("usageLimitPerCustomer", value)} />
+          <PlainNumberInput label="Số lượt đã dùng (hệ thống)" value={initial?.usageCount || 0} readOnly />
           <ModalDatePicker label="Ngày bắt đầu" value={form.startDate} onChange={(value) => update("startDate", value)} />
           <ModalDatePicker label="Ngày kết thúc" value={form.endDate} minDate={nextDate} onChange={(value) => update("endDate", value)} />
-          <ModalSelect label="Trạng thái" value={form.status} onChange={(value) => update("status", value)} options={[["active", "Đang hiển thị"], ["inactive", "Đã ẩn"], ["expired", "Hết hiệu lực"]]} />
+          <ModalSelect label="Trạng thái" value={form.status} onChange={(value) => update("status", value)} options={[["active", "Đang bật"], ["inactive", "Tạm tắt"]]} />
+          <ModalSelect label="Điều kiện khách hàng" value={form.eligibilityType} onChange={(value) => update("eligibilityType", value)} options={Object.entries(voucherEligibilityLabels)} />
+          <ModalSelect label="Phạm vi áp dụng" value={form.applicableScope} onChange={(value) => update("applicableScope", value)} options={[["all", "Toàn bộ trang phục"], ["category", "Danh mục"], ["occasion", "Dịp"], ["product", "Trang phục cụ thể"]]} />
+          {form.eligibilityType === "specific_customers" && <ModalMultiSelect label="Khách hàng được áp dụng" value={form.eligibleCustomerIds} options={options(customers, "name")} onChange={(value) => update("eligibleCustomerIds", value)} />}
+          {form.applicableScope === "category" && <ModalMultiSelect label="Danh mục áp dụng" value={form.applicableCategoryIds} options={options(categories, "name")} onChange={(value) => update("applicableCategoryIds", value)} />}
+          {form.applicableScope === "occasion" && <ModalMultiSelect label="Dịp áp dụng" value={form.applicableOccasionIds} options={options(occasions, "name")} onChange={(value) => update("applicableOccasionIds", value)} />}
+          {form.applicableScope === "product" && <ModalMultiSelect label="Trang phục áp dụng" value={form.applicableProductIds} options={options(costumes, "name")} onChange={(value) => update("applicableProductIds", value)} />}
         </div>
-        <label>Mô tả<textarea value={form.description} onChange={(e) => update("description", e.target.value)} /></label>
+        <label className="voucher-description-field">Mô tả<textarea value={form.description} onChange={(e) => update("description", e.target.value)} /></label>
+        <label className="voucher-public-field"><input type="checkbox" checked={form.isPublic} onChange={(event) => update("isPublic", event.target.checked)} /><span>Công khai voucher trên trang ưu đãi cho khách</span></label>
         <div className="modal-actions"><AdminButton type="button" onClick={onClose}>Hủy</AdminButton><AdminButton type="submit" variant="primary">Lưu</AdminButton></div>
       </form>
     </AdminModal>
@@ -2664,7 +2781,7 @@ function PaymentManager({ rows, notify, reload, canConfirm }) {
             paymentType: (value) => paymentTypeLabels[value] || value,
             method: (value) => value === "payos" ? "QR ngân hàng" : value === "cash" ? "Tiền mặt" : value === "bank_transfer" ? "Chuyển khoản ngân hàng" : value,
             provider: (value) => value === "payos" ? "payOS" : value,
-            status: (value) => <span className={"badge " + value}>{getStatusLabel(value)}</span>
+            status: (value) => <StatusBadge type="payment" value={value} />
           }}
           actions={(row) => <AdminButton onClick={() => navigate(`/payments/${itemId(row)}`)}><Eye size={14} /> Xem</AdminButton>}
           tableClassName="payment-table"
@@ -2711,7 +2828,7 @@ function PaymentDetailModal({ id, fallback, notify, onChanged, onClose, canConfi
         <div className="payment-detail">
           <section className="payment-review-summary">
             <div><small>GIAO DỊCH KHÁCH HÀNG</small><h2>{money(payment.amount)}</h2><p>{paymentTypeLabels[payment.paymentType] || payment.paymentType} · {order.orderCode || `ARA-${String(itemId(order)).slice(-6).toUpperCase()}`}</p></div>
-            <span className={`badge ${payment.status}`}>{getStatusLabel(payment.status)}</span>
+            <StatusBadge type={isRefund ? "refund" : "payment"} value={payment.status} />
           </section>
           <div className="detail-list payment-transaction-details">
             <DetailRow label={isRefund ? "Mã hoàn cọc" : "Mã thanh toán"} value={isRefund ? (payment.refundCode || payment.paymentReference) : (payment.paymentReference || itemId(payment))} />
@@ -2725,7 +2842,7 @@ function PaymentDetailModal({ id, fallback, notify, onChanged, onClose, canConfi
             {!isRefund && <DetailRow label="Mã giao dịch provider" value={payment.providerTransactionId} />}
             <DetailRow label={"Lo\u1ea1i thanh to\u00e1n"} value={paymentTypeLabels[payment.paymentType] || payment.paymentType} />
             <DetailRow label={"M\u00e3 tham chi\u1ebfu"} value={payment.paymentReference} />
-            <DetailRow label={"Tr\u1ea1ng th\u00e1i"} value={payment.status} status />
+            <DetailRow label={"Tr\u1ea1ng th\u00e1i"} value={payment.status} statusType={isRefund ? "refund" : "payment"} />
             <DetailRow label={"Ng\u00e0y thanh to\u00e1n"} value={formatDateTime(payment.paidAt)} />
             <DetailRow label={"Ng\u00e0y t\u1ea1o"} value={formatDateTime(payment.createdAt)} />
           </div>
@@ -2740,7 +2857,7 @@ function PaymentDetailModal({ id, fallback, notify, onChanged, onClose, canConfi
           <div className="detail-list payment-order-totals">
             <DetailRow label={"Ng\u00e0y thu\u00ea"} value={formatDate(order.rentalDate)} />
             <DetailRow label={"Ng\u00e0y tr\u1ea3"} value={formatDate(order.returnDate)} />
-            <DetailRow label={"Tr\u1ea1ng th\u00e1i \u0111\u01a1n"} value={order.status} status />
+            <DetailRow label={"Tr\u1ea1ng th\u00e1i \u0111\u01a1n"} value={order.status} statusType="order" />
             <DetailRow label={"Ti\u1ec1n thu\u00ea"} value={money(order.totalRentalPrice)} />
             <DetailRow label={"Ti\u1ec1n c\u1ecdc"} value={money(order.totalDepositAmount)} />
             <DetailRow label={"Ph\u00ed ph\u1ea1t"} value={money(penaltyFee)} />
@@ -2846,8 +2963,8 @@ function PaymentDetailModal({ id, fallback, notify, onChanged, onClose, canConfi
   );
 }
 
-function DetailRow({ label, value, status = false }) {
-  return <div className="detail-row"><span>{label}</span><strong>{status ? getStatusLabel(value) : display(value)}</strong></div>;
+function DetailRow({ label, value, statusType = "" }) {
+  return <div className="detail-row"><span>{label}</span><strong>{statusType ? getStatusLabel(value, statusType) : display(value)}</strong></div>;
 }
 
 function Reports({ stats, orders, costumes, summary }) {
@@ -2890,7 +3007,7 @@ function AdminTable({ title, rows = [], columns, labels, format = {}, actions, c
   }, [page, totalPages]);
 
   return (
-    <div className={`admin-table-wrap ${mobileCards ? "admin-table-mobile-cards" : ""}`.trim()}>
+    <div className={`admin-table-wrap ${mobileCards ? "admin-table-mobile-cards" : ""} ${tableClassName ? `${tableClassName}-wrap` : ""}`.trim()}>
       {title && <h2>{title}</h2>}
       {safeRows.length === 0 ? <EmptyState /> : (
         <>

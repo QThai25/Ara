@@ -1,4 +1,25 @@
-import { body } from "express-validator";
+import { body, query } from "express-validator";
+
+const ORDER_STATUSES = ["pending", "pending_confirmation", "pending_payment", "confirmed", "preparing", "deposit_paid", "deposited", "paid", "ready_to_pickup", "ready_for_pickup", "ready_for_handover", "outbound_in_transit", "return_in_transit", "delivery_failed", "returning_to_shop", "renting", "returned", "completed", "canceled", "cancelled", "rejected", "expired", "overdue", "returned_pending", "returned_inspected"];
+const PAYMENT_STATUSES = ["pending", "unpaid", "awaiting_payment", "awaiting_confirmation", "awaiting_verification", "partially_paid", "failed", "expired", "deposited", "deposit_paid", "paid", "fully_paid", "settlement_pending", "settled", "refunded"];
+
+export const listAdminRentalOrdersValidation = [
+  query("page").optional().isInt({ min: 1, max: 1000000 }).withMessage("Trang dữ liệu không hợp lệ.").toInt(),
+  query("limit").optional().isInt({ min: 1, max: 50 }).withMessage("Số bản ghi mỗi trang không hợp lệ.").toInt(),
+  query("search").optional().isString().trim().isLength({ max: 100 }).withMessage("Từ khóa tìm kiếm không được vượt quá 100 ký tự."),
+  query("status").optional().isIn(ORDER_STATUSES).withMessage("Trạng thái đơn thuê không hợp lệ."),
+  query("paymentStatus").optional().isIn(PAYMENT_STATUSES).withMessage("Trạng thái thanh toán không hợp lệ."),
+  query("pickupMethod").optional().isIn(["store_pickup", "home_delivery"]).withMessage("Cách nhận đồ không hợp lệ."),
+  query("returnMethod").optional().isIn(["store_return", "home_collection"]).withMessage("Cách trả đồ không hợp lệ."),
+  query("source").optional().isIn(["online", "walk_in", "admin", "migration"]).withMessage("Nguồn đơn không hợp lệ."),
+  query("rentalDays").optional().isInt({ min: 1, max: 30 }).withMessage("Số ngày thuê không hợp lệ.").toInt(),
+  query("extraDays").optional().isIn(["yes", "no"]).withMessage("Bộ lọc ngày giữ thêm không hợp lệ."),
+  query("overdue").optional().isBoolean().withMessage("Bộ lọc quá hạn không hợp lệ."),
+  query("dateField").optional().isIn(["pickup", "main", "return"]).withMessage("Loại ngày lọc không hợp lệ."),
+  query("dateFrom").optional().isISO8601({ strict: true }).withMessage("Ngày bắt đầu không hợp lệ."),
+  query("dateTo").optional().isISO8601({ strict: true }).withMessage("Ngày kết thúc không hợp lệ."),
+  query("workflow").optional().equals("inspection").withMessage("Luồng xử lý không hợp lệ.")
+];
 
 export const createRentalOrderValidation = [
   body("policyAccepted")
@@ -19,6 +40,7 @@ export const createRentalOrderValidation = [
   body("requestedStartAt").optional().isISO8601().withMessage("Thời điểm nhận đồ không hợp lệ."),
   body("source").optional().isIn(["online", "walk_in", "admin"]).withMessage("Nguồn đơn không hợp lệ."),
   body("idempotencyKey").optional().isString().trim().isLength({ min: 8, max: 120 }).withMessage("Idempotency key không hợp lệ."),
+  body("voucherCode").optional({ checkFalsy: true }).isString().trim().isLength({ min: 2, max: 40 }).withMessage("Mã ưu đãi không hợp lệ."),
 
   body("items")
     .isArray({ min: 1 })

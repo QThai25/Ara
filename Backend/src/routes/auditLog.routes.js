@@ -11,6 +11,11 @@ auditLogRoutes.get("/", [
   query("search").optional().trim().isLength({ max: 120 }).withMessage("Từ khóa quá dài."),
   query("actorRole").optional().isIn(["owner", "staff"]).withMessage("Role không hợp lệ."),
   query("actorId").optional().isMongoId().withMessage("Mã người thực hiện không hợp lệ."),
+  query("customerId").optional().isMongoId().withMessage("Mã khách hàng không hợp lệ."),
+  query("actor").optional().trim().isLength({ max: 120 }).withMessage("Bộ lọc nhân viên quá dài."),
+  query("customer").optional().trim().isLength({ max: 120 }).withMessage("Bộ lọc khách hàng quá dài."),
+  query("action").optional().trim().isLength({ max: 120 }).withMessage("Hành động không hợp lệ."),
+  query("result").optional().trim().isLength({ max: 80 }).withMessage("Kết quả không hợp lệ."),
   query("from")
     .optional()
     .matches(/^\d{4}-\d{2}-\d{2}$/)

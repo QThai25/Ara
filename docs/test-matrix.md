@@ -1,6 +1,6 @@
 # Test matrix
 
-Cập nhật: **30/07/2026**. `Pass` chỉ áp dụng cho test/lệnh đã chạy; browser/DB-backed case giữ trạng thái pending/blocked.
+Cập nhật: **02/08/2026**. `Pass` chỉ áp dụng cho test/lệnh đã chạy; browser/DB-backed case giữ trạng thái pending/blocked.
 
 | ID | Module | Flow | Actor | Preconditions | Test type | Expected result | Status |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -34,6 +34,14 @@ Cập nhật: **30/07/2026**. `Pass` chỉ áp dụng cho test/lệnh đã chạ
 | REF-01 | Refund | Process/complete refund | Staff/Owner | Valid DepositRefund | Policy/service | Staff denied; Owner remains subject to ledger/idempotency guard | Pass |
 | TAX-01 | Costume taxonomy | Create with category defaults | Owner | Active taxonomy | Unit | Default style/occasion arrays applied | Pass |
 | TAX-02 | Costume taxonomy | Update existing costume | Owner | Saved arrays | Unit | Defaults do not overwrite saved values | Pass |
+| TAX-03 | Costume taxonomy | Submit style/occasion multi-select values | Owner | Admin editor payload | Unit + UI contract | Payload contains unique non-empty ID arrays instead of component objects | Pass |
+| LIST-01 | Admin rental list | Search/filter/date/page outside first 50 rows | Staff/Owner | API list query | Service/unit + UI contract | Backend applies query and returns real total/pagination; UI sends and preserves URL state | Pass |
+| LIST-02 | Admin payment list | Search/filter/page outside first 100 rows | Owner | API list query | Service/unit + UI contract | Backend applies query and UI consumes pagination metadata | Pass |
+| CATALOG-01 | Customer catalog | Load page 2 with a bounded page size | Customer | Catalog data | Service/unit + UI contract | Backend returns items plus pagination; frontend preserves page/filter in URL | Pass |
+| CATALOG-02 | Customer catalog | Render product-card schedule summary | Customer | Catalog data | Service unit | List request performs no RentalOrder/RentalOrderItem query per card; detail endpoints retain full availability checks | Pass |
+| AUTH-05 | Password recovery | Trusted browser → request ticket → set password | Customer | Trusted-device cookie hợp lệ | Validation/service unit + UI contract | HttpOnly ticket 5 phút, hash only, atomic single-use, session revocation | Pass |
+| AUTH-06 | Staff grant recovery | Owner/staff mở quyền → khách ở browser khác đặt mật khẩu | Owner/Staff/Customer | Customer active, grant 15 phút | Service unit + Admin UI contract | Menu có action riêng, double-click reuse, grant single-use, không lộ password/token | Pass; DB/browser E2E pending |
+| UX-01 | Mobile booking table | Inspect table at <=768px | Customer | Frontend source/build | CSS/DOM regression | Table remains horizontally scrollable; day/date columns are static, no card/accordion | Pass (automated contract); browser visual pending |
 | CHAT-01 | ARI | Customer requests staff | Customer/guest | Conversation exists | Unit | Conversation transitions to waiting state | Pass |
 | CHAT-02 | ARI | Open customer chat | Customer/guest | Chat API available | Static/API contract + build | Conversation and recent history load through one bootstrap request; initial socket connection does not refetch history | Pass; live latency pending |
 | NOTIF-01 | Notification | User reads own notification | Customer | Owned notification | Unit/static | Recipient scope retained | Pass |
@@ -44,4 +52,12 @@ Cập nhật: **30/07/2026**. `Pass` chỉ áp dụng cho test/lệnh đã chạ
 
 Tests must remain order-independent. Database-backed E2E should use a dedicated database and deterministic seeds; it must never target production.
 
-Kết quả suite gần nhất: Backend 181/181, AdminFrontend 4/4, Customer/Admin production build pass. Repository không có lint script và Customer test runner.
+Kết quả suite gần nhất: Backend **222/222**, Frontend **17/17**, AdminFrontend **28/28**; Backend `npm run check` pass; cả hai production build pass. Browser mutation/E2E với database test cô lập vẫn chưa chạy.
+# Voucher
+
+- Percent/fixed, minimum order, maximum discount, upcoming/expired/inactive/exhausted.
+- Eligibility: all, first order, returning customer, specific customers.
+- Scope: all costumes, category, occasion, product.
+- Per-customer/total limits, concurrent last-use and concurrent first-order claims.
+- Checkout apply/remove/refresh, server-calculated discount and immutable order snapshot.
+- Admin read-only usage count, business status, validation, RBAC and soft delete.

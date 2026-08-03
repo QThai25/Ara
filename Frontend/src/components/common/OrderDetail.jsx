@@ -82,6 +82,7 @@ export function OrderDetail({
   paymentQuotes = {},
   payments = [],
   onAddRefundDestination,
+  savedRefundDestination = null,
   paymentActionPending = false,
   readonly = false
 }) {
@@ -133,6 +134,7 @@ export function OrderDetail({
   const isCompleted = orderStatus === "completed";
   const paidAmount = Number(order.pricing?.paidAmount || 0);
   const refundedDeposit = Number(order.financialSnapshot?.depositAmountRefunded || order.pricing?.refundedAmount || 0);
+  const refundDestination = order.refundDestinationSnapshot || (!isCompleted ? savedRefundDestination : null);
 
   const hasLogistics =
     order.approvedAt ||
@@ -321,7 +323,7 @@ export function OrderDetail({
           {Number(order.totalPenalty || penaltyAmount || 0) > 0 && <div><dt>Phí phát sinh</dt><dd>{money(order.totalPenalty || penaltyAmount)}</dd></div>}
         </dl>
 
-        {Number(order.totalDepositAmount || 0) > 0 && (order.refundDestinationSnapshot ? <div className="ara-refund-destination-summary"><span className="ara-refund-destination-summary__icon"><Landmark size={20}/></span><div><small>{isCompleted ? "Tài khoản đã nhận hoàn cọc" : "Tài khoản nhận hoàn cọc"}</small><strong>{order.refundDestinationSnapshot.bankName}</strong><span>{order.refundDestinationSnapshot.maskedAccountNumber} · {order.refundDestinationSnapshot.accountName || order.refundDestinationSnapshot.accountHolderName}</span></div>{!isCompleted && onAddRefundDestination && <button type="button" disabled={paymentActionPending} onClick={onAddRefundDestination}>Thay đổi</button>}</div> : !isCompleted && <div className="ara-refund-destination-warning" role="status"><AlertCircle size={21}/><div><strong>Chưa có tài khoản nhận hoàn cọc</strong><p>Hãy bổ sung tài khoản để ARA có thể hoàn lại tiền cọc sau khi nhận và kiểm tra đồ.</p></div>{onAddRefundDestination && <button type="button" disabled={paymentActionPending} onClick={onAddRefundDestination}>Bổ sung tài khoản</button>}</div>)}
+        {Number(order.totalDepositAmount || 0) > 0 && (refundDestination ? <div className="ara-refund-destination-summary"><span className="ara-refund-destination-summary__icon"><Landmark size={20}/></span><div><small>{isCompleted ? "Tài khoản đã nhận hoàn cọc" : "Tài khoản nhận hoàn cọc mặc định"}</small><strong>{refundDestination.bankName || refundDestination.label || "VietQR nhận hoàn cọc"}</strong><span>{refundDestination.maskedAccountNumber || "Mã VietQR đã lưu"} · {refundDestination.accountName || refundDestination.accountHolderName || "Đã lưu trong tài khoản"}</span></div>{!isCompleted && onAddRefundDestination && <button type="button" disabled={paymentActionPending} onClick={onAddRefundDestination}>Thay đổi</button>}</div> : !isCompleted && <div className="ara-refund-destination-warning" role="status"><AlertCircle size={21}/><div><strong>Chưa có tài khoản nhận hoàn cọc</strong><p>Hãy bổ sung tài khoản để ARA có thể hoàn lại tiền cọc sau khi nhận và kiểm tra đồ.</p></div>{onAddRefundDestination && <button type="button" disabled={paymentActionPending} onClick={onAddRefundDestination}>Bổ sung tài khoản</button>}</div>)}
 
         <div className="ara-customer-payment-method"><div><span>Phương thức thanh toán</span><strong>{methodLabel}</strong><small>{isCompleted ? "Thông tin thanh toán đã được chốt cùng đơn thuê" : methodHelp}</small></div>{!isCompleted && preferredQuote && <button type="button" disabled={paymentActionPending} onClick={() => pay(order, preferredQuote[0], preferredQuote[1])}>Thay đổi</button>}</div>
 

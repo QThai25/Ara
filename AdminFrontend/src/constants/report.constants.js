@@ -23,8 +23,7 @@ export const PAYMENT_TYPE_OPTIONS = [
   ["deposit", "Tiền cọc"],
   ["full", "Thanh toán toàn bộ"],
   ["rental_balance", "Phần còn lại"],
-  ["penalty", "Khoản phạt"],
-  ["refund", "Hoàn cọc"]
+  ["penalty", "Khoản phạt"]
 ];
 
 export const PAYMENT_METHOD_OPTIONS = [

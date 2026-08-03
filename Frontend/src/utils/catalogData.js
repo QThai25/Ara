@@ -72,17 +72,20 @@ export const benefits = [
   {
     icon: Shirt,
     title: "Tủ đồ Ara",
-    description: "Hơn 1000 sản phẩm cao cấp, đa dạng phong cách"
+    description: "Hơn 1000 sản phẩm cao cấp, đa dạng phong cách",
+    to: "/costumes"
   },
   {
     icon: Sparkles,
     title: "Bộ sưu tập mới",
-    description: "Luôn cập nhật những bộ sưu tập thịnh hành"
+    description: "Luôn cập nhật những bộ sưu tập thịnh hành",
+    to: "/costumes?sort=newest"
   },
   {
     icon: Gift,
     title: "Ưu đãi",
-    description: "Hưởng nhiều ưu đãi hấp dẫn khi thuê tại Ara"
+    description: "Hưởng nhiều ưu đãi hấp dẫn khi thuê tại Ara",
+    to: "/offers"
   }
 ];
 

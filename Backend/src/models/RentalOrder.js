@@ -240,6 +240,21 @@ const rentalOrderSchema = new mongoose.Schema(
       min: 0
     },
 
+    grossRentalAmount: { type: Number, default: 0, min: 0 },
+    discountAmount: { type: Number, default: 0, min: 0 },
+    voucher: {
+      voucherId: { type: mongoose.Schema.Types.ObjectId, ref: "Voucher", default: null },
+      code: { type: String, default: "", trim: true, uppercase: true },
+      name: { type: String, default: "", trim: true },
+      discountType: { type: String, enum: ["percent", "fixed", ""], default: "" },
+      discountValue: { type: Number, default: 0, min: 0 },
+      discountAmount: { type: Number, default: 0, min: 0 },
+      eligibilityType: { type: String, default: "" },
+      applicableScope: { type: String, default: "all" },
+      eligibleCostumeIds: [{ type: mongoose.Schema.Types.ObjectId, ref: "Costume" }],
+      eligibleRentalAmount: { type: Number, default: 0, min: 0 }
+    },
+
     totalDepositAmount: {
       type: Number,
       default: 0,

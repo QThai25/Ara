@@ -44,7 +44,7 @@ export async function getMyRentalOrder(id, config = {}) {
 export async function cancelRentalOrder(id) {
   return apiClient.patch(`/rental-orders/${id}/cancel`);
 }
-export const getRentalCredits = async () => (await apiClient.get("/rental-orders/credits/available")).data;
+export const getRentalCredits = async (config = {}) => (await apiClient.get("/rental-orders/credits/available", config)).data;
 export const getOrderRefund = async id => (await apiClient.get(`/rental-orders/${id}/refund`)).data;
 export const selectOrderRefundDestination = (id, refundDestinationId) => apiClient.patch(`/rental-orders/${id}/refund-destination`, { refundDestinationId });
 export const captureOrderRefundDestination = (id, body, config = {}) => apiClient.patch(`/rental-orders-refunds/${id}/destination-input`, body, config).then((response) => response?.data?.data ?? response?.data);

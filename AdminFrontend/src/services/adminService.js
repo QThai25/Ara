@@ -17,8 +17,8 @@ export async function getAdminCustomers() {
   return response.data;
 }
 
-export async function getAdminPayments() {
-  const response = await apiClient.get("/admin/payments", { params: { page: 1, limit: 100 } });
+export async function getAdminPayments(params = {}) {
+  const response = await apiClient.get("/admin/payments", { params });
   return response.data?.items || response.data || [];
 }
 

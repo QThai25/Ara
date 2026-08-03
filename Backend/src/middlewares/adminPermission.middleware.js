@@ -14,12 +14,17 @@ export function requireAdminPermission(permissionOrResolver) {
       return;
     }
 
+    const passwordResetGrantMatch = /\/admin\/customers\/([^/?]+)\/password-reset-grant(?:\?|$)/.exec(req.originalUrl);
+    const passwordResetGrantRoute = Boolean(passwordResetGrantMatch);
+    const passwordResetCustomerId = passwordResetGrantMatch?.[1] || "";
     recordAuditEvent({
       actor: req.user,
-      action: "authorization.permission_denied",
-      resourceType: "admin_route",
-      resourceId: req.originalUrl.split("?")[0],
-      reason: `Missing permission: ${permission || "unmapped"}`,
+      action: passwordResetGrantRoute ? "password_reset_grant_rejected" : "authorization.permission_denied",
+      resourceType: passwordResetGrantRoute ? "password_reset_grant" : "admin_route",
+      resourceId: passwordResetGrantRoute ? passwordResetCustomerId : req.originalUrl.split("?")[0],
+      customerId: passwordResetGrantRoute ? passwordResetCustomerId : null,
+      result: passwordResetGrantRoute ? "rejected" : "",
+      reason: passwordResetGrantRoute ? "insufficient_permission" : `Missing permission: ${permission || "unmapped"}`,
       ...requestAuditContext(req)
     }).catch(() => {});
 

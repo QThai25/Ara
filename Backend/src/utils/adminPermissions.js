@@ -33,6 +33,7 @@ export const ADMIN_PERMISSIONS = Object.freeze({
 
   CUSTOMERS_VIEW_OPERATIONAL: "customers.view_operational",
   CUSTOMERS_MANAGE_SENSITIVE: "customers.manage_sensitive",
+  CUSTOMERS_RESET_PASSWORD: "customers.reset_password",
 
   NOTIFICATIONS_SEND_ORDER: "notifications.send_order",
   NOTIFICATIONS_MANAGE: "notifications.manage",
@@ -58,6 +59,7 @@ const staffPermissions = Object.freeze([
   ADMIN_PERMISSIONS.INVENTORY_VIEW,
   ADMIN_PERMISSIONS.INVENTORY_OPERATE,
   ADMIN_PERMISSIONS.CUSTOMERS_VIEW_OPERATIONAL,
+  ADMIN_PERMISSIONS.CUSTOMERS_RESET_PASSWORD,
   ADMIN_PERMISSIONS.NOTIFICATIONS_SEND_ORDER
 ]);
 

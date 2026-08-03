@@ -2,12 +2,14 @@ export const views = {
   home: "home",
   login: "login",
   register: "register",
+  forgotPassword: "forgotPassword",
   catalog: "catalog",
   detail: "detail",
   cart: "cart",
   wishlist: "wishlist",
   policy: "policy",
   contact: "contact",
+  offers: "offers",
   orders: "orders"
   ,rentalOrderSuccess: "rentalOrderSuccess"
   ,rentalOrderLookup: "rentalOrderLookup"
@@ -23,12 +25,14 @@ export function viewFromPath(pathname) {
   if (pathname.startsWith("/costumes/")) return { view: views.detail, costumeId: pathname.split("/")[2] };
   if (pathname === "/login") return { view: views.login };
   if (pathname === "/register") return { view: views.register };
+  if (pathname === "/forgot-password") return { view: views.forgotPassword };
   if (pathname === "/rental-cart") return { view: views.cart };
   if (pathname === "/wishlist") return { view: views.wishlist };
   if (pathname === "/rental-policy") return { view: views.policy };
   if (pathname === "/terms") return { view: views.terms };
   if (pathname === "/privacy") return { view: views.privacy };
   if (pathname === "/contact") return { view: views.contact };
+  if (pathname === "/offers") return { view: views.offers };
   if (pathname === "/account") return { view: views.account };
   if (pathname === "/my-rentals") return { view: views.orders };
   if (pathname.startsWith("/my-rentals/")) return { view: views.orders, orderId: pathname.split("/")[2] };
@@ -45,12 +49,14 @@ export const paths = {
   catalog: "/costumes",
   login: "/login",
   register: "/register",
+  forgotPassword: "/forgot-password",
   cart: "/rental-cart",
   wishlist: "/wishlist",
   policy: "/rental-policy",
   terms: "/terms",
   privacy: "/privacy",
   contact: "/contact",
+  offers: "/offers",
   account: "/account",
   orders: "/my-rentals",
   orderDetail: (id) => `/my-rentals/${id}`,

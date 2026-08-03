@@ -1,8 +1,12 @@
 import React from "react";
 import { Link } from "react-router-dom";
 
-export function IconCard({ icon: Icon, label, description, to, active = false, ariaLabel }) {
-  const className = `${description ? "benefit-card" : "icon-card"}${active ? " active" : ""}`;
+export function IconCard({ icon: Icon, label, description, to, active = false, ariaLabel, onClick }) {
+  const className = [
+    description ? "benefit-card" : "icon-card",
+    to ? "is-interactive" : "is-static",
+    active ? "active" : ""
+  ].filter(Boolean).join(" ");
   const content = (
     <>
       <Icon size={description ? 34 : 30} strokeWidth={1.35} />
@@ -15,7 +19,13 @@ export function IconCard({ icon: Icon, label, description, to, active = false, a
 
   if (to) {
     return (
-      <Link className={className} to={to} aria-label={ariaLabel || label}>
+      <Link
+        className={className}
+        to={to}
+        onClick={onClick}
+        aria-label={ariaLabel || label}
+        aria-current={active ? "page" : undefined}
+      >
         {content}
       </Link>
     );

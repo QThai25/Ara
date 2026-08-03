@@ -655,6 +655,7 @@ export function AdminRentalOrderDetailPage({ notify }) {
                 label="Thanh toán"
                 value={
                   <AdminStatusBadge
+                    type="payment"
                     value={
                       order.paymentStatus ||
                       "pending"
@@ -1004,6 +1005,7 @@ export function AdminRentalOrderDetailPage({ notify }) {
                   </strong>
 
                   <AdminStatusBadge
+                    type="payment"
                     value={
                       order.paymentStatus ||
                       "pending"
@@ -1068,6 +1070,7 @@ export function AdminRentalOrderDetailPage({ notify }) {
                     </small>
 
                     <AdminStatusBadge
+                      type="payment"
                       value={
                         order.latestPaymentId
                           .status

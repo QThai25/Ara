@@ -14,6 +14,7 @@ import {
   paymentQuoteValidation,
   paymentQuoteParamValidation,
   paymentIdValidation,
+  listAdminPaymentsValidation,
   reportTransferValidation,
   rejectPaymentValidation
 } from "../validations/payment.validation.js";
@@ -102,6 +103,8 @@ adminPaymentRoutes.get(
   "/",
   auth,
   adminOnly,
+  listAdminPaymentsValidation,
+  validate,
   controller.listAdminPayments
 );
 

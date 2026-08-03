@@ -101,7 +101,7 @@ export function ProductCard({
 
       <div className="mei-product-card-status-band">
         <StatusBadge
-          type="costume"
+          type={product.bookingStatus ? "booking" : "costume"}
           value={product.bookingStatus || product.status}
         />
       </div>

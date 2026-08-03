@@ -106,24 +106,31 @@ const axis = {
   ticks: { color: "#756556", padding: 9, font: { size: 11 }, maxRotation: 0 },
 };
 
-export function RevenueAnalytics({ revenue = [], orders = [], loading = false, error = null, periodEyebrow = "Theo kỳ" }) {
-  const recentRevenue = revenue.slice(-14);
-  const recentOrders = orders.slice(-14);
+export function RevenueAnalytics({ revenue = [], orders = [], totalNetRevenue, loading = false, error = null, periodEyebrow = "Theo kỳ" }) {
   const latest = toNumber(revenue.at(-1)?.netRevenue);
   const previous = toNumber(revenue.at(-2)?.netRevenue);
   const growth = previous ? (latest - previous) / previous : 0;
-  const totalRevenue = recentRevenue.reduce((sum, row) => sum + toNumber(row.netRevenue), 0);
-  const totalOrders = recentOrders.reduce((sum, row) => sum + toNumber(row.totalOrders), 0);
+  const totalRevenue = totalNetRevenue === undefined
+    ? revenue.reduce((sum, row) => sum + toNumber(row.netRevenue), 0)
+    : toNumber(totalNetRevenue);
+  const totalOrders = orders.reduce((sum, row) => sum + toNumber(row.createdOrders), 0);
+  const pickedUpOrders = orders.reduce((sum, row) => sum + toNumber(row.pickedUpOrders), 0);
+  const returnedOrders = orders.reduce((sum, row) => sum + toNumber(row.returnedOrders), 0);
+  const completedOrders = orders.reduce((sum, row) => sum + toNumber(row.completedOrders), 0);
 
   const revenueSets = useMemo(() => [
     { label: "Thực nhận", data: revenue.map((row) => toNumber(row.netRevenue)), borderColor: "#3b2a22", backgroundColor: "rgba(74,51,40,.10)", pointStyle: "circle", borderWidth: 3, fill: true },
     { label: "Tiền cọc", data: revenue.map((row) => toNumber(row.depositRevenue)), borderColor: "#d09a24", backgroundColor: "#d09a24", pointStyle: "rectRot", borderWidth: 2.5, borderDash: [8, 5] },
-    { label: "Tiền thuê/toàn bộ", data: revenue.map((row) => toNumber(row.rentalRevenue)), borderColor: "#587467", backgroundColor: "#587467", pointStyle: "triangle", borderWidth: 2.5, borderDash: [2, 4] },
+    { label: "Thanh toán đơn thuê", data: revenue.map((row) => toNumber(row.rentalRevenue)), borderColor: "#587467", backgroundColor: "#587467", pointStyle: "triangle", borderWidth: 2.5, borderDash: [2, 4] },
+    { label: "Số tiền đã hoàn", data: revenue.map((row) => toNumber(row.refundedAmount)), borderColor: "#9f6b61", backgroundColor: "#9f6b61", pointStyle: "rect", borderWidth: 2, borderDash: [5, 4] },
   ], [revenue]);
   const activitySets = useMemo(() => [
-    { label: "Doanh thu thực nhận", data: recentRevenue.map((row) => toNumber(row.netRevenue)), yAxisID: "revenue", borderColor: "#3b2a22", backgroundColor: "rgba(74,51,40,.09)", pointStyle: "circle", borderWidth: 3, fill: true },
-    { label: "Đơn thuê mới", data: recentOrders.map((row) => toNumber(row.totalOrders)), yAxisID: "orders", borderColor: "#d09a24", backgroundColor: "#d09a24", pointStyle: "rectRot", borderWidth: 2.5, borderDash: [8, 5] },
-  ], [recentRevenue, recentOrders]);
+    { label: "Doanh thu thực nhận", data: revenue.map((row) => toNumber(row.netRevenue)), yAxisID: "revenue", borderColor: "#3b2a22", backgroundColor: "rgba(74,51,40,.09)", pointStyle: "circle", borderWidth: 3, fill: true },
+    { label: "Đơn được tạo", data: orders.map((row) => toNumber(row.createdOrders)), yAxisID: "orders", borderColor: "#d09a24", backgroundColor: "#d09a24", pointStyle: "rectRot", borderWidth: 2.5, borderDash: [8, 5] },
+    { label: "Khách đã nhận đồ", data: orders.map((row) => toNumber(row.pickedUpOrders)), yAxisID: "orders", borderColor: "#587467", backgroundColor: "#587467", pointStyle: "triangle", borderWidth: 2, borderDash: [3, 4] },
+    { label: "Đã trả đồ", data: orders.map((row) => toNumber(row.returnedOrders)), yAxisID: "orders", borderColor: "#9f6b61", backgroundColor: "#9f6b61", pointStyle: "rect", borderWidth: 2, borderDash: [2, 3] },
+    { label: "Hoàn tất", data: orders.map((row) => toNumber(row.completedOrders)), yAxisID: "orders", borderColor: "#80624f", backgroundColor: "#80624f", pointStyle: "circle", borderWidth: 2.5 },
+  ], [revenue, orders]);
   const revenueScales = useMemo(() => ({
     x: { ...axis, grid: { display: false }, ticks: { ...axis.ticks, autoSkip: true, maxTicksLimit: 10 } },
     y: { ...axis, beginAtZero: true, ticks: { ...axis.ticks, callback: (value) => compactMoney.format(value) } },
@@ -136,17 +143,17 @@ export function RevenueAnalytics({ revenue = [], orders = [], loading = false, e
 
   return (
     <div className="grid gap-[18px]" aria-label="Phân tích doanh thu và đơn thuê">
-      <ChartShell icon={<Banknote size={20} />} eyebrow={periodEyebrow} title="Cơ cấu doanh thu qua các kỳ" description="So sánh doanh thu thực nhận, tiền cọc và tiền thuê phát sinh trong từng kỳ." loading={loading} error={error} empty={!revenue.length} metrics={[
+      <ChartShell icon={<Banknote size={20} />} eyebrow={periodEyebrow} title="Tiền đã thu, đã hoàn và thực nhận" description="Mỗi kỳ cho biết cửa hàng đã thu bao nhiêu, đã hoàn bao nhiêu và còn thực nhận bao nhiêu." loading={loading} error={error} empty={!revenue.length} metrics={[
         { label: "Kỳ gần nhất", value: money.format(latest) },
         { label: "So với kỳ trước", value: percent.format(growth), accent: growth >= 0 ? "text-[#60745f]" : "text-[#9f6b61]" },
       ]}>
         <DeferredLineCanvas data={revenue} datasets={revenueSets} scales={revenueScales} ariaLabel="Biểu đồ cơ cấu doanh thu qua các kỳ" />
       </ChartShell>
-      <ChartShell icon={<PackageCheck size={20} />} eyebrow="14 kỳ gần nhất" title="Biến động doanh thu và đơn thuê" description="Đối chiếu doanh thu thực nhận với số đơn thuê mới theo cùng khoảng thời gian." loading={loading} error={error} empty={!revenue.length || !orders.length} metrics={[
+      <ChartShell icon={<PackageCheck size={20} />} eyebrow={periodEyebrow} title="Biến động doanh thu và đơn thuê" description="Đối chiếu doanh thu, đơn mới, nhận đồ, trả đồ và hoàn tất trong toàn bộ khoảng đã chọn." loading={loading} error={error} empty={!revenue.length || !orders.length} metrics={[
         { label: "Tổng thực nhận", value: money.format(totalRevenue) },
-        { label: "Tổng đơn thuê", value: `${count.format(totalOrders)} đơn` },
+        { label: "Tạo / nhận / trả / hoàn tất", value: `${count.format(totalOrders)} / ${count.format(pickedUpOrders)} / ${count.format(returnedOrders)} / ${count.format(completedOrders)}` },
       ]}>
-        <DeferredLineCanvas data={recentRevenue} datasets={activitySets} scales={activityScales} ariaLabel="Biểu đồ doanh thu và đơn thuê" />
+        <DeferredLineCanvas data={revenue} datasets={activitySets} scales={activityScales} ariaLabel="Biểu đồ doanh thu, đơn mới, nhận đồ, trả đồ và hoàn tất" />
       </ChartShell>
     </div>
   );

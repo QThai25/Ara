@@ -2646,7 +2646,7 @@ button:disabled,
   box-shadow: 0 12px 32px rgba(77, 54, 27, 0.07);
 }
 
-.benefit-card:hover,
+.benefit-card.is-interactive:hover,
 .icon-card:hover,
 .policy-card:hover,
 .order-row:hover {
@@ -4135,6 +4135,104 @@ button:disabled,
   margin: 28px auto 64px;
 }
 
+.state>button {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  margin: 12px 0 0 12px;
+  padding: 0 16px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  background: #fff;
+  color: inherit;
+  font-weight: 800;
+}
+
+.ara-account-empty {
+  display: grid;
+  min-height: 230px;
+  place-items: center;
+  align-content: center;
+  padding: 30px;
+  border: 1px dashed #d9bb94;
+  border-radius: 18px;
+  background: linear-gradient(145deg, #fffaf3, #f8efe3);
+  text-align: center;
+}
+
+.ara-account-empty>span {
+  display: grid;
+  width: 54px;
+  height: 54px;
+  place-items: center;
+  border-radius: 15px;
+  background: #ead4ad;
+  color: #62412d;
+}
+
+.ara-account-empty h3 {
+  margin: 15px 0 7px;
+  font-family: var(--ara-display-font);
+  font-size: 23px;
+}
+
+.ara-account-empty p {
+  max-width: 480px;
+  margin: 0;
+  color: #7c695c;
+  line-height: 1.6;
+}
+
+.ara-account-empty button {
+  min-height: 44px;
+  margin-top: 17px;
+  padding: 0 18px;
+  border: 1px solid #3b251c;
+  border-radius: 999px;
+  background: #3b251c;
+  color: #fff;
+  font-weight: 800;
+}
+
+.ara-not-found {
+  display: grid;
+  width: min(680px, calc(100% - 28px));
+  min-height: 440px;
+  place-items: center;
+  align-content: center;
+  margin: 45px auto 80px;
+  padding: clamp(28px, 6vw, 62px);
+  border: 1px solid #e2cfb7;
+  border-radius: 26px;
+  background: radial-gradient(circle at 100% 0, rgba(203, 165, 104, 0.2), transparent 38%), #fffdf9;
+  text-align: center;
+  box-shadow: 0 24px 64px rgba(64, 42, 27, 0.1);
+}
+
+.ara-not-found>span {
+  display: grid;
+  width: 64px;
+  height: 64px;
+  place-items: center;
+  border-radius: 18px;
+  background: #f1dfc2;
+  color: #6d472f;
+}
+
+.ara-not-found small { margin-top: 18px; color: #a16d42; font-weight: 900; letter-spacing: .16em; }
+.ara-not-found h1 { margin: 10px 0; font-family: var(--ara-display-font); font-size: clamp(38px, 7vw, 58px); }
+.ara-not-found p { max-width: 520px; margin: 0; color: #79675c; line-height: 1.7; }
+.ara-not-found>div { display: flex; flex-wrap: wrap; justify-content: center; gap: 9px; margin-top: 25px; }
+.ara-not-found>div :is(a,button) { display: inline-flex; min-height: 46px; align-items: center; justify-content: center; gap: 7px; padding: 0 18px; border: 1px solid #ccb18d; border-radius: 999px; background: #fffaf2; color: #3c281f; font-weight: 850; text-decoration: none; }
+.ara-not-found>div a { border-color: #3c281f; background: #3c281f; color: #fff; }
+
+@media (max-width: 480px) {
+  .ara-not-found { min-height: 390px; margin-top: 20px; border-radius: 20px; }
+  .ara-not-found>div { display: grid; width: 100%; }
+  .ara-not-found>div :is(a,button) { width: 100%; }
+}
+
 .costume-detail-skeleton__media,
 .costume-detail-skeleton__content > * {
   background: linear-gradient(100deg, #eee3d4 20%, #faf4ea 42%, #eee3d4 64%);
@@ -4160,6 +4258,98 @@ button:disabled,
 @media (prefers-reduced-motion: reduce) {
   .costume-detail-skeleton__media,
   .costume-detail-skeleton__content > * { animation: none; }
+}
+
+.ara-hero-skeleton__viewport {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: clamp(34px, 4vw, 70px);
+  width: 100%;
+  min-height: clamp(430px, 48vw, 770px);
+  padding: clamp(34px, 3.8vw, 58px);
+  overflow: hidden;
+  border: 1px solid rgba(145, 103, 67, 0.12);
+  border-radius: 32px;
+  background: #fffaf2;
+  box-shadow: 0 28px 80px rgba(72, 47, 31, 0.06);
+}
+
+.ara-hero-skeleton__media,
+.ara-hero-skeleton__content > * {
+  background: linear-gradient(100deg, #eee3d4 20%, #faf4ea 42%, #eee3d4 64%);
+  background-size: 220% 100%;
+  animation: ara-skeleton-shimmer 1.35s ease-in-out infinite;
+}
+
+.ara-hero-skeleton__media {
+  min-height: 100%;
+  border-radius: 22px;
+}
+
+.ara-hero-skeleton__content {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 18px;
+}
+
+.ara-hero-skeleton__eyebrow {
+  width: 150px;
+  height: 20px;
+  border-radius: 999px;
+}
+
+.ara-hero-skeleton__title {
+  width: 84%;
+  height: clamp(58px, 6vw, 110px);
+  border-radius: 14px;
+}
+
+.ara-hero-skeleton__line {
+  width: 100%;
+  height: 18px;
+  border-radius: 999px;
+}
+
+.ara-hero-skeleton__line--short { width: 72%; }
+
+.ara-hero-skeleton__actions {
+  width: 46%;
+  height: 54px;
+  margin-top: 22px;
+  border-radius: 999px;
+}
+
+.ara-hero-skeleton__gallery {
+  width: 100%;
+  min-height: 190px;
+  margin-top: 10px;
+  border-radius: 22px;
+}
+
+@media (max-width: 1100px) {
+  .ara-hero-skeleton__viewport {
+    grid-template-columns: 1fr;
+    min-height: 620px;
+  }
+
+  .ara-hero-skeleton__media { min-height: 300px; }
+}
+
+@media (max-width: 700px) {
+  .ara-hero-skeleton__viewport {
+    min-height: 620px;
+    padding: 26px 18px 20px;
+    border-radius: 22px;
+  }
+
+  .ara-hero-skeleton__media { min-height: 250px; }
+  .ara-hero-skeleton__gallery { min-height: 130px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ara-hero-skeleton__media,
+  .ara-hero-skeleton__content > * { animation: none; }
 }
 
 .costume-booking-section {
@@ -5317,6 +5507,16 @@ button:disabled,
   color: #83715b;
   font-size: 12px;
   font-weight: 650;
+}
+
+.booking-slot-accessibility-help {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 @media (max-width: 768px) {
@@ -7484,6 +7684,15 @@ button:disabled,
   transform: translateY(-2px);
 }
 
+.ara-occasion-navigation button:focus-visible {
+  outline: 2px solid #8e6041;
+  outline-offset: 3px;
+}
+
+.ara-occasion-navigation button:active:not(:disabled) {
+  transform: translateY(0) scale(0.96);
+}
+
 .ara-occasion-navigation button:disabled {
   cursor: default;
   opacity: 0.28;
@@ -7500,7 +7709,7 @@ button:disabled,
   scroll-behavior: smooth;
   scroll-snap-type: x mandatory;
   scrollbar-width: none;
-  touch-action: pan-y;
+  touch-action: pan-x pan-y;
   overscroll-behavior-inline: contain;
 }
 
@@ -7540,6 +7749,15 @@ button:disabled,
   border-color: rgba(164, 111, 74, 0.38);
   box-shadow: 0 15px 34px rgba(82, 55, 39, 0.1);
   transform: translateY(-4px);
+}
+
+.ara-occasion-item>*:focus-visible {
+  outline: 2px solid #8e6041;
+  outline-offset: 3px;
+}
+
+.ara-occasion-item>*:active {
+  transform: translateY(-1px) scale(0.985);
 }
 
 .ara-occasion-item> :is(.active, [aria-current="page"]) {
@@ -7714,8 +7932,8 @@ button:disabled,
   }
 
   .ara-occasion-navigation button {
-    width: 37px;
-    height: 37px;
+    width: 44px;
+    height: 44px;
   }
 
   .ara-occasion-item {
@@ -7829,7 +8047,7 @@ button:disabled,
   }
 
   .ara-occasion-title-row h2 {
-    font-size: 38px;
+    font-size: clamp(30px, 8vw, 38px);
   }
 
   .ara-occasion-title-row>span {
@@ -7837,8 +8055,8 @@ button:disabled,
   }
 
   .ara-occasion-navigation button {
-    width: 39px;
-    height: 39px;
+    width: 44px;
+    height: 44px;
   }
 
   .ara-occasion-track {
@@ -7991,10 +8209,26 @@ button:disabled,
   transition: border-color 280ms ease, box-shadow 280ms ease, transform 280ms ease;
 }
 
-.ara-benefit-item> :not(.ara-benefit-number):hover {
+.ara-benefit-item> .benefit-card.is-interactive:hover,
+.ara-benefit-item> .benefit-card.is-interactive:focus-visible {
   border-color: rgba(166, 112, 75, 0.38);
   box-shadow: 0 17px 38px rgba(72, 47, 32, 0.1);
   transform: translateY(-5px);
+}
+
+.ara-benefit-item> .benefit-card.is-interactive {
+  color: inherit;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.ara-benefit-item> .benefit-card.is-interactive:focus-visible {
+  outline: 2px solid #8e6041;
+  outline-offset: 3px;
+}
+
+.ara-benefit-item> .benefit-card.is-interactive:active {
+  transform: translateY(-1px) scale(0.99);
 }
 
 .ara-benefit-item svg {
@@ -8006,7 +8240,8 @@ button:disabled,
   transition: color 260ms ease, transform 260ms ease;
 }
 
-.ara-benefit-item:hover svg {
+.ara-benefit-item> .benefit-card.is-interactive:hover svg,
+.ara-benefit-item> .benefit-card.is-interactive:focus-visible svg {
   color: #583c2e;
   transform: translateY(-2px);
 }
@@ -11065,6 +11300,19 @@ button:disabled,
   }
 }
 
+.ara-confirm-backdrop{position:fixed;inset:0;z-index:3200;display:grid;place-items:center;padding:20px;background:rgba(42,27,19,.55);backdrop-filter:blur(5px)}
+.ara-confirm-dialog{display:grid;grid-template-columns:48px minmax(0,1fr);gap:14px;width:min(500px,100%);padding:26px;border:1px solid #e2c8a7;border-radius:22px;background:#fffdfa;box-shadow:0 28px 80px rgba(41,24,15,.26);color:#3b281e}
+.ara-confirm-dialog__icon{display:grid;place-items:center;width:48px;height:48px;border-radius:15px;background:#fbebd7;color:#a35b37}
+.ara-confirm-dialog h2{margin:1px 0 6px;font-family:var(--ara-display-font);font-size:26px;line-height:1.05}
+.ara-confirm-dialog p{margin:0;color:#7c695d;font-size:13px;line-height:1.55}
+.ara-confirm-dialog footer{grid-column:1/-1;display:flex;justify-content:flex-end;gap:9px;margin-top:8px;padding-top:18px;border-top:1px solid #ead8c2}
+.ara-confirm-dialog footer button{min-height:42px;padding:0 18px;border:1px solid #d9ba91;border-radius:999px;background:#fffaf3;color:#54382a;font-weight:800;cursor:pointer}
+.ara-confirm-dialog footer button:hover:not(:disabled){background:#f7eddf}
+.ara-confirm-dialog footer button.is-danger{border-color:#9b4935;background:#9b4935;color:#fff}
+.ara-confirm-dialog footer button.is-danger:hover:not(:disabled){background:#833a2b}
+.ara-confirm-dialog footer button:disabled{cursor:not-allowed;opacity:.55}
+@media(max-width:520px){.ara-confirm-dialog{padding:21px;border-radius:18px}.ara-confirm-dialog footer{display:grid;grid-template-columns:1fr 1fr}.ara-confirm-dialog footer button{width:100%}}
+
 @media (prefers-reduced-motion: reduce) {
 
   .mei-header *,
@@ -12514,6 +12762,151 @@ button:disabled,
   align-items: stretch;
 }
 
+.catalog-result-count {
+  margin: 0 0 12px;
+  color: #77655b;
+  font-size: 12px;
+}
+
+.catalog-result-count strong {
+  color: #493229;
+  font-size: 14px;
+}
+
+.ara-auth-forgot-link,
+.ara-auth-back-link,
+.ara-recovery-resend {
+  color: #91613f;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.ara-auth-forgot-link {
+  display: block;
+  width: fit-content;
+  margin: 11px 0 0 auto;
+}
+
+.ara-auth-back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 24px;
+}
+
+.ara-auth-forgot-link:hover,
+.ara-auth-back-link:hover,
+.ara-recovery-resend:hover:not(:disabled) {
+  color: #3e2b23;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.ara-auth-form-error {
+  margin: 13px 0 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(158, 79, 66, 0.24);
+  border-radius: 12px;
+  background: #fff4f1;
+  color: #934f45;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.ara-recovery-progress {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0 0 24px;
+}
+
+.ara-recovery-progress>span {
+  display: grid;
+  min-width: 0;
+  min-height: 54px;
+  place-items: center;
+  padding: 7px 4px;
+  border: 1px solid rgba(142, 100, 70, 0.15);
+  border-radius: 12px;
+  background: #faf5ee;
+  color: #9b8a7e;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.ara-recovery-progress>span.active,
+.ara-recovery-progress>span.done {
+  border-color: rgba(145, 97, 63, 0.4);
+  background: #f3e4d4;
+  color: #694531;
+}
+
+.ara-recovery-progress small {
+  overflow: hidden;
+  max-width: 100%;
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ara-recovery-security-note,
+.ara-recovery-success {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 2px 0 0;
+  padding: 12px 13px;
+  border: 1px solid rgba(145, 97, 63, 0.18);
+  border-radius: 12px;
+  background: #faf5ee;
+  color: #725441;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.55;
+}
+
+.ara-recovery-security-note svg,
+.ara-recovery-success svg {
+  flex: 0 0 auto;
+  color: #91613f;
+}
+
+.ara-recovery-success {
+  flex-direction: column;
+  justify-content: center;
+  min-height: 150px;
+  text-align: center;
+}
+
+.ara-recovery-success strong {
+  color: #3e2b23;
+  font-size: 15px;
+}
+
+.ara-recovery-dev-code {
+  margin: 13px 0 0;
+  padding: 10px 12px;
+  border-radius: 11px;
+  background: #f5eee3;
+  color: #725441;
+  font-size: 10px;
+}
+
+.ara-recovery-resend {
+  display: block;
+  min-height: 44px;
+  margin: 8px auto 0;
+  padding: 0 12px;
+  border: 0;
+  background: transparent;
+}
+
+.ara-recovery-resend:disabled {
+  color: #a99b92;
+  cursor: not-allowed;
+}
+
 @media (max-width: 960px) {
   .auth.ara-auth-page {
     grid-template-columns: minmax(0, 1fr);
@@ -12524,6 +12917,26 @@ button:disabled,
   .ara-auth-page>.ara-auth-visual,
   .ara-auth-page>.ara-auth-form-column {
     min-height: 0;
+  }
+}
+
+@media (max-width: 768px) {
+  .ara-auth-page>.ara-auth-form-column {
+    order: -1;
+  }
+
+  .ara-auth-page>.ara-auth-visual {
+    padding-top: 30px;
+  }
+
+  .ara-auth-page>.ara-auth-visual .ara-auth-benefits,
+  .ara-password-recovery-page>.ara-auth-visual .ara-auth-signature {
+    display: none;
+  }
+
+  .ara-auth-page>.ara-auth-visual h1 {
+    font-size: clamp(38px, 11vw, 52px);
+    line-height: 0.95;
   }
 }
 
@@ -16167,16 +16580,24 @@ button:disabled,
   display: grid;
   grid-template-columns: minmax(260px, 280px) minmax(0, 1fr);
   gap: clamp(18px, 2.6vw, 30px);
+  align-items: stretch;
 }
 
 .desktop-sidebar {
   width: 100%;
   min-width: 0;
+  height: auto;
+  min-height: 0;
+  align-self: stretch;
 }
 
 .desktop-sidebar .filter-sidebar {
   width: 100%;
   overflow-x: visible;
+  height: 100%;
+  max-height: none;
+  overflow-y: visible;
+  align-content: start;
 }
 
 .mei-catalog-grid {
@@ -16378,8 +16799,8 @@ button:disabled,
   }
 
   .floating-contact {
-    right: 10px;
-    bottom: calc(10px + env(safe-area-inset-bottom));
+    right: max(8px, env(safe-area-inset-right));
+    bottom: calc(72px + env(safe-area-inset-bottom));
     gap: 8px;
   }
 
@@ -16388,9 +16809,19 @@ button:disabled,
     transform-origin: right bottom;
   }
 
-  .floating-contact__link {
-    width: 40px;
-    height: 40px;
+  .floating-contact a.floating-contact__link {
+    width: 44px;
+    height: 44px;
+  }
+
+  .floating-contact.is-form-focused .ara-mascot-slot,
+  .floating-contact.is-form-focused .floating-contact__link--instagram,
+  .floating-contact.is-form-focused .floating-contact__link--facebook {
+    display: none;
+  }
+
+  .floating-contact.is-form-focused {
+    bottom: calc(12px + env(safe-area-inset-bottom));
   }
 
   .ari-bunny-message {
@@ -21039,5 +21470,371 @@ a.mei-footer-contact__item:hover .mei-footer-contact__arrow {
   .product-carousel .mei-product-card .card-link svg {
     width: 11px;
     height: 11px;
+  }
+}
+/* Voucher checkout and public offers */
+.cart-voucher-section {
+  width: min(100%, 920px);
+  margin: 18px auto 0;
+  padding: 18px;
+  border: 1px solid #e2d1bf;
+  border-radius: 18px;
+  background: #fffaf4;
+  box-sizing: border-box;
+}
+
+.cart-voucher-heading,
+.cart-voucher-applied {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.cart-voucher-heading {
+  justify-content: flex-start;
+  color: #825a32;
+}
+
+.cart-voucher-heading > div {
+  display: grid;
+  gap: 3px;
+}
+
+.cart-voucher-heading span {
+  color: #816f61;
+  font-size: 12px;
+}
+
+.cart-voucher-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 9px;
+  margin-top: 14px;
+}
+
+.cart-voucher-controls input,
+.cart-voucher-controls button {
+  min-height: 44px;
+  border: 1px solid #d8c3ae;
+  border-radius: 12px;
+  box-sizing: border-box;
+  font: inherit;
+}
+
+.cart-voucher-controls input {
+  min-width: 0;
+  padding: 0 13px;
+  background: #fff;
+  text-transform: uppercase;
+}
+
+.cart-voucher-controls button {
+  padding: 0 16px;
+  background: #4a2f24;
+  color: #fff;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.cart-voucher-controls button:disabled {
+  cursor: not-allowed;
+  opacity: .55;
+}
+
+.cart-voucher-controls .cart-voucher-remove {
+  background: transparent;
+  color: #7e432d;
+}
+
+.cart-voucher-applied {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed #dac6b2;
+  color: #5d3928;
+  font-size: 13px;
+}
+
+.offers-page {
+  width: min(1180px, calc(100% - 32px));
+  min-height: 60vh;
+  margin: 0 auto;
+  padding: clamp(48px, 8vw, 96px) 0;
+}
+
+.offers-header {
+  max-width: 720px;
+  margin-bottom: 32px;
+}
+
+.offers-header h1 {
+  margin: 8px 0 10px;
+  font-size: clamp(34px, 5vw, 58px);
+}
+
+.offers-header p {
+  color: #746256;
+}
+
+.offers-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.offer-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 16px;
+  padding: 22px;
+  border: 1px solid #e5d5c4;
+  border-radius: 22px;
+  background: #fffdf9;
+  box-shadow: 0 10px 30px rgba(70, 43, 29, .06);
+}
+
+.offer-card-icon {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  border-radius: 15px;
+  background: #f7ead7;
+  color: #9a6e2e;
+}
+
+.offer-card-copy {
+  min-width: 0;
+}
+
+.offer-code {
+  color: #9b6b28;
+  font-size: 12px;
+  font-weight: 850;
+  letter-spacing: .12em;
+}
+
+.offer-card h2 {
+  margin: 5px 0 7px;
+  font-size: 22px;
+}
+
+.offer-card-copy > p {
+  color: #79695d;
+  line-height: 1.55;
+}
+
+.offer-card dl {
+  display: grid;
+  gap: 8px;
+  margin: 18px 0 0;
+}
+
+.offer-card dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 7px;
+  border-bottom: 1px dashed #eadbca;
+}
+
+.offer-card dt {
+  color: #887568;
+}
+
+.offer-card dd {
+  margin: 0;
+  text-align: right;
+  font-weight: 700;
+}
+
+.offer-card-actions {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.offer-card-actions button,
+.offer-card-actions a {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid #cfb79d;
+  border-radius: 12px;
+  background: #fff;
+  color: #4b3024;
+  font: inherit;
+  font-weight: 750;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.offer-card-actions a {
+  border-color: #4b3024;
+  background: #4b3024;
+  color: #fff;
+}
+
+.offer-card-actions button:focus-visible,
+.offer-card-actions a:focus-visible,
+.cart-voucher-controls input:focus-visible,
+.cart-voucher-controls button:focus-visible {
+  outline: 3px solid rgba(184, 127, 64, .28);
+  outline-offset: 2px;
+}
+
+@media (max-width: 760px) {
+  .offers-grid { grid-template-columns: 1fr; }
+  .offer-card { padding: 18px; }
+  .cart-voucher-controls { grid-template-columns: 1fr 1fr; }
+  .cart-voucher-controls input { grid-column: 1 / -1; }
+}
+
+@media (max-width: 430px) {
+  .offers-page { width: min(100% - 24px, 1180px); }
+  .offer-card { grid-template-columns: 1fr; }
+  .offer-card-actions { grid-column: auto; grid-template-columns: 1fr; }
+  .offer-card dl > div { align-items: flex-start; }
+}
+
+/* Keep the voucher block vertical inside the checkout summary. The summary's
+   legacy direct-child flex rules must not turn its heading, form and result
+   into three cramped columns. */
+.cart-summary > .cart-voucher-section {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  gap: 16px !important;
+  align-self: center !important;
+  justify-self: center !important;
+  width: min(100%, 920px) !important;
+  max-width: 920px !important;
+  min-width: 0 !important;
+  margin: 22px auto 0 !important;
+  padding: 20px !important;
+  border: 1px solid #e2d1bf !important;
+  border-radius: 18px !important;
+  background: linear-gradient(145deg, #fffdf9, #fff8ef) !important;
+  box-sizing: border-box !important;
+}
+
+.cart-summary > .cart-voucher-section > div,
+.cart-summary > .cart-voucher-section .cart-voucher-heading,
+.cart-summary > .cart-voucher-section .cart-voucher-controls,
+.cart-summary > .cart-voucher-section .cart-voucher-applied {
+  width: 100% !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  box-sizing: border-box !important;
+}
+
+.cart-summary > .cart-voucher-section .cart-voucher-heading {
+  display: flex !important;
+  align-items: flex-start !important;
+  justify-content: flex-start !important;
+  gap: 12px !important;
+}
+
+.cart-summary > .cart-voucher-section .cart-voucher-heading > svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.cart-summary > .cart-voucher-section .cart-voucher-heading > div {
+  display: grid !important;
+  gap: 4px !important;
+}
+
+.cart-summary > .cart-voucher-section .cart-voucher-heading strong {
+  color: #493128;
+  font-size: 17px;
+  line-height: 1.2;
+}
+
+.cart-summary > .cart-voucher-section .cart-voucher-heading span {
+  color: #816f61;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: normal !important;
+}
+
+.cart-summary > .cart-voucher-section .cart-voucher-controls {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto auto !important;
+  align-items: stretch !important;
+  gap: 9px !important;
+}
+
+.cart-summary > .cart-voucher-section .cart-voucher-controls input,
+.cart-summary > .cart-voucher-section .cart-voucher-controls button {
+  width: 100% !important;
+  min-width: 0 !important;
+  min-height: 46px !important;
+  margin: 0 !important;
+  box-sizing: border-box !important;
+}
+
+.cart-summary > .cart-voucher-section .cart-voucher-controls button {
+  min-width: 112px !important;
+  white-space: nowrap;
+}
+
+.cart-summary > .cart-voucher-section .cart-voucher-applied {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 12px !important;
+  padding: 12px 14px !important;
+  border: 1px solid #e6d1b5 !important;
+  border-radius: 12px !important;
+  background: #fbf0df !important;
+  color: #5d3928 !important;
+  line-height: 1.35;
+}
+
+.cart-summary > .cart-voucher-section .cart-voucher-applied span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal !important;
+}
+
+.cart-summary > .cart-voucher-section .form-error {
+  margin: 0 !important;
+}
+
+@media (max-width: 640px) {
+  .cart-summary > .cart-voucher-section {
+    padding: 16px !important;
+  }
+
+  .cart-summary > .cart-voucher-section .cart-voucher-controls {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+  }
+
+  .cart-summary > .cart-voucher-section .cart-voucher-controls input {
+    grid-column: 1 / -1;
+  }
+
+  .cart-summary > .cart-voucher-section .cart-voucher-controls button {
+    min-width: 0 !important;
+  }
+
+  .cart-summary > .cart-voucher-section .cart-voucher-applied {
+    align-items: flex-start !important;
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 390px) {
+  .cart-summary > .cart-voucher-section .cart-voucher-controls {
+    grid-template-columns: 1fr !important;
+  }
+
+  .cart-summary > .cart-voucher-section .cart-voucher-controls input {
+    grid-column: auto;
   }
 }

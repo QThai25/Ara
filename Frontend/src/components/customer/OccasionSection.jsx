@@ -24,6 +24,8 @@ export function OccasionSection() {
   const draggingRef = useRef(false);
   const movedRef = useRef(false);
   const preventClickRef = useRef(false);
+  const scrollLockRef = useRef(false);
+  const scrollUnlockTimerRef = useRef(null);
 
   const [canGoPrevious, setCanGoPrevious] =
     useState(false);
@@ -32,6 +34,9 @@ export function OccasionSection() {
     useState(false);
 
   const [isDragging, setIsDragging] =
+    useState(false);
+
+  const [isScrolling, setIsScrolling] =
     useState(false);
 
   const updateNavigation = useCallback(() => {
@@ -81,29 +86,48 @@ export function OccasionSection() {
       );
 
       observer.disconnect();
+
+      if (scrollUnlockTimerRef.current) {
+        window.clearTimeout(
+          scrollUnlockTimerRef.current
+        );
+      }
+
+      scrollLockRef.current = false;
     };
   }, [updateNavigation]);
 
   const scrollTrack = (direction) => {
     const track = trackRef.current;
 
-    if (!track) return;
+    if (!track || scrollLockRef.current) return;
 
     const distance = Math.max(
       track.clientWidth * 0.72,
       280
     );
 
+    scrollLockRef.current = true;
+    setIsScrolling(true);
+
     track.scrollBy({
       left: direction * distance,
       behavior: "smooth"
     });
+
+    scrollUnlockTimerRef.current =
+      window.setTimeout(() => {
+        scrollLockRef.current = false;
+        setIsScrolling(false);
+        updateNavigation();
+      }, 420);
   };
 
   const handlePointerDown = (event) => {
     if (
-      event.pointerType === "mouse" &&
-      event.button !== 0
+      event.pointerType !== "mouse" ||
+      event.button !== 0 ||
+      event.target?.closest?.("a, button")
     ) {
       return;
     }
@@ -188,7 +212,7 @@ export function OccasionSection() {
           <button
             type="button"
             aria-label="Xem dịp trước"
-            disabled={!canGoPrevious}
+            disabled={!canGoPrevious || isScrolling}
             onClick={() => scrollTrack(-1)}
           >
             <ChevronLeft
@@ -200,7 +224,7 @@ export function OccasionSection() {
           <button
             type="button"
             aria-label="Xem dịp tiếp theo"
-            disabled={!canGoNext}
+            disabled={!canGoNext || isScrolling}
             onClick={() => scrollTrack(1)}
           >
             <ChevronRight
@@ -231,7 +255,7 @@ export function OccasionSection() {
             <IconCard
               icon={item.icon}
               label={item.label}
-              to={`/costumes?occasion=${item.slug}`}
+              to={`/costumes?occasion=${encodeURIComponent(item.slug)}`}
               active={
                 activeOccasion === item.slug
               }

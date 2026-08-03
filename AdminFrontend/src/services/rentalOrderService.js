@@ -6,7 +6,8 @@ export async function getAdminRentalOrders(params = {}, config = {}) {
   const rows = response.data?.items || response.data || [];
   return {
     items: rows.map(normalizeOrder),
-    pagination: response.data?.pagination || { page: 1, limit: rows.length || 10, total: rows.length, totalPages: 1 }
+    pagination: response.data?.pagination || { page: 1, limit: rows.length || 10, total: rows.length, totalPages: 1 },
+    summary: response.data?.summary || { total: rows.length, statusCounts: {} }
   };
 }
 

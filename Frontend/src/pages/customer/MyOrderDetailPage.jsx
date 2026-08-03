@@ -184,6 +184,7 @@ export function MyOrderDetailPage({
   const [standaloneRefundForm, setStandaloneRefundForm] = useState(null);
   const [openingPayment, setOpeningPayment] = useState(false);
   const [refund,setRefund]=useState(null);
+  const [refundDestinations, setRefundDestinations] = useState([]);
   const [paymentNow, setPaymentNow] = useState(Date.now());
   const [transferProof, setTransferProof] = useState(null);
 
@@ -204,7 +205,8 @@ export function MyOrderDetailPage({
       const [
         orderData,
         paymentData,
-        quoteEntries
+        quoteEntries,
+        refundDestinationData
       ] = await Promise.all([
         getMyRentalOrder(id, {
           signal
@@ -236,7 +238,9 @@ export function MyOrderDetailPage({
               )
             ]
           )
-        )
+        ),
+
+        listRefundDestinations({ signal }).catch(() => [])
       ]);
 
       if (
@@ -257,6 +261,7 @@ export function MyOrderDetailPage({
           quoteEntries
         )
       );
+      setRefundDestinations(Array.isArray(refundDestinationData) ? refundDestinationData : []);
     } catch (err) {
       if (
         signal?.aborted ||
@@ -739,6 +744,7 @@ export function MyOrderDetailPage({
               }
               payments={payments}
               paymentActionPending={submittingPayment || openingPayment}
+              savedRefundDestination={refundDestinations.find((item) => item.isDefault && item.isEnabled) || refundDestinations.find((item) => item.isEnabled) || null}
               onAddRefundDestination={() => setStandaloneRefundForm("choice")}
             />
 
@@ -927,7 +933,8 @@ export function MyOrderDetailPage({
                               className={`ara-payment-status ara-payment-status--${payment.status}`}
                             >
                               {getStatusLabel(
-                                payment.status
+                                payment.status,
+                                "payment"
                               )}
                             </span>
                           </div>
@@ -949,7 +956,7 @@ export function MyOrderDetailPage({
           </>
         )}
 
-      {standaloneRefundForm === "choice" && <div className="ara-payment-backdrop" onMouseDown={() => setStandaloneRefundForm(null)}><div className="ara-refund-choice-dialog" role="dialog" aria-modal="true" aria-labelledby="refund-choice-title" onMouseDown={event => event.stopPropagation()}><button className="ara-refund-dialog-close" type="button" aria-label="Đóng" onClick={() => setStandaloneRefundForm(null)}><X size={19}/></button><h2 id="refund-choice-title">Bổ sung tài khoản nhận hoàn cọc</h2><p>Chọn cách thuận tiện nhất. Đây không phải thông tin dùng để thanh toán đơn thuê.</p><div><button type="button" onClick={() => setStandaloneRefundForm("bank_account")}><Landmark size={20}/><span><strong>Nhập tài khoản ngân hàng</strong><small>Chọn ngân hàng và nhập số tài khoản</small></span></button><button type="button" onClick={() => setStandaloneRefundForm("vietqr_image")}><CreditCard size={20}/><span><strong>Tải mã VietQR nhận tiền</strong><small>ARA đọc thông tin từ QR của bạn</small></span></button></div></div></div>}
+      {standaloneRefundForm === "choice" && <div className="ara-payment-backdrop" onMouseDown={() => setStandaloneRefundForm(null)}><div className="ara-refund-choice-dialog" role="dialog" aria-modal="true" aria-labelledby="refund-choice-title" onMouseDown={event => event.stopPropagation()}><button className="ara-refund-dialog-close" type="button" aria-label="Đóng" onClick={() => setStandaloneRefundForm(null)}><X size={19}/></button><h2 id="refund-choice-title">Tài khoản nhận hoàn cọc</h2><p>Chọn tài khoản đã lưu hoặc bổ sung tài khoản mới. Tài khoản được chọn sẽ dùng mặc định cho đơn này.</p>{refundDestinations.filter((item) => item.isEnabled).length > 0 && <div className="ara-refund-saved-choices">{refundDestinations.filter((item) => item.isEnabled).map((item) => <button type="button" key={item.id || item._id} onClick={() => saveLegacyRefundDestination(item)}><Landmark size={20}/><span><strong>{item.bankName || item.label || "VietQR nhận hoàn cọc"}</strong><small>{item.maskedAccountNumber || "Mã VietQR đã lưu"} · {item.accountHolderName || "Đã lưu trong tài khoản"}</small></span></button>)}</div>}<div><button type="button" onClick={() => setStandaloneRefundForm("bank_account")}><Landmark size={20}/><span><strong>Thêm tài khoản ngân hàng</strong><small>Chọn ngân hàng và nhập số tài khoản</small></span></button><button type="button" onClick={() => setStandaloneRefundForm("vietqr_image")}><CreditCard size={20}/><span><strong>Thêm mã VietQR</strong><small>ARA đọc thông tin từ QR của bạn</small></span></button></div></div></div>}
       {["bank_account", "vietqr_image"].includes(standaloneRefundForm) && <RefundDestinationForm type={standaloneRefundForm} notify={notify} onSaved={saveLegacyRefundDestination} onClose={() => setStandaloneRefundForm(null)}/>}
 
       {paymentDraft && (
@@ -1377,7 +1384,7 @@ export function MyOrderDetailPage({
               <div><dt>Loại thanh toán</dt><dd>{PAYMENT_TYPE_LABELS[selectedPayment.paymentType] || selectedPayment.paymentType}</dd></div>
               <div><dt>Phương thức</dt><dd>{PAYMENT_METHOD_LABELS[selectedPayment.method] || selectedPayment.method}</dd></div>
               <div><dt>Số tiền</dt><dd>{money(selectedPayment.amount)}</dd></div>
-              <div><dt>Trạng thái</dt><dd>{getStatusLabel(selectedPayment.status)}</dd></div>
+              <div><dt>Trạng thái</dt><dd>{getStatusLabel(selectedPayment.status, "payment")}</dd></div>
               <div><dt>Khởi tạo</dt><dd>{formatDateTime(selectedPayment.createdAt)}</dd></div>
               <div><dt>Thanh toán lúc</dt><dd>{selectedPayment.paidAt ? formatDateTime(selectedPayment.paidAt) : "Chưa thanh toán"}</dd></div>
               <div><dt>Mã giao dịch ngân hàng</dt><dd>{selectedPayment.providerTransactionId || "Chưa có"}</dd></div>

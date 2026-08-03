@@ -5,6 +5,17 @@ const PAYMENT_CHANNELS = ["online", "direct"];
 const PAYMENT_METHODS = ["payos_qr", "payos", "bank_transfer", "cash"];
 const VALID_METHODS = { online: ["payos_qr", "payos"], direct: ["cash", "bank_transfer"] };
 
+export const listAdminPaymentsValidation = [
+  query("page").optional().isInt({ min: 1, max: 1000000 }).withMessage("Trang dữ liệu không hợp lệ.").toInt(),
+  query("limit").optional().isInt({ min: 1, max: 50 }).withMessage("Số bản ghi mỗi trang không hợp lệ.").toInt(),
+  query("search").optional().isString().trim().isLength({ max: 100 }).withMessage("Từ khóa tìm kiếm không được vượt quá 100 ký tự."),
+  query("status").optional().isIn(["pending", "awaiting_confirmation", "success", "failed", "canceled", "expired", "refunded"]).withMessage("Trạng thái thanh toán không hợp lệ."),
+  query("channel").optional().isIn(PAYMENT_CHANNELS).withMessage("Kênh thanh toán không hợp lệ."),
+  query("method").optional().isIn(["momo", "vnpay", "payos", "payos_qr", "bank_gateway", "bank_transfer", "cash"]).withMessage("Phương thức thanh toán không hợp lệ."),
+  query("paymentType").optional().isIn(PAYMENT_TYPES).withMessage("Loại thanh toán không hợp lệ."),
+  query("orderId").optional().isMongoId().withMessage("Đơn thuê không hợp lệ.")
+];
+
 export const createPaymentValidation = [
   header("Idempotency-Key").optional().isUUID().withMessage("Idempotency-Key phải là UUID hợp lệ."),
   body("idempotencyKey").optional().isUUID().withMessage("idempotencyKey phải là UUID hợp lệ."),

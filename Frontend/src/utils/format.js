@@ -1,9 +1,9 @@
 import { canonicalSlug, occasionLabelBySlug, styleLabelBySlug } from "./catalogData.js";
-import { costumeStatusOptions, getStatusLabel, normalizeStatus, orderStatusOptions, statusAliases, statusLabels } from "./status.js";
+import { costumeStatusOptions, getStatusLabel, normalizeStatus, orderStatusOptions, statusLabels } from "./status.js";
 
 export const orderLabels = Object.fromEntries(orderStatusOptions);
 export const costumeLabels = Object.fromEntries(costumeStatusOptions);
-export { getStatusLabel, normalizeStatus, statusAliases, statusLabels };
+export { getStatusLabel, normalizeStatus, statusLabels };
 
 export const steps = ["pending_payment", "confirmed", "ready_for_handover", "outbound_in_transit", "renting", "return_in_transit", "returned", "completed"];
 

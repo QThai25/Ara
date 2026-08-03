@@ -28,8 +28,14 @@ test("costume create applies category defaults while update does not", async () 
 test("admin costume form submits ID arrays through a multi-select", async () => {
   const page = await read("../../AdminFrontend/src/pages/AdminPage.jsx");
   const controls = await read("../../AdminFrontend/src/components/common/AdminControls.jsx");
-  assert.match(page, /occasionIds: payload\.occasionIds/);
-  assert.match(page, /styleIds: payload\.styleIds/);
+  const { normalizeCostumeEditorPayload } = await import("../../AdminFrontend/src/utils/costumeEditor.js");
+  const payload = normalizeCostumeEditorPayload({
+    occasionIds: ["occasion-1", { _id: "occasion-2" }, "occasion-1", ""],
+    styleIds: [{ id: "style-1" }, "style-2", null]
+  });
+  assert.deepEqual(payload.occasionIds, ["occasion-1", "occasion-2"]);
+  assert.deepEqual(payload.styleIds, ["style-1", "style-2"]);
+  assert.match(page, /normalizeCostumeEditorPayload\(payload\)/);
   assert.match(page, /<ModalMultiSelect[\s\S]*value=\{form\.occasionIds\}/);
   assert.match(page, /<ModalMultiSelect[\s\S]*value=\{form\.styleIds\}/);
   assert.match(controls, /aria-multiselectable="true"/);

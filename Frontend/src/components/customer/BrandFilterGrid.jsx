@@ -17,7 +17,8 @@ export function BrandFilterGrid({
   const [brands, setBrands] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(() => typeof window === "undefined" || !window.matchMedia("(max-width: 768px)").matches);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let disposed = false;
@@ -55,7 +56,7 @@ export function BrandFilterGrid({
     return () => {
       disposed = true;
     };
-  }, []);
+  }, [reloadKey]);
 
   const selectedCount = useMemo(
     () =>
@@ -148,9 +149,10 @@ export function BrandFilterGrid({
             )}
 
             {error && (
-              <p className="brand-filter-message is-error">
-                {error}
-              </p>
+              <div className="brand-filter-message is-error">
+                <p>{error}</p>
+                <button type="button" onClick={() => setReloadKey((key) => key + 1)}>Thử lại</button>
+              </div>
             )}
 
             {!loading && !error && (

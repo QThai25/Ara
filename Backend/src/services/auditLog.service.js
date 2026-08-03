@@ -32,19 +32,27 @@ export function requestAuditContext(req) {
 export async function recordAuditEvent({
   actor,
   actorId = actor?._id || null,
+  actorName = actor?.name || "",
   actorRole = actor?.role || "",
+  customerId = null,
+  customerName = "",
   action,
   resourceType,
   resourceId = null,
   before = null,
   after = null,
   reason = "",
+  result = "",
+  expiresAt = null,
   ip = "",
   userAgent = ""
 }) {
   return AuditLog.create({
     actorId: mongoId(actorId),
+    actorName: String(actorName || "").slice(0, 160),
     actorRole: actorRole ? canonicalAdminRole(actorRole) : "",
+    customerId: mongoId(customerId),
+    customerName: String(customerName || "").slice(0, 160),
     action,
     resourceType,
     resourceId: resourceId == null ? "" : String(resourceId).slice(0, 256),
@@ -53,6 +61,8 @@ export async function recordAuditEvent({
     before: sanitize(before),
     after: sanitize(after),
     reason: String(reason || "").slice(0, 1000),
+    result: String(result || "").slice(0, 80),
+    expiresAt: expiresAt || null,
     ip: String(ip || "").slice(0, 128),
     userAgent: String(userAgent || "").slice(0, 512)
   });
@@ -61,9 +71,26 @@ export async function recordAuditEvent({
 export function buildAuditLogFilter(query = {}) {
   const filter = {};
   if (query.actorId) filter.actorId = query.actorId;
+  if (query.customerId) filter.customerId = query.customerId;
   if (query.action) filter.action = String(query.action).trim();
   if (query.actorRole) filter.actorRole = String(query.actorRole).trim();
+  if (query.result) filter.result = String(query.result).trim();
   if (query.resourceType) filter.resourceType = String(query.resourceType).trim();
+
+  if (query.actor) {
+    const safe = String(query.actor).trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    filter.$and = [...(filter.$and || []), { $or: [
+      { actorName: new RegExp(safe, "i") },
+      ...(mongoose.isValidObjectId(query.actor) ? [{ actorId: query.actor }] : [])
+    ] }];
+  }
+  if (query.customer) {
+    const safe = String(query.customer).trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    filter.$and = [...(filter.$and || []), { $or: [
+      { customerName: new RegExp(safe, "i") },
+      ...(mongoose.isValidObjectId(query.customer) ? [{ customerId: query.customer }] : [])
+    ] }];
+  }
 
   const from = parseLocalDateTime(query.from);
   const to = parseLocalDateTime(query.to, { endOfDay: true });
@@ -85,6 +112,9 @@ export function buildAuditLogFilter(query = {}) {
       { action: new RegExp(safe, "i") },
       { resourceType: new RegExp(safe, "i") },
       { resourceId: new RegExp(safe, "i") },
+      { actorName: new RegExp(safe, "i") },
+      { customerName: new RegExp(safe, "i") },
+      { result: new RegExp(safe, "i") },
       { reason: new RegExp(safe, "i") }
     ];
   }

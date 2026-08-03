@@ -51,6 +51,8 @@ export function AdminLayout({ user, logout, toast, children }) {
   const visibleItems = useMemo(() => availableGroups.flatMap((group) => group.items), [availableGroups]);
   const [expandedGroups, setExpandedGroups] = useState(() => new Set([groupForPath(location.pathname) || "overview"]));
   const activeItem = [...visibleItems].reverse().find((item) => item.end ? location.pathname === item.to : location.pathname.startsWith(item.to));
+  const routeItem = [...navItems].reverse().find((item) => item.end ? location.pathname === item.to : location.pathname.startsWith(item.to));
+  const routeTitle = routeItem?.label || (location.pathname === "/change-password" ? "Đổi mật khẩu" : "Không tìm thấy trang");
 
   useEffect(() => {
     const activeGroup = groupForPath(location.pathname, availableGroups);
@@ -128,7 +130,7 @@ export function AdminLayout({ user, logout, toast, children }) {
 
             <div className="admin-topbar-v2__title">
               <strong>
-                {activeItem?.label || "Tổng quan"}
+                {activeItem?.label || routeTitle}
               </strong>
 
               <span>

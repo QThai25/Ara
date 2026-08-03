@@ -1,7 +1,10 @@
-import React, { useState } from "react";
+import React, { useId, useState } from "react";
 import { AddressLocationFields } from "./AddressLocationFields.jsx";
+import { useModalFocus } from "../../hooks/useModalFocus.js";
 
 export function AddressFormDialog({ onClose, onSave }) {
+  const titleId = useId();
+  const dialogRef = useModalFocus(true, onClose);
   const [form, setForm] = useState({
     label: "",
     receiverName: "",
@@ -20,7 +23,7 @@ export function AddressFormDialog({ onClose, onSave }) {
   };
 
   return (
-    <form className="ara-account-dialog" onSubmit={(event) => {
+    <form ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby={titleId} className="ara-account-dialog" onSubmit={(event) => {
       event.preventDefault();
       onSave({
         ...form,
@@ -30,7 +33,7 @@ export function AddressFormDialog({ onClose, onSave }) {
         districtName: form.districtName
       });
     }}>
-      <h2>Thêm địa chỉ giao nhận</h2>
+      <h2 id={titleId}>Thêm địa chỉ giao nhận</h2>
       <p className="ara-address-dialog-intro">Chọn đúng khu vực để ARA kiểm tra phạm vi giao nhận và tính thời gian vận chuyển.</p>
       <label>Tên gợi nhớ<input value={form.label} onChange={update("label")} required /></label>
       <label>Người nhận<input value={form.receiverName} onChange={update("receiverName")} required /></label>

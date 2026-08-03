@@ -31,3 +31,17 @@ test("audit log date filter rejects a reversed range", () => {
     (error) => error.statusCode === 400
   );
 });
+
+test("password reset audit can be filtered independently by employee, customer, action and result", () => {
+  const filter = buildAuditLogFilter({
+    actor: "Nhân viên A",
+    customer: "Khách ARA",
+    action: "password_reset_granted",
+    result: "granted"
+  });
+  assert.equal(filter.action, "password_reset_granted");
+  assert.equal(filter.result, "granted");
+  assert.equal(filter.$and.length, 2);
+  assert.match(String(filter.$and[0].$or[0].actorName), /Nhân viên A/i);
+  assert.match(String(filter.$and[1].$or[0].customerName), /Khách ARA/i);
+});

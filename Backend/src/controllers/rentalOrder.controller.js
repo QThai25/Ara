@@ -1,4 +1,5 @@
 import * as rentalOrderService from "../services/rentalOrder.service.js";
+import * as voucherService from "../services/voucher.service.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { sendSuccess } from "../utils/apiResponse.js";
 import * as policyService from "../services/rentalPolicy.service.js";
@@ -140,6 +141,27 @@ export const quoteRental = asyncHandler(async (req, res) => {
   let result;
   try {
     result = await quoteAndCheck(req.body, quoteOptions);
+    if (req.body.voucherCode) {
+      const voucherItems = await voucherService.resolveVoucherItems(items, {
+        ...req.body,
+        rentalDays: result.rentalDays
+      });
+      const rentalAmount = voucherItems.reduce((sum, item) => sum + item.subtotal, 0);
+      const voucherResult = await voucherService.validateVoucher({
+        code: req.body.voucherCode,
+        customerId: req.user?._id,
+        customerInfo: req.body.customerInfo,
+        items: voucherItems,
+        rentalAmount
+      });
+      result.voucher = voucherService.serializePublicVoucher(voucherResult.voucher);
+      result.pricing = {
+        ...result.pricing,
+        discount: voucherResult.discountAmount,
+        eligibleRentalAmount: voucherResult.eligibleRentalAmount,
+        grandTotal: Math.max(0, Number(result.pricing?.grandTotal || 0) - voucherResult.discountAmount)
+      };
+    }
     if (shipping.feeMode === "external_direct_payment") {
       result.feeMode = shipping.feeMode;
       result.feeAmount = shipping.feeAmount;

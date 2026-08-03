@@ -8,21 +8,32 @@ const costumeListCache = createTimedRequestCache({ staleTime: 120_000, gcTime: 6
 const costumeDetailRequests = new Map();
 const costumeListRequests = new Map();
 
-export async function getCostumes(query = "", config = {}) {
-  const cacheKey = costumeListCache.key(["costumes", query]);
+export async function getCostumePage(query = "", config = {}) {
+  const cacheKey = costumeListCache.key(["costumes-page", query]);
   const cached = costumeListCache.get(cacheKey);
   if (cached !== undefined) return cached;
   const canShareRequest = !config.signal;
   if (canShareRequest && costumeListRequests.has(cacheKey)) return costumeListRequests.get(cacheKey);
 
   const request = apiClient.get(`/costumes${query}`, config).then((response) => {
-    const rows = response.data?.items || response.data || [];
-    return costumeListCache.set(cacheKey, rows.map(normalizeCostume));
+    const payload = response.data ?? response;
+    const rows = Array.isArray(payload) ? payload : payload?.items || [];
+    const pagination = Array.isArray(payload)
+      ? { page: 1, limit: rows.length, total: rows.length, totalPages: rows.length ? 1 : 0, hasPreviousPage: false, hasNextPage: false }
+      : payload?.pagination || { page: 1, limit: rows.length, total: rows.length, totalPages: rows.length ? 1 : 0, hasPreviousPage: false, hasNextPage: false };
+    return costumeListCache.set(cacheKey, {
+      items: rows.map(normalizeCostume),
+      pagination
+    });
   }).finally(() => {
     if (canShareRequest) costumeListRequests.delete(cacheKey);
   });
   if (canShareRequest) costumeListRequests.set(cacheKey, request);
   return request;
+}
+
+export async function getCostumes(query = "", config = {}) {
+  return (await getCostumePage(query, config)).items;
 }
 
 export async function getCostume(id) {

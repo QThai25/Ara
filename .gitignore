@@ -36,6 +36,19 @@ Thumbs.db
 # Test coverage
 coverage/
 **/coverage/
+test-artifacts/
+**/test-artifacts/
+playwright-report/
+**/playwright-report/
+
+# Local browser/audit output (may contain authenticated screenshots or storage)
+.edge-ux-audit-admin/
+.edge-ux-audit-customer/
+.browser-profile*/
+**/.browser-profile*/
+.report-data-audit.mjs
+*.har
+*.trace.zip
 
 # Temporary files
 *.tmp

@@ -1,9 +1,26 @@
 import { apiClient } from "./apiClient.js";
 import { normalizeCostume } from "../utils/format.js";
 
-export async function getCostumes(query = "") {
-  const response = await apiClient.get(`/costumes${query}`);
-  return response.data.map(normalizeCostume);
+export async function getCostumePage(query = {}, config = {}) {
+  const response = typeof query === "string"
+    ? await apiClient.get(`/costumes${query}`, config)
+    : await apiClient.get("/costumes", { ...config, params: query });
+  const payload = response.data || response;
+  const items = Array.isArray(payload) ? payload : payload?.items || [];
+  return {
+    items: items.map(normalizeCostume),
+    pagination: payload?.pagination || {
+      page: 1,
+      limit: items.length,
+      total: items.length,
+      totalPages: 1,
+      hasNextPage: false
+    }
+  };
+}
+
+export async function getCostumes(query = "", config = {}) {
+  return (await getCostumePage(query, config)).items;
 }
 
 export async function getCostume(id) {

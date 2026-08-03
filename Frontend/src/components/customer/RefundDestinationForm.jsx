@@ -1,8 +1,11 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useId, useRef, useState } from "react";
 import { Check, ChevronDown, ImagePlus, Landmark, Search, UploadCloud, X } from "lucide-react";
 import { createRefundDestination, listSupportedBanks, uploadRefundQr } from "../../services/accountService.js";
+import { useModalFocus } from "../../hooks/useModalFocus.js";
 
 export function RefundDestinationForm({ type, onClose, onSaved, notify, saveDestination, requestConfig = {}, saveToProfile = true }) {
+  const titleId = useId();
+  const dialogRef = useModalFocus(true, onClose);
   const qr = type === "vietqr_image";
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState("");
@@ -84,11 +87,11 @@ export function RefundDestinationForm({ type, onClose, onSaved, notify, saveDest
     }
   };
 
-  return <form className="ara-account-dialog ara-refund-destination-dialog" onSubmit={submit}>
+  return <form ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby={titleId} className="ara-account-dialog ara-refund-destination-dialog" onSubmit={submit}>
     <button className="ara-refund-dialog-close" type="button" aria-label="Đóng" onClick={onClose}><X size={19}/></button>
     <header className="ara-refund-dialog-header">
       <span>{qr ? <ImagePlus/> : <Landmark/>}</span>
-      <div><small>THÔNG TIN NHẬN HOÀN CỌC</small><h2>{qr ? "Tải mã VietQR nhận tiền" : "Thêm tài khoản ngân hàng"}</h2><p>{qr ? "Dùng mã VietQR của tài khoản bạn muốn nhận lại tiền cọc." : "ARA chỉ dùng thông tin này để trả lại tiền cọc cho bạn."}</p></div>
+      <div><small>THÔNG TIN NHẬN HOÀN CỌC</small><h2 id={titleId}>{qr ? "Tải mã VietQR nhận tiền" : "Thêm tài khoản ngân hàng"}</h2><p>{qr ? "Dùng mã VietQR của tài khoản bạn muốn nhận lại tiền cọc." : "ARA chỉ dùng thông tin này để trả lại tiền cọc cho bạn."}</p></div>
     </header>
     {saveToProfile && <label className="ara-refund-dialog-field">Tên gợi nhớ<input name="label" required maxLength={80} placeholder={qr ? "Ví dụ: QR MB Bank" : "Ví dụ: Tài khoản chính"}/></label>}
     {qr ? <><div className={`ara-refund-qr-upload${preview ? " has-preview" : ""}`} role="button" tabIndex={0} onClick={() => inputRef.current?.click()} onKeyDown={event => { if (["Enter", " "].includes(event.key)) inputRef.current?.click(); }}>

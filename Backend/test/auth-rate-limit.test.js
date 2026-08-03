@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createAuthRateLimit } from "../src/middlewares/authRateLimit.middleware.js";
+import { createAuthRateLimit, passwordRecoveryRateLimit } from "../src/middlewares/authRateLimit.middleware.js";
 
 function response() {
   return {
@@ -40,5 +40,24 @@ test("auth limiter protects one account across different IP addresses", () => {
   const blocked = response();
   limiter({ ip: "127.0.0.13", body: { email: "same@example.com" } }, blocked, () => { accepted += 1; });
   assert.equal(accepted, 1);
+  assert.equal(blocked.statusCode, 429);
+});
+
+test("password recovery limiter also scopes attempts to the trusted-device cookie", () => {
+  let accepted = 0;
+  for (let index = 0; index < 5; index += 1) {
+    passwordRecoveryRateLimit({
+      ip: `127.0.1.${index}`,
+      headers: { cookie: "ara_trusted_device=same-browser-secret" },
+      body: { phone: `09012345${String(index).padStart(2, "0")}` }
+    }, response(), () => { accepted += 1; });
+  }
+  const blocked = response();
+  passwordRecoveryRateLimit({
+    ip: "127.0.1.20",
+    headers: { cookie: "ara_trusted_device=same-browser-secret" },
+    body: { phone: "0909999999" }
+  }, blocked, () => { accepted += 1; });
+  assert.equal(accepted, 5);
   assert.equal(blocked.statusCode, 429);
 });

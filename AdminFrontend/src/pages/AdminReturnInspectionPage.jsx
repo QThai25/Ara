@@ -1,5 +1,5 @@
 import { AlertTriangle, Boxes, CheckCircle2, ClipboardCheck, Clock3, Eye } from "lucide-react";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { AdminDataTable, AdminFilterBar, AdminPageHeader, AdminSelectFilter, AdminStatCard, AdminStatusBadge } from "../components/common/AdminUI.jsx";
 import { StateMessage } from "../components/common/StateMessage.jsx";
@@ -25,17 +25,42 @@ export function AdminReturnInspectionPage({ notify }) {
   const [search, setSearch] = useState(params.get("search") || "");
   const [status, setStatus] = useState(params.get("status") || "");
   const [page, setPage] = useState(Math.max(1, Number(params.get("page") || 1)));
+  const [pagination, setPagination] = useState({ page: 1, limit: PAGE_SIZE, total: 0, totalPages: 1 });
+  const [summary, setSummary] = useState({ total: 0, statusCounts: {} });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const debouncedSearch = useDebouncedValue(search, 500);
   const requestRef = useRef(0);
+  const syncingFromUrlRef = useRef(false);
+  const paramsKey = params.toString();
+
+  useEffect(() => {
+    const nextSearch = params.get("search") || "";
+    const nextStatus = params.get("status") || "";
+    const nextPage = Math.max(1, Number(params.get("page") || 1));
+    if (nextSearch === search && nextStatus === status && nextPage === page) return;
+    syncingFromUrlRef.current = true;
+    setSearch(nextSearch);
+    setStatus(nextStatus);
+    setPage(nextPage);
+  }, [paramsKey]);
 
   const load = async (signal) => {
     const requestId = ++requestRef.current;
     setLoading(true); setError("");
     try {
-      const data = await getAdminRentalOrders({ page: 1, limit: 50 }, { signal });
-      if (requestId === requestRef.current) setOrders((data.items || []).filter((order) => ["renting", "overdue", "returned"].includes(order.status)));
+      const data = await getAdminRentalOrders({
+        page,
+        limit: PAGE_SIZE,
+        workflow: "inspection",
+        search: debouncedSearch || undefined,
+        status: status || undefined
+      }, { signal });
+      if (requestId === requestRef.current) {
+        setOrders(data.items || []);
+        setPagination(data.pagination);
+        setSummary(data.summary);
+      }
     } catch (err) {
       if (signal.aborted || requestId !== requestRef.current) return;
       setError(err.message); notify?.(err.message, "error");
@@ -43,29 +68,32 @@ export function AdminReturnInspectionPage({ notify }) {
       if (requestId === requestRef.current) setLoading(false);
     }
   };
-  useEffect(() => { const controller = new AbortController(); load(controller.signal); return () => controller.abort(); }, []);
+  useEffect(() => { const controller = new AbortController(); load(controller.signal); return () => controller.abort(); }, [debouncedSearch, status, page]);
   useEffect(() => {
+    if (syncingFromUrlRef.current) {
+      syncingFromUrlRef.current = false;
+      return;
+    }
     const next = new URLSearchParams();
     if (debouncedSearch) next.set("search", debouncedSearch);
     if (status) next.set("status", status);
     if (page > 1) next.set("page", String(page));
     if (next.toString() !== params.toString()) setParams(next, { replace: true });
   }, [debouncedSearch, status, page]);
-  useEffect(() => setPage(1), [debouncedSearch, status]);
-
-  const filtered = useMemo(() => orders.filter((order) => {
-    const haystack = `${idOf(order)} ${shortId(order)} ${customerName(order)} ${customerPhone(order)} ${productNames(order)}`.toLowerCase();
-    return (!debouncedSearch || haystack.includes(debouncedSearch.toLowerCase())) && (!status || inspectionState(order) === status);
-  }), [orders, debouncedSearch, status]);
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const totalPages = Math.max(1, Number(pagination.totalPages || 1));
   const safePage = Math.min(page, totalPages);
-  const rows = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  useEffect(() => {
+    if (!loading && !error && page > totalPages) setPage(totalPages);
+  }, [loading, error, page, totalPages]);
+  const rows = orders;
+  const statusCounts = summary.statusCounts || {};
+  const inspectionCounts = summary.inspectionCounts || {};
   const stats = {
-    total: orders.length,
-    renting: orders.filter((order) => order.status === "renting").length,
-    overdue: orders.filter((order) => order.status === "overdue").length,
-    pending: orders.filter((order) => inspectionState(order) === "returned_pending").length,
-    inspected: orders.filter((order) => inspectionState(order) === "returned_inspected").length
+    total: Number(summary.total ?? pagination.total ?? 0),
+    renting: Number(statusCounts.renting || 0),
+    overdue: Number(statusCounts.overdue || 0),
+    pending: Number(inspectionCounts.pending || 0),
+    inspected: Number(inspectionCounts.inspected || 0)
   };
   const reset = () => { setSearch(""); setStatus(""); setPage(1); };
 
@@ -78,13 +106,14 @@ export function AdminReturnInspectionPage({ notify }) {
       <AdminStatCard icon={<ClipboardCheck/>} label="Chờ kiểm tra" value={stats.pending}/>
       <AdminStatCard icon={<CheckCircle2/>} label="Đã kiểm tra" value={stats.inspected}/>
     </div>
-    <AdminFilterBar search={search} onSearch={setSearch} searchPlaceholder="Tìm mã đơn, khách hàng, số điện thoại hoặc trang phục..." onReset={reset}>
-      <AdminSelectFilter value={status} onChange={setStatus} options={STATUS_OPTIONS} allLabel="Tất cả trạng thái xử lý"/>
+    <AdminFilterBar search={search} onSearch={(value) => { setSearch(value); setPage(1); }} searchPlaceholder="Tìm mã đơn, khách hàng, số điện thoại hoặc trang phục..." onReset={reset}>
+      <AdminSelectFilter value={status} onChange={(value) => { setStatus(value); setPage(1); }} options={STATUS_OPTIONS} allLabel="Tất cả trạng thái xử lý"/>
     </AdminFilterBar>
     {loading && <StateMessage text="Đang tải danh sách kiểm tra trả đồ..."/>}
     {error && <StateMessage text={error} tone="error"/>}
     {!loading && !error && <AdminDataTable
-      rows={rows} page={safePage} pageSize={PAGE_SIZE} totalPages={totalPages} total={filtered.length}
+      mobileCards
+      rows={rows} page={safePage} pageSize={PAGE_SIZE} totalPages={totalPages} total={pagination.total || 0}
       onPageChange={setPage} emptyText="Không có đơn thuê cần kiểm tra phù hợp."
       columns={[
         { key: "code", label: "Mã đơn", render: (order) => <strong>#{shortId(order)}</strong> },
@@ -93,7 +122,7 @@ export function AdminReturnInspectionPage({ notify }) {
         { key: "returnDate", label: "Hạn trả", render: (order) => formatDateTime(order.returnDate) },
         { key: "actualReturn", label: "Trả thực tế", render: (order) => formatDateTime(order.actualReturnDate || order.returnedAt) },
         { key: "fees", label: "Phí phát sinh", className: "money-cell", render: (order) => money(Number(order.lateFee || 0) + Number(order.damageFee || 0)) },
-        { key: "state", label: "Trạng thái xử lý", render: (order) => <AdminStatusBadge value={inspectionState(order)}/> },
+        { key: "state", label: "Trạng thái xử lý", render: (order) => <AdminStatusBadge type="inspection" value={inspectionState(order)}/> },
         { key: "action", label: "Thao tác", className: "action-cell", render: (order) => {
           const canInspect = ["renting", "overdue"].includes(order.status) || (order.status === "returned" && !order.inspectedAt);
           return <button onClick={() => navigate(canInspect ? `/inspections/${idOf(order)}` : `/orders/${idOf(order)}`)}><Eye size={15}/> {canInspect ? "Kiểm tra ngay" : "Xem chi tiết"}</button>;

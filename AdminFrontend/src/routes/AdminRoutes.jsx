@@ -35,18 +35,13 @@ import { AdminStaffEditPage } from "../pages/AdminStaffEditPage.jsx";
 import { AdminAuditLogPage } from "../pages/AdminAuditLogPage.jsx";
 import { AdminChangePasswordPage } from "../pages/AdminChangePasswordPage.jsx";
 import { ADMIN_PERMISSIONS as P } from "../constants/adminPermissions.js";
+import { AdminNotFoundPage } from "../pages/AdminNotFoundPage.jsx";
 
 function ProtectedPage({ toast, permission, children }) {
   return <ProtectedAdminRoute toast={toast} requiredPermission={permission}>{children}</ProtectedAdminRoute>;
 }
 
 function HomeRedirect() {
-  const { loading, isAuthenticated, isAdmin } = useAdminAuth();
-  if (loading) return <div className="admin-auth-state">Đang kiểm tra quyền truy cập...</div>;
-  return <Navigate to={isAuthenticated && isAdmin ? "/dashboard" : "/login"} replace />;
-}
-
-function FallbackRedirect() {
   const { loading, isAuthenticated, isAdmin } = useAdminAuth();
   if (loading) return <div className="admin-auth-state">Đang kiểm tra quyền truy cập...</div>;
   return <Navigate to={isAuthenticated && isAdmin ? "/dashboard" : "/login"} replace />;
@@ -97,7 +92,7 @@ export function AdminRoutes({ toast, notify }) {
       <Route path="/staff/:id" element={<ProtectedPage toast={toast} permission={P.STAFF_MANAGE}><AdminStaffDetailPage notify={notify} /></ProtectedPage>} />
       <Route path="/staff/:id/edit" element={<ProtectedPage toast={toast} permission={P.STAFF_MANAGE}><AdminStaffEditPage notify={notify} /></ProtectedPage>} />
       <Route path="/audit-logs" element={<ProtectedPage toast={toast} permission={P.AUDIT_VIEW}><AdminAuditLogPage /></ProtectedPage>} />
-      <Route path="*" element={<FallbackRedirect />} />
+      <Route path="*" element={<ProtectedPage toast={toast}><AdminNotFoundPage /></ProtectedPage>} />
     </Routes>
   );
 }

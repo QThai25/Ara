@@ -85,7 +85,7 @@ export function AdminPaymentDetailPage({ notify }) {
         eyebrow="Vận hành / Thanh toán"
         title={payment?.paymentReference || "Chi tiết thanh toán"}
         description="Thông tin giao dịch lấy từ Backend; số tiền và trạng thái không được tính lại ở AdminFrontend."
-        action={payment && <AdminStatusBadge value={payment.status} />}
+        action={payment && <AdminStatusBadge type="payment" value={payment.status} />}
       />
       {state.loading && <LoadingState message="Đang tải chi tiết thanh toán..." />}
       {!state.loading && state.error && <ErrorState message={state.error} onRetry={load} />}

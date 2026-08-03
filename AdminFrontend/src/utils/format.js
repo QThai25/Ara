@@ -1,8 +1,8 @@
-import { costumeStatusOptions, getStatusLabel, normalizeStatus, orderStatusOptions, statusAliases, statusLabels } from "./status.js";
+import { costumeStatusOptions, getStatusLabel, normalizeStatus, orderStatusOptions, statusLabels } from "./status.js";
 
 export const orderLabels = Object.fromEntries(orderStatusOptions);
 export const costumeLabels = Object.fromEntries(costumeStatusOptions);
-export { getStatusLabel, normalizeStatus, statusAliases, statusLabels };
+export { getStatusLabel, normalizeStatus, statusLabels };
 
 export const steps = ["pending_payment", "confirmed", "ready_for_handover", "outbound_in_transit", "renting", "return_in_transit", "returned", "completed"];
 
@@ -13,6 +13,23 @@ export function formatCurrency(value) {
 
 export function money(value) {
   return formatCurrency(value);
+}
+
+export function normalizePhoneForSearch(value = "") {
+  const digits = String(value).replace(/\D/g, "");
+  if (!digits) return "";
+  if (digits.startsWith("0084")) return `0${digits.slice(4)}`;
+  if (digits.startsWith("84")) return `0${digits.slice(2)}`;
+  if (/^[35789]\d{8}$/.test(digits)) return `0${digits}`;
+  return digits;
+}
+
+export function formatVietnamPhone(value = "") {
+  const normalized = normalizePhoneForSearch(value);
+  if (/^0\d{9}$/.test(normalized)) {
+    return `${normalized.slice(0, 4)} ${normalized.slice(4, 7)} ${normalized.slice(7)}`;
+  }
+  return normalized;
 }
 
 export function formatDateTime(value, mode = "dateTime") {

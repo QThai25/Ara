@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { AlertTriangle, Check, ChevronDown, Inbox, LoaderCircle, MoreVertical, RotateCcw, Search, ShieldX } from "lucide-react";
 import { StatusBadge } from "./StatusBadge.jsx";
 import { ModalSelect } from "./AdminControls.jsx";
+import { permissionLabel } from "../../constants/adminPermissions.js";
 
 export function AdminPageLayout({ children, className = "" }) {
   return <div className={`admin-page admin-page-layout ${className}`.trim()}>{children}</div>;
@@ -62,8 +63,7 @@ export function PermissionDenied({ permission }) {
       <div className="admin-state-panel is-permission" role="alert">
         <ShieldX />
         <strong>Bạn không có quyền truy cập</strong>
-        <p>Tài khoản hiện tại không được cấp quyền cho khu vực này.</p>
-        {permission && <code>{permission}</code>}
+        <p>Tài khoản hiện tại chưa được cấp quyền để {permissionLabel(permission)}. Vui lòng liên hệ Chủ tiệm nếu bạn cần thực hiện công việc này.</p>
         <AdminButton type="button" onClick={() => window.history.back()}>Quay lại</AdminButton>
       </div>
     </AdminPageLayout>
@@ -113,13 +113,29 @@ export function AdminSelectFilter({ value, onChange, options, allLabel = "Tất 
   return <AdminSelect value={value} onChange={onChange} options={[["", allLabel], ...options]} placeholder={allLabel} />;
 }
 
-export function AdminDataTable({ columns, rows, getRowKey, emptyText = "Không có dữ liệu.", page, pageSize = rows.length || 1, totalPages, total, onPageChange, className = "", tableClassName = "" }) {
+function useMediaQuery(query) {
+  const [matches, setMatches] = useState(() => Boolean(query && typeof window !== "undefined" && window.matchMedia(query).matches));
+
+  useEffect(() => {
+    if (!query || typeof window === "undefined") return undefined;
+    const media = window.matchMedia(query);
+    const update = () => setMatches(media.matches);
+    update();
+    media.addEventListener?.("change", update);
+    return () => media.removeEventListener?.("change", update);
+  }, [query]);
+
+  return matches;
+}
+
+export function AdminDataTable({ columns, rows, getRowKey, emptyText = "Không có dữ liệu.", page, pageSize = rows.length || 1, totalPages, total, onPageChange, className = "", tableClassName = "", mobileCards = false }) {
   const from = total ? (page - 1) * pageSize + 1 : 0;
   const to = total ? Math.min(total, (page - 1) * pageSize + rows.length) : 0;
+  const renderMobileCards = useMediaQuery(mobileCards ? "(max-width: 768px)" : null);
 
   return (
-    <section className={`admin-data-card ${className}`.trim()}>
-      <div className="admin-data-scroll">
+    <section className={`admin-data-card ${mobileCards ? "has-mobile-cards" : ""} ${className}`.trim()}>
+      {!renderMobileCards && <div className="admin-data-scroll">
         <table className={`admin-data-table ${tableClassName}`.trim()}>
           <thead>
             <tr>{columns.map((column) => <th key={column.key}>{column.label}</th>)}</tr>
@@ -134,7 +150,19 @@ export function AdminDataTable({ columns, rows, getRowKey, emptyText = "Không c
             ))}
           </tbody>
         </table>
-      </div>
+      </div>}
+      {renderMobileCards && <div className="admin-data-mobile" aria-label="Danh sách dữ liệu">
+        {rows.length === 0 ? <div className="admin-data-mobile__empty">{emptyText}</div> : rows.map((row, index) => (
+          <article className="admin-data-mobile__card" key={getRowKey?.(row) || row.id || row._id || index}>
+            {columns.map((column, columnIndex) => (
+              <div key={column.key} className={`admin-data-mobile__field ${columnIndex === 0 ? "is-primary" : ""} ${column.key === "action" || column.className === "action-cell" ? "is-action" : ""}`.trim()}>
+                <span>{column.label}</span>
+                <div>{column.render ? column.render(row) : row[column.key]}</div>
+              </div>
+            ))}
+          </article>
+        ))}
+      </div>}
       {totalPages > 1 && (
         <AdminPagination page={page} totalPages={totalPages} from={from} to={to} total={total} onPageChange={onPageChange} />
       )}
