@@ -480,8 +480,8 @@ function Resolve-TemplateContent {
             $pyCmd = Get-Python3Command
             if (-not $pyCmd) {
                 # Check if any preset has strategy fields that would be ignored
-                foreach ($pid in $sortedPresets) {
-                    $mf = Join-Path $presetsDir "$pid/preset.yml"
+                foreach ($presetId  in $sortedPresets) {
+                    $mf = Join-Path $presetsDir "$presetId/preset.yml"
                     if ((Test-Path $mf) -and (Select-String -Path $mf -Pattern 'strategy:' -Quiet -ErrorAction SilentlyContinue)) {
                         Write-Warning "No Python 3 found; preset composition strategies will be ignored"
                         break
