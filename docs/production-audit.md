@@ -1,6 +1,6 @@
 # Production audit — 2026-07-28
 
-> Đây là snapshot của đợt audit 28/07/2026. Trạng thái release mới nhất nằm tại `PRE_DEPLOY_REPORT.md` và `docs/deployment-readiness.md`.
+> Đây là snapshot của đợt audit 28/07/2026. Trạng thái release mới nhất nằm tại `reports/PRE_DEPLOY_REPORT.md` và `docs/deployment-readiness.md`.
 
 ## Cập nhật 30/07/2026
 

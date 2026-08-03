@@ -86,9 +86,9 @@ Mở [bản đồ tài liệu](docs/README.md), trong đó có:
 - [Hướng dẫn Chủ tiệm/Nhân viên](docs/HUONG_DAN_SU_DUNG_ADMIN.md)
 - [Hướng dẫn khách hàng](docs/HUONG_DAN_SU_DUNG_END_USER.md)
 - [RBAC và session](docs/ADMIN_RBAC.md)
-- [Payment setup](PAYMENT_SETUP.md)
+- [Payment setup](docs/guides/PAYMENT_SETUP.md)
 - [Fulfillment/refund](docs/FULFILLMENT_AND_REFUND.md)
 - [Deployment](docs/deployment-guide.md)
-- [Pre-deploy report](PRE_DEPLOY_REPORT.md)
+- [Pre-deploy report](docs/reports/PRE_DEPLOY_REPORT.md)
 
 Không deploy, seed, migrate, đăng ký webhook hoặc sửa production data chỉ dựa trên README; phải theo runbook và xác nhận đúng môi trường.

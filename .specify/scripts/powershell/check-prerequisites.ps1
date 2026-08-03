@@ -58,7 +58,7 @@ EXAMPLES:
 
 # Get feature paths.
 # In -PathsOnly mode this is pure resolution, so pass -NoPersist to opt out of
-# the feature.json write side effect (issue #3025).
+# the branch-scoped feature-state write side effect (issue #3025).
 if ($PathsOnly) {
     $paths = Get-FeaturePathsEnv -NoPersist
 } else {

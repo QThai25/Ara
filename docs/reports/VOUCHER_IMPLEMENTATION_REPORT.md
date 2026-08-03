@@ -2,6 +2,13 @@
 
 Ngày hoàn thiện: 02/08/2026.
 
+## Test evidence
+
+- Authoritative run: source commit `e345cd72f8f79b1eb568e8b8a8282ef826aa9e7d`, timestamp `2026-08-03T18:33:45+07:00`.
+- Backend `npm test`: **232/232** pass; `test/voucher.test.js`: **10/10** pass.
+- Frontend `npm test`: **17/19**; AdminFrontend `npm test`: **29/30**. The three failures are stale source-contract assertions; both production builds pass and Backend `npm run check` passes.
+- Browser mutation/E2E and database-backed checks remain pending, as recorded in `docs/test-matrix.md`.
+
 ## Model/schema
 
 - `Voucher` là nguồn dữ liệu voucher duy nhất, thay thế hoàn toàn mảng mock trong RAM. Model lưu mã, tên, mô tả, loại/giá trị giảm, mức đơn tối thiểu, trần giảm, thời gian hiệu lực, trạng thái bật/tắt, tổng giới hạn, `usageCount`, giới hạn mỗi khách, eligibility, scope, cờ công khai và soft delete.
@@ -15,7 +22,7 @@ Ngày hoàn thiện: 02/08/2026.
 - `first_order`: khách chưa có `RentalOrder` ở trạng thái hợp lệ; Backend không suy luận từ tên/mô tả voucher và luôn ép `usageLimitPerCustomer = 1`.
 - `returning_customer`: khách đã có ít nhất một đơn hợp lệ.
 - `specific_customers`: customer ID phải nằm trong danh sách được cấu hình.
-- Các trạng thái `canceled`, `cancelled`, `rejected`, `expired` không làm mất quyền dùng voucher đơn đầu tiên. Các đơn đã tạo checkout thành công ở trạng thái khác được xem là đơn hợp lệ.
+- `canceled` là giá trị hủy canonical của `RentalOrder`; dữ liệu import cũ `cancelled` được chuẩn hóa khi đọc. Cả hai cùng với `rejected` và `expired` không làm mất quyền dùng voucher đơn đầu tiên. Các đơn đã tạo checkout thành công ở trạng thái khác được xem là đơn hợp lệ.
 - Kiểm tra eligibility chạy khi apply/quote và chạy lại trong transaction tạo đơn. Unique `firstOrderClaim` chặn hai request đồng thời cùng nhận quyền đơn đầu tiên, kể cả khi dùng hai voucher `first_order` khác nhau.
 
 ## Scope và công thức giảm

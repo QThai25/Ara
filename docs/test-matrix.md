@@ -52,7 +52,7 @@ Cập nhật: **02/08/2026**. `Pass` chỉ áp dụng cho test/lệnh đã chạ
 
 Tests must remain order-independent. Database-backed E2E should use a dedicated database and deterministic seeds; it must never target production.
 
-Kết quả suite gần nhất: Backend **222/222**, Frontend **17/17**, AdminFrontend **28/28**; Backend `npm run check` pass; cả hai production build pass. Browser mutation/E2E với database test cô lập vẫn chưa chạy.
+Kết quả authoritative cùng source commit `e345cd72f8f79b1eb568e8b8a8282ef826aa9e7d` lúc **2026-08-03T18:33:45+07:00**: Backend **232/232**, Frontend **17/19**, AdminFrontend **29/30**; Backend `npm run check` và cả hai production build pass. Hai lỗi Frontend và một lỗi AdminFrontend là các source-contract assertion cũ, không phải lỗi runtime của build. Voucher coverage trong cùng lần chạy: Backend `test/voucher.test.js` **10/10** pass. Browser mutation/E2E với database test cô lập vẫn chưa chạy.
 # Voucher
 
 - Percent/fixed, minimum order, maximum discount, upcoming/expired/inactive/exhausted.

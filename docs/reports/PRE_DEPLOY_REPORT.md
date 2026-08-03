@@ -94,4 +94,4 @@ Admin static tests bao phủ permission-aware navigation, friendly 403, dedicate
 8. Chỉ sau phê duyệt mới chạy migration apply/đăng ký webhook production.
 9. Giữ sẵn rollback image/Vercel deployment và Atlas restore procedure.
 
-Chi tiết: [Deployment readiness](docs/deployment-readiness.md), [Deployment guide](docs/deployment-guide.md), [RBAC](docs/ADMIN_RBAC.md).
+Chi tiết: [Deployment readiness](../deployment-readiness.md), [Deployment guide](../deployment-guide.md), [RBAC](../ADMIN_RBAC.md).

@@ -225,7 +225,6 @@ const rentalOrderSchema = new mongoose.Schema(
         "returned",
         "completed",
         "canceled",
-        "cancelled",
         "rejected",
         "expired",
         "overdue"

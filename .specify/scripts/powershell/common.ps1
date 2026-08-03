@@ -96,25 +96,45 @@ function Get-RepoRoot {
 }
 
 function Get-CurrentBranch {
-    # Return feature name from explicit state only.
-    # Feature state is set by SPECIFY_FEATURE (from create-new-feature or
-    # the git extension) or implicitly via .specify/feature.json.
+    # Prefer the explicit feature identity. Otherwise use the current git branch
+    # so feature state remains isolated between concurrent invocations.
     if ($env:SPECIFY_FEATURE) {
         return $env:SPECIFY_FEATURE
     }
 
-    # No explicit feature set - return empty to signal "unknown".
+    try {
+        $branch = (& git rev-parse --abbrev-ref HEAD 2>$null).Trim()
+        if ($branch -and $branch -ne 'HEAD') { return $branch }
+    } catch {
+        # Detached/non-git contexts must use an explicit feature directory.
+    }
+
     return ""
 }
 
 
 
-# Persist a feature_directory value to .specify/feature.json.
+# Return the branch-scoped feature state path. Branch names are treated as
+# untrusted filenames and normalized to a safe, stable key.
+function Get-FeatureStatePath {
+    param(
+        [Parameter(Mandatory = $true)][string]$RepoRoot,
+        [Parameter(Mandatory = $true)][string]$Branch
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Branch)) { return $null }
+    $safeBranch = $Branch -replace '[^A-Za-z0-9._-]', '_'
+    $stateDir = Join-Path (Join-Path $RepoRoot '.specify') 'feature-state'
+    return (Join-Path $stateDir "feature.$safeBranch.json")
+}
+
+# Persist a feature_directory value to branch-scoped state.
 # Writes only when the file is missing or the value differs from what's stored.
 function Save-FeatureJson {
     param(
         [Parameter(Mandatory = $true)][string]$RepoRoot,
-        [Parameter(Mandatory = $true)][string]$FeatureDirectory
+        [Parameter(Mandatory = $true)][string]$FeatureDirectory,
+        [string]$Branch = (Get-CurrentBranch)
     )
 
     # Strip repo root prefix if the value is absolute and under repo root.
@@ -130,7 +150,10 @@ function Save-FeatureJson {
         $FeatureDirectory = $FeatureDirectory.Substring($prefix.Length)
     }
 
-    $fjPath = Join-Path (Join-Path $RepoRoot '.specify') 'feature.json'
+    $fjPath = Get-FeatureStatePath -RepoRoot $RepoRoot -Branch $Branch
+    if (-not $fjPath) {
+        throw "Cannot persist feature state without a branch identity; set SPECIFY_FEATURE_DIRECTORY explicitly."
+    }
 
     # Read current value and skip write when unchanged
     if (Test-Path -LiteralPath $fjPath -PathType Leaf) {
@@ -145,13 +168,13 @@ function Save-FeatureJson {
         }
     }
 
-    # Ensure .specify/ directory exists
-    $specifyDir = Join-Path $RepoRoot '.specify'
-    if (-not (Test-Path -LiteralPath $specifyDir -PathType Container)) {
-        New-Item -ItemType Directory -Path $specifyDir -Force | Out-Null
+    # Ensure the branch-scoped state directory exists.
+    $stateDir = Split-Path -Parent $fjPath
+    if (-not (Test-Path -LiteralPath $stateDir -PathType Container)) {
+        New-Item -ItemType Directory -Path $stateDir -Force | Out-Null
     }
 
-    # Write feature.json
+    # Write the branch-scoped feature state file.
     $json = @{ feature_directory = $FeatureDirectory } | ConvertTo-Json -Compress
     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
     [System.IO.File]::WriteAllText($fjPath, $json, $utf8NoBom)
@@ -159,7 +182,7 @@ function Save-FeatureJson {
 
 function Get-FeaturePathsEnv {
     # Read-only callers (e.g. check-prerequisites.ps1 -PathsOnly) pass -NoPersist
-    # so pure path resolution never writes .specify/feature.json, which would
+    # so pure path resolution never writes branch-scoped state, which would
     # dirty the working tree or overwrite a pinned value (issue #3025).
     param(
         [switch]$NoPersist,
@@ -172,26 +195,27 @@ function Get-FeaturePathsEnv {
 
     # Resolve feature directory.  Priority:
     #   1. SPECIFY_FEATURE_DIRECTORY env var (explicit override)
-    #   2. .specify/feature.json "feature_directory" key (persisted by specify command)
+    #   2. branch-scoped state for the current branch (persisted by specify command)
     #   3. Error - no feature context available
-    $featureJson = Join-Path $repoRoot '.specify/feature.json'
+    $featureJson = Get-FeatureStatePath -RepoRoot $repoRoot -Branch $currentBranch
     if ($env:SPECIFY_FEATURE_DIRECTORY) {
         $featureDir = $env:SPECIFY_FEATURE_DIRECTORY
         # Normalize relative paths to absolute under repo root
         if (-not [System.IO.Path]::IsPathRooted($featureDir)) {
             $featureDir = Join-Path $repoRoot $featureDir
         }
-        # Persist to feature.json so future sessions without the env var still
-        # work - unless the caller opted out for read-only resolution (#3025).
-        if (-not $NoPersist) {
-            Save-FeatureJson -RepoRoot $repoRoot -FeatureDirectory $env:SPECIFY_FEATURE_DIRECTORY
+        # Persist only to the current branch's state so another invocation cannot
+        # silently retarget this command. Detached/non-git callers must keep the
+        # explicit environment value for downstream commands.
+        if (-not $NoPersist -and $currentBranch) {
+            Save-FeatureJson -RepoRoot $repoRoot -FeatureDirectory $env:SPECIFY_FEATURE_DIRECTORY -Branch $currentBranch
         }
     } elseif (Test-Path $featureJson) {
         $featureJsonRaw = Get-Content -LiteralPath $featureJson -Raw
         try {
             $featureConfig = $featureJsonRaw | ConvertFrom-Json
         } catch {
-            [Console]::Error.WriteLine("ERROR: Feature directory not found. Set SPECIFY_FEATURE_DIRECTORY or ensure .specify/feature.json contains feature_directory.")
+            [Console]::Error.WriteLine("ERROR: Feature directory not found. Set SPECIFY_FEATURE_DIRECTORY or ensure branch-scoped feature state exists.")
             if ($ReturnNullOnError) { return $null }
             exit 1
         }
@@ -202,18 +226,18 @@ function Get-FeaturePathsEnv {
                 $featureDir = Join-Path $repoRoot $featureDir
             }
         } else {
-            [Console]::Error.WriteLine("ERROR: Feature directory not found. Set SPECIFY_FEATURE_DIRECTORY or ensure .specify/feature.json contains feature_directory.")
+            [Console]::Error.WriteLine("ERROR: Feature directory not found. Set SPECIFY_FEATURE_DIRECTORY or ensure branch-scoped feature state exists.")
             if ($ReturnNullOnError) { return $null }
             exit 1
         }
     } else {
-        [Console]::Error.WriteLine("ERROR: Feature directory not found. Set SPECIFY_FEATURE_DIRECTORY or run the specify command to create .specify/feature.json.")
+        [Console]::Error.WriteLine("ERROR: Feature directory not found. Set SPECIFY_FEATURE_DIRECTORY or run specify on the current branch to create branch-scoped feature state.")
         if ($ReturnNullOnError) { return $null }
         exit 1
     }
 
-    # When no branch context exists (no SPECIFY_FEATURE, feature resolved via
-    # SPECIFY_FEATURE_DIRECTORY or feature.json), fall back to the feature
+    # When no branch context exists (feature resolved via explicit
+    # SPECIFY_FEATURE_DIRECTORY), fall back to the feature
     # directory basename so CURRENT_BRANCH is a usable identifier rather than
     # an empty, misleading value (issue #3026).
     if (-not $currentBranch) {

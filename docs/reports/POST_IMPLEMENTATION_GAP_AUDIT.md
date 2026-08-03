@@ -3,7 +3,7 @@
 Ngày đối chiếu: 02/08/2026  
 Phạm vi: `Backend/`, `Frontend/`, `AdminFrontend/`, các báo cáo UX và toàn bộ thay đổi chưa commit liên quan đợt sửa UX.
 
-Tài liệu này là ảnh chụp trạng thái **trước hardening**. Các kết luận bên dưới được lấy từ code và test thực tế; không mặc định tin nội dung trong `UX_FIX_REPORT.md`. Tại thời điểm lập bảng này chưa sửa source code của ba ứng dụng và chưa kết nối database bên ngoài.
+Tài liệu này là ảnh chụp trạng thái **trước hardening**. Các kết luận bên dưới được lấy từ code và test thực tế; không mặc định tin nội dung trong `../ux/UX_FIX_REPORT.md`. Tại thời điểm lập bảng này chưa sửa source code của ba ứng dụng và chưa kết nối database bên ngoài.
 
 ## Quy ước trạng thái
 

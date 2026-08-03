@@ -9,11 +9,13 @@ import { normalizePhone } from "../utils/phone.js";
 import { buildStandardRentalSchedule, resolveStandardPackagePrice } from "./rentalSchedule.service.js";
 
 export const INVALID_FIRST_ORDER_STATUSES = Object.freeze([
-  "canceled", "cancelled", "rejected", "expired"
+  "canceled", "rejected", "expired"
 ]);
+const LEGACY_INVALID_FIRST_ORDER_STATUSES = Object.freeze(["cancelled"]);
 
 export function isValidRentalOrderStatus(status) {
-  return !INVALID_FIRST_ORDER_STATUSES.includes(String(status || ""));
+  const normalized = String(status || "") === "cancelled" ? "canceled" : String(status || "");
+  return !INVALID_FIRST_ORDER_STATUSES.includes(normalized);
 }
 
 const ADMIN_EDITABLE_FIELDS = Object.freeze([
@@ -134,7 +136,7 @@ async function hasValidRentalOrder(customerId, currentOrderId, session) {
   const query = RentalOrder.exists({
     customerId,
     ...(currentOrderId ? { _id: { $ne: currentOrderId } } : {}),
-    status: { $nin: INVALID_FIRST_ORDER_STATUSES }
+    status: { $nin: [...INVALID_FIRST_ORDER_STATUSES, ...LEGACY_INVALID_FIRST_ORDER_STATUSES] }
   });
   if (session) query.session(session);
   return Boolean(await query);

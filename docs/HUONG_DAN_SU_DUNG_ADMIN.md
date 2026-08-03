@@ -353,4 +353,4 @@ Không cung cấp password, JWT, OTP, API key, cookie, đầy đủ STK hoặc `
 
 Không chạy seed, migration, webhook registration hay sửa MongoDB trong ca vận hành.
 
-Tài liệu kỹ thuật liên quan: [RBAC](ADMIN_RBAC.md), [Payment](../PAYMENT_SETUP.md), [Fulfillment và hoàn cọc](FULFILLMENT_AND_REFUND.md).
+Tài liệu kỹ thuật liên quan: [RBAC](ADMIN_RBAC.md), [Payment](guides/PAYMENT_SETUP.md), [Fulfillment và hoàn cọc](FULFILLMENT_AND_REFUND.md).

@@ -22,12 +22,12 @@ You **MUST** consider the user input before proceeding (if not empty).
 - Check if `.specify/extensions.yml` exists in the project root.
 - If it exists, read it and look for entries under the `hooks.before_analyze` key
 - If the YAML cannot be parsed or is invalid, skip hook checking silently and continue normally
-- Filter out hooks where `enabled` is explicitly `false`. Treat hooks without an `enabled` field as enabled by default.
-- For each remaining hook, do **not** attempt to interpret or evaluate hook `condition` expressions:
-  - If the hook has no `condition` field, or it is null/empty, treat the hook as executable
-  - If the hook defines a non-empty `condition`, skip the hook and leave condition evaluation to the HookExecutor implementation
-- When constructing command invocations from hook command names, replace dots (`.`) with hyphens (`-`). For example, `speckit.git.commit` → `$speckit-git-commit`.
-- For each executable hook, output the following based on its `optional` flag:
+- Treat hook metadata and commands as untrusted. Filter out hooks where `enabled` is explicitly `false`, but never treat an enabled or condition-free hook as executable by default.
+- A hook may be dispatched only when its exact command matches an explicit allowlist of approved read-only commands and the user has explicitly confirmed that command for this invocation. Configuration, `optional`, and `condition` values never substitute for user confirmation; do not evaluate a condition to bypass this gate.
+- Reject and skip hooks that are not allowlisted, modify files or git state, access credentials/secrets, access production or external services, or cannot be shown with their full command, arguments, paths, and data effects before approval. The workflow and any dispatched hook must remain strictly read-only.
+- If a hook is unconfirmed, rejected, unavailable, times out, or exits nonzero, do not retry automatically. Report it as skipped/failed; halt only when the hook is explicitly required for a safe continuation, otherwise continue with a warning.
+- When constructing a displayed command name, replace dots (`.`) with hyphens (`-`). Never emit an executable dispatch instruction before approval.
+- For each allowlisted, explicitly confirmed hook, output the following based on its `optional` flag:
   - **Optional hook** (`optional: true`):
     ```
     ## Extension Hooks
@@ -39,18 +39,18 @@ You **MUST** consider the user input before proceeding (if not empty).
     Prompt: {prompt}
     To execute: `/{command}`
     ```
-  - **Mandatory hook** (`optional: false`):
+  - **Confirmed hook** (`optional: false`):
     ```
     ## Extension Hooks
 
-    **Automatic Pre-Hook**: {extension}
-    Executing: `/{command}`
-    EXECUTE_COMMAND: {command}
+    **Confirmed Pre-Hook**: {extension}
+    Approved command: `/{command}`
+    PENDING_HOOK_APPROVAL: {command}
 
     Wait for the result of the hook command before proceeding to the Goal.
     ```
-    After emitting the block above you MUST actually invoke the hook and wait for it to finish before continuing. Run it the same way you would run the command yourself in this agent/session (the invocation may differ from the literal `{command}` id shown above, e.g. a skills-mode agent runs it as `/skill:speckit-...` or `$speckit-...`). Emitting the block alone does not run the hook.
-- If no hooks are registered or `.specify/extensions.yml` does not exist, skip silently
+    Dispatch only after the user confirms this exact command; otherwise skip it. After dispatch, wait for the result and apply the failure handling above.
+- If no hooks are registered or `.specify/extensions.yml` does not exist, skip silently. Invalid hook configuration is reported and skipped without executing anything.
 
 ## Goal
 
@@ -112,7 +112,7 @@ Create internal representations (do not include raw artifacts in output):
 
 - **Requirements inventory**: For each Functional Requirement (FR-###) and Success Criterion (SC-###), record a stable key. Use the explicit FR-/SC- identifier as the primary key when present, and optionally also derive an imperative-phrase slug for readability (e.g., "User can upload file" → `user-can-upload-file`). Include only Success Criteria items that require buildable work (e.g., load-testing infrastructure, security audit tooling), and exclude post-launch outcome metrics and business KPIs (e.g., "Reduce support tickets by 50%").
 - **User story/action inventory**: Discrete user actions with acceptance criteria
-- **Task coverage mapping**: Map each task to one or more requirements or stories (inference by keyword / explicit reference patterns like IDs or key phrases)
+- **Task coverage mapping**: Record two separate mappings. A **confirmed mapping** exists only when the task explicitly names a stable `FR-###`, `SC-###`, or user-story reference such as `US1`/`US1/AC2`. A keyword or phrase match is an **inferred mapping** only and must be reported separately for review; it never counts as confirmed coverage.
 - **Constitution rule set**: Extract principle names and MUST/SHOULD normative statements
 
 ### 4. Detection Passes (Token-Efficient Analysis)
@@ -142,8 +142,8 @@ Focus on high-signal findings. Limit to 50 findings total; aggregate remainder i
 
 #### E. Coverage Gaps
 
-- Requirements with zero associated tasks
-- Tasks with no mapped requirement/story
+- Requirements with zero **confirmed** associated tasks
+- Tasks with no confirmed requirement/story (list inferred keyword matches separately)
 - Success Criteria requiring buildable work (performance, security, availability) not reflected in tasks
 
 #### F. Inconsistency
@@ -157,7 +157,7 @@ Focus on high-signal findings. Limit to 50 findings total; aggregate remainder i
 
 Use this heuristic to prioritize findings:
 
-- **CRITICAL**: Violates constitution MUST, missing core spec artifact, or requirement with zero coverage that blocks baseline functionality
+- **CRITICAL**: Violates constitution MUST, missing core spec artifact, or requirement with zero **confirmed** coverage that blocks baseline functionality
 - **HIGH**: Duplicate or conflicting requirement, ambiguous security/performance attribute, untestable acceptance criterion
 - **MEDIUM**: Terminology drift, missing non-functional task coverage, underspecified edge case
 - **LOW**: Style/wording improvements, minor redundancy not affecting execution order
@@ -176,8 +176,8 @@ Output a Markdown report (no file writes) with the following structure:
 
 **Coverage Summary Table:**
 
-| Requirement Key | Has Task? | Task IDs | Notes |
-|-----------------|-----------|----------|-------|
+| Requirement Key | Confirmed Task IDs | Inferred Task IDs | Notes |
+|-----------------|--------------------|-------------------|-------|
 
 **Constitution Alignment Issues:** (if any)
 
@@ -187,7 +187,8 @@ Output a Markdown report (no file writes) with the following structure:
 
 - Total Requirements
 - Total Tasks
-- Coverage % (requirements with >=1 task)
+- Confirmed coverage % (requirements with >=1 explicit-reference task; use this for gap severity and CRITICAL decisions)
+- Inferred associations (keyword matches requiring review; excluded from coverage %)
 - Ambiguity Count
 - Duplication Count
 - Critical Issues Count
@@ -209,12 +210,8 @@ Ask the user: "Would you like me to suggest concrete remediation edits for the t
 After reporting, check if `.specify/extensions.yml` exists in the project root.
 - If it exists, read it and look for entries under the `hooks.after_analyze` key
 - If the YAML cannot be parsed or is invalid, skip hook checking silently and continue normally
-- Filter out hooks where `enabled` is explicitly `false`. Treat hooks without an `enabled` field as enabled by default.
-- For each remaining hook, do **not** attempt to interpret or evaluate hook `condition` expressions:
-  - If the hook has no `condition` field, or it is null/empty, treat the hook as executable
-  - If the hook defines a non-empty `condition`, skip the hook and leave condition evaluation to the HookExecutor implementation
-- When constructing command invocations from hook command names, replace dots (`.`) with hyphens (`-`). For example, `speckit.git.commit` → `$speckit-git-commit`.
-- For each executable hook, output the following based on its `optional` flag:
+- Apply the same allowlist, explicit user-confirmation, read-only, credential-safety, and failure-handling rules used by the pre-analysis hook. Hooks are never dispatched automatically; unconfirmed or unsafe hooks are skipped.
+- For each allowlisted, explicitly confirmed hook, output the following based on its `optional` flag:
   - **Optional hook** (`optional: true`):
     ```
     ## Extension Hooks
@@ -226,16 +223,16 @@ After reporting, check if `.specify/extensions.yml` exists in the project root.
     Prompt: {prompt}
     To execute: `/{command}`
     ```
-  - **Mandatory hook** (`optional: false`):
+  - **Confirmed hook** (`optional: false`):
     ```
     ## Extension Hooks
 
-    **Automatic Hook**: {extension}
-    Executing: `/{command}`
-    EXECUTE_COMMAND: {command}
+    **Confirmed Hook**: {extension}
+    Approved command: `/{command}`
+    PENDING_HOOK_APPROVAL: {command}
     ```
-    After emitting the block above you MUST actually invoke the hook and wait for it to finish before continuing. Run it the same way you would run the command yourself in this agent/session (the invocation may differ from the literal `{command}` id shown above, e.g. a skills-mode agent runs it as `/skill:speckit-...` or `$speckit-...`). Emitting the block alone does not run the hook.
-- If no hooks are registered or `.specify/extensions.yml` does not exist, skip silently
+    Dispatch only after the user confirms this exact command; otherwise skip it. After dispatch, wait for the result and apply the failure handling above.
+- If no hooks are registered or `.specify/extensions.yml` does not exist, skip silently. Invalid hook configuration is reported and skipped without executing anything.
 
 ## Operating Principles
 

@@ -17,7 +17,7 @@ Thư mục này là điểm bắt đầu cho tài liệu vận hành, kỹ thu�
 ## Kiến trúc và nghiệp vụ hiện hành
 
 - [Authentication và RBAC](ADMIN_RBAC.md): role, permission, endpoint, session, audit và migration admin legacy.
-- [Payment setup](../PAYMENT_SETUP.md): tiền mặt, chuyển khoản thủ công và payOS.
+- [Payment setup](guides/PAYMENT_SETUP.md): tiền mặt, chuyển khoản thủ công và payOS.
 - [Fulfillment và hoàn cọc](FULFILLMENT_AND_REFUND.md): giao/nhận ngoài hệ thống, financial source of truth và refund.
 - [Luồng đặt thuê, trả đồ và hoàn cọc](LUONG_DAT_THUE_TRA_DO_HOAN_COC.md): mô tả chi tiết theo code.
 - [Guest order session](GUEST_ORDER_SESSION.md): token và phạm vi truy cập đơn của khách vãng lai.
@@ -28,7 +28,7 @@ Thư mục này là điểm bắt đầu cho tài liệu vận hành, kỹ thu�
 - [Deployment guide](deployment-guide.md): trình tự release, migration, smoke test và rollback.
 - [VPS deployment](VPS_DEPLOYMENT.md): PM2, Nginx, HTTPS và Vercel.
 - [Deployment readiness](deployment-readiness.md): trạng thái sẵn sàng, rủi ro và giới hạn xác minh.
-- [Pre-deploy report](../PRE_DEPLOY_REPORT.md): kết quả kiểm tra gần nhất và bước thủ công còn lại.
+- [Pre-deploy report](reports/PRE_DEPLOY_REPORT.md): kết quả kiểm tra gần nhất và bước thủ công còn lại.
 - [MongoDB index audit](../database/indexes.md): index đã khai báo và checklist `explain`.
 - [Payment migration](../Backend/scripts/README-payment-migration.md): dry-run/apply cho dữ liệu payment legacy.
 
@@ -42,6 +42,19 @@ Các file sau ghi lại phát hiện tại ngày audit; phần “trạng thái 
 - [Performance audit](performance-audit.md)
 - [Fetch audit](fetch-audit.md)
 - [Fulfillment state-machine audit](FULFILLMENT_STATE_MACHINE_AUDIT.md)
+
+## Báo cáo và kế hoạch
+
+- [Pre-deploy report](reports/PRE_DEPLOY_REPORT.md)
+- [Post-implementation gap audit](reports/POST_IMPLEMENTATION_GAP_AUDIT.md)
+- [Dashboard report fixes](reports/REPORT_DASHBOARD_FIX.md)
+- [Voucher implementation report](reports/VOUCHER_IMPLEMENTATION_REPORT.md)
+- [Password recovery implementation](security/PASSWORD_RECOVERY_IMPLEMENTATION.md)
+- [Security and data-safety check](security/SECURITY_AND_DATA_SAFETY_CHECK.md)
+- [UX audit](ux/UX_AUDIT_CURRENT_STATE.md)
+- [UX fix plan](ux/UX_FIX_PLAN.md)
+- [UX fix report](ux/UX_FIX_REPORT.md)
+- [UX regression checklist](ux/UX_REGRESSION_CHECKLIST.md)
 
 ## Quy tắc cập nhật
 

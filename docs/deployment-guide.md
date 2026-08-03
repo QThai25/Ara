@@ -181,4 +181,4 @@ Nghiệp vụ:
 
 Sau rollback kiểm tra health, login Owner/Staff, catalog, order detail, payment callback và session invalidation.
 
-Xem thêm [VPS runbook](VPS_DEPLOYMENT.md), [RBAC](ADMIN_RBAC.md) và [Pre-deploy report](../PRE_DEPLOY_REPORT.md).
+Xem thêm [VPS runbook](VPS_DEPLOYMENT.md), [RBAC](ADMIN_RBAC.md) và [Pre-deploy report](reports/PRE_DEPLOY_REPORT.md).

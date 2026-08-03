@@ -106,6 +106,20 @@ function Get-FittedBranchName {
 
     return $fittedName
 }
+
+function New-FeatureDirectoryExclusive {
+    param([string]$Path)
+
+    try {
+        New-Item -ItemType Directory -Path $Path -ErrorAction Stop | Out-Null
+        return $true
+    } catch {
+        if (Test-Path -LiteralPath $Path -PathType Container) {
+            return $false
+        }
+        throw
+    }
+}
 # Load common functions (includes Get-RepoRoot and Resolve-Template)
 . "$PSScriptRoot/common.ps1"
 
@@ -262,7 +276,33 @@ if (-not $DryRun) {
         exit 1
     }
 
-    New-Item -ItemType Directory -Path $featureDir -Force | Out-Null
+    if ($AllowExistingBranch) {
+        New-Item -ItemType Directory -Path $featureDir -Force | Out-Null
+    } else {
+        $directoryReserved = $false
+        while (-not $directoryReserved) {
+            $directoryReserved = New-FeatureDirectoryExclusive -Path $featureDir
+            if ($directoryReserved) {
+                break
+            }
+
+            if ($Timestamp) {
+                Write-Error "Error: Feature directory '$featureDir' already exists. Rerun to get a new timestamp or use a different -ShortName."
+                exit 1
+            }
+
+            if ($resolvedNumber -eq [long]::MaxValue) {
+                Write-Error "Error: feature number must be between 0 and $([long]::MaxValue), got '9223372036854775808'"
+                exit 1
+            }
+
+            $resolvedNumber++
+            $featureNum = ('{0:000}' -f $resolvedNumber)
+            $branchName = Get-FittedBranchName -FeatureNum $featureNum -BranchSuffix $branchSuffix
+            $featureDir = Join-Path $specsDir $branchName
+            $specFile = Join-Path $featureDir 'spec.md'
+        }
+    }
 
     if (-not (Test-Path -PathType Leaf $specFile)) {
         $template = Resolve-Template -TemplateName 'spec-template' -RepoRoot $repoRoot
@@ -280,12 +320,13 @@ if (-not $DryRun) {
         }
     }
 
-    # Persist to .specify/feature.json so downstream commands can find the feature
-    Save-FeatureJson -RepoRoot $repoRoot -FeatureDirectory $featureDir
-
     # Set environment variables for the current session
     $env:SPECIFY_FEATURE = $branchName
     $env:SPECIFY_FEATURE_DIRECTORY = $featureDir
+
+    # Persist to branch-scoped state so downstream commands cannot target a
+    # different concurrent feature invocation.
+    Save-FeatureJson -RepoRoot $repoRoot -FeatureDirectory $featureDir -Branch $branchName
 
     $quotedBranchName = "'" + $branchName.Replace("'", "''") + "'"
     $quotedFeatureDir = "'" + $featureDir.Replace("'", "''") + "'"

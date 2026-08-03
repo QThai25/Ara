@@ -132,4 +132,4 @@ npm.cmd run build
 - Giới hạn CORS vào đúng Customer/Admin domains.
 - Khi nghi ngờ lộ key, rotate ở provider và cập nhật secret store trước khi bật lại payment.
 
-Xem thêm [Fulfillment và hoàn cọc](docs/FULFILLMENT_AND_REFUND.md) và [RBAC quản trị](docs/ADMIN_RBAC.md).
+Xem thêm [Fulfillment và hoàn cọc](../FULFILLMENT_AND_REFUND.md) và [RBAC quản trị](../ADMIN_RBAC.md).

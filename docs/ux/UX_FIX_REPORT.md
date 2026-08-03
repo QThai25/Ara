@@ -47,7 +47,7 @@ Các state machine đơn thuê, giao nhận, thanh toán và hoàn cọc không 
 ### Số liệu dashboard/báo cáo vận hành
 
 - Doanh thu chỉ lấy cash-in từ Payment thành công; khoản hoàn lấy từ `DepositRefund` đã hoàn tất và được trừ khỏi thực nhận.
-- Biểu đồ lifecycle dùng thời điểm tạo/xác nhận/bắt đầu thuê/trả/hoàn tất/hủy thật thay vì dồn theo ngày tạo đơn.
+- Biểu đồ lifecycle dùng đúng bốn event theo contract hiện tại: `created`, `pickedUp`, `returned` và `completed`, với thời điểm thực tế tương ứng thay vì dồn mọi event theo ngày tạo đơn.
 - “Top trang phục được thuê” chỉ tính đơn đã thực sự bắt đầu thuê, không tính đơn chỉ mới đặt lịch.
 - Dashboard dùng đầy đủ khoảng thời gian đang lọc, không âm thầm rút còn 14 ngày.
 - File chính: `Backend/src/services/adminReport.service.js`, `AdminFrontend/src/pages/DashboardPage.jsx`, `AdminFrontend/src/components/reports/ReportCharts.jsx`, `AdminFrontend/src/components/revenue/RevenueAnalytics.jsx`.
@@ -56,11 +56,10 @@ Các state machine đơn thuê, giao nhận, thanh toán và hoàn cọc không 
 
 ### UX-01 — Quên và đặt lại mật khẩu
 
-- Thêm luồng ba bước: yêu cầu OTP, xác minh OTP, đặt mật khẩu mới.
-- Response yêu cầu OTP là generic để không tiết lộ tài khoản; OTP có purpose riêng, cooldown/rate limit và hạn dùng.
-- Reset token ngẫu nhiên được hash khi lưu, hết hạn sau 10 phút, dùng một lần; đặt lại mật khẩu tăng `tokenVersion` để thu hồi phiên cũ.
-- Production cần cấu hình SMS webhook qua biến môi trường; development có cơ chế test an toàn, không ghi secret vào source.
-- File chính: model `User.js`/`PhoneOtp.js`, auth controller/service/routes/validation, `otpDelivery.service.js`, `Backend/.env.example`, `Frontend/src/pages/customer/ForgotPasswordPage.jsx`, auth service/routes.
+- Thiết bị tin cậy hoặc quyền do nhân viên/chủ cửa hàng cấp authorizes recovery; không dùng OTP/SMS/`PhoneOtp` cho hợp đồng recovery hiện tại.
+- Request recovery phát hành reset ticket HttpOnly sống 5 phút, chỉ lưu hash, dùng một lần; đặt lại mật khẩu tăng `tokenVersion` để thu hồi phiên cũ.
+- Response từ chối không tiết lộ thêm thông tin nhạy cảm; khách không có quyền hợp lệ được hướng dẫn liên hệ cửa hàng.
+- File chính: `TrustedDevice.js`, `PasswordResetGrant.js`, `PasswordResetTicket.js`, password recovery/grant service, auth controller/routes/validation, `Frontend/src/pages/customer/ForgotPasswordPage.jsx` và test matrix AUTH-05/AUTH-06.
 
 ### UX-07 — Email tùy chọn
 
@@ -152,7 +151,7 @@ Build còn hai cảnh báo không chặn từ baseline: `ProductCarousel.jsx` v�
 
 ## Phụ lục post-implementation hardening — 02/08/2026
 
-Phụ lục này là kết quả mới nhất và thay thế các con số test/kết luận runtime trước đó trong báo cáo. Chi tiết lỗ hổng trước/sau nằm tại `POST_IMPLEMENTATION_GAP_AUDIT.md`.
+Phụ lục này là kết quả mới nhất và thay thế các con số test/kết luận runtime trước đó trong báo cáo. Chi tiết lỗ hổng trước/sau nằm tại `../reports/POST_IMPLEMENTATION_GAP_AUDIT.md`.
 
 ### Các lỗ hổng đã sửa sau plan
 

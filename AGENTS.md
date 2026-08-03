@@ -116,8 +116,8 @@ Trước khi sửa nghiệp vụ tương ứng, đọc tài liệu gần nhất 
 - Fulfillment/refund: `docs/FULFILLMENT_AND_REFUND.md`.
 - Guest order: `docs/GUEST_ORDER_SESSION.md`.
 - Kiểm thử: `docs/test-matrix.md`.
-- Triển khai: `docs/deployment-guide.md`, `docs/VPS_DEPLOYMENT.md` và `PRE_DEPLOY_REPORT.md`.
-- Thanh toán: `PAYMENT_SETUP.md`.
+- Triển khai: `docs/deployment-guide.md`, `docs/VPS_DEPLOYMENT.md` và `docs/reports/PRE_DEPLOY_REPORT.md`.
+- Thanh toán: `docs/guides/PAYMENT_SETUP.md`.
 
 Nếu code và tài liệu mâu thuẫn, không âm thầm đoán. Nêu rõ điểm mâu thuẫn, kiểm tra test/usage thực tế và chọn thay đổi ít rủi ro nhất trong phạm vi yêu cầu.
 

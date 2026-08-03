@@ -10,7 +10,7 @@ Nguyên tắc: chỉ đọc, chạy kiểm tra và quan sát; không sửa UI, d
 
 Hệ thống đã có nền tảng nghiệp vụ khá đầy đủ: lịch thuê kiểm tra xung đột, checkout có kiểm tra lại lịch, thanh toán và hoàn cọc có trạng thái/đối soát, admin có RBAC và các thao tác quan trọng được khóa theo `allowedActions`. Các màn hình chính không gây tràn ngang toàn trang ở 375px, 430px, 768px và 1440px trong các ca đã chạy.
 
-Tuy nhiên, chưa nên nghiệm thu UX ở trạng thái hiện tại. Audit ghi nhận **21 vấn đề: 0 Critical, 7 High, 11 Medium và 3 Low**. Bốn rủi ro lớn nhất là:
+Tuy nhiên, chưa nên nghiệm thu UX ở trạng thái hiện tại. Audit ghi nhận **22 vấn đề: 0 Critical, 7 High, 12 Medium và 3 Low**. Bốn rủi ro lớn nhất là:
 
 1. Danh sách đơn admin chỉ tải 50 đơn mới nhất rồi tìm kiếm/lọc/phân trang cục bộ; đơn cũ có thể không tìm thấy để xử lý.
 2. Khi API admin lỗi, một số trang có thể tự gọi lại liên tục do `notify` thay đổi tham chiếu sau mỗi render.

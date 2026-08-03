@@ -63,4 +63,4 @@ Customer build còn cảnh báo `ProductCarousel` vừa dynamic vừa static imp
 - payOS webhook chỉ đăng ký khi URL/credential production đã xác nhận.
 - Có rollback image/deployment và người chịu trách nhiệm release.
 
-Xem [deployment guide](deployment-guide.md) và [pre-deploy report](../PRE_DEPLOY_REPORT.md).
+Xem [deployment guide](deployment-guide.md) và [pre-deploy report](reports/PRE_DEPLOY_REPORT.md).

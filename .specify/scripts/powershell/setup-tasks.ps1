@@ -46,6 +46,11 @@ if (-not (Test-Path $paths.FEATURE_SPEC -PathType Leaf)) {
     exit 1
 }
 
+if (Test-Path $paths.TASKS -PathType Leaf) {
+    [Console]::Error.WriteLine("ERROR: tasks.md already exists at $($paths.TASKS). Refusing to regenerate or append so phases, task IDs, and completion states are preserved.")
+    exit 1
+}
+
 # Build available docs list
 $docs = @()
 if (Test-Path $paths.RESEARCH) { $docs += 'research.md' }

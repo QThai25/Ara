@@ -13,7 +13,8 @@ import {
   itemMatchesScope,
   isValidRentalOrderStatus,
   voucherBusinessStatus,
-  reserveVoucherForOrder
+  reserveVoucherForOrder,
+  releaseVoucherForOrder
 } from "../src/services/voucher.service.js";
 
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
@@ -56,10 +57,39 @@ test("voucher scope matches all, category, occasion and product by stored IDs", 
   assert.equal(itemMatchesScope({ applicableScope: "product", applicableProductIds: ["product-2"] }, item), false);
 });
 
-test("canceled, cancelled, rejected and expired orders do not consume first-order eligibility", () => {
-  assert.deepEqual([...INVALID_FIRST_ORDER_STATUSES], ["canceled", "cancelled", "rejected", "expired"]);
-  for (const status of INVALID_FIRST_ORDER_STATUSES) assert.equal(isValidRentalOrderStatus(status), false);
+test("canceled is the canonical cancellation status and legacy cancelled orders do not consume first-order eligibility", () => {
+  assert.deepEqual([...INVALID_FIRST_ORDER_STATUSES], ["canceled", "rejected", "expired"]);
+  for (const status of [...INVALID_FIRST_ORDER_STATUSES, "cancelled"]) assert.equal(isValidRentalOrderStatus(status), false);
   for (const status of ["pending_payment", "confirmed", "renting", "returned", "completed"]) assert.equal(isValidRentalOrderStatus(status), true);
+});
+
+test("legacy cancelled order release clears voucher usage and first-order claim", async () => {
+  const originals = {
+    findOneAndUpdate: VoucherRedemption.findOneAndUpdate,
+    updateOne: Voucher.updateOne
+  };
+  let filter;
+  let update;
+  VoucherRedemption.findOneAndUpdate = async (value, changes) => {
+    filter = value;
+    update = changes;
+    return { voucherId: "voucher-id" };
+  };
+  Voucher.updateOne = async () => ({ acknowledged: true });
+  try {
+    await releaseVoucherForOrder("legacy-cancelled-order", "order_cancelled_import");
+    assert.equal(filter.orderId, "legacy-cancelled-order");
+    assert.deepEqual(update.$set, {
+      status: "released",
+      firstOrderClaim: false,
+      releasedAt: update.$set.releasedAt,
+      releaseReason: "order_cancelled_import"
+    });
+    assert.deepEqual(update.$unset, { idempotencyKey: 1 });
+  } finally {
+    VoucherRedemption.findOneAndUpdate = originals.findOneAndUpdate;
+    Voucher.updateOne = originals.updateOne;
+  }
 });
 
 test("voucher persistence uses explicit eligibility/scope, atomic usage and first-order concurrency claims", async () => {
