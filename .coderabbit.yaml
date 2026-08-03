@@ -1,0 +1,42 @@
+language: "vi-VN"
+
+reviews:
+  profile: "assertive"
+  review_status: true
+
+  path_filters:
+    - "!**/node_modules/**"
+    - "!**/dist/**"
+    - "!**/build/**"
+    - "!**/coverage/**"
+    - "!**/.agents/**"
+    - "!**/.specify/**"
+    - "!**/package-lock.json"
+
+  path_instructions:
+    - path: "Backend/src/services/**/*.js"
+      instructions: |
+        Check business rules, authorization, transaction safety,
+        rollback, idempotency, race conditions, voucher limits,
+        rental overlap, N+1 queries, unbounded queries, pagination,
+        projections, and MongoDB index usage.
+
+    - path: "Backend/src/controllers/**/*.js"
+      instructions: |
+        Check validation, authentication, authorization,
+        ownership checks, consistent errors, and safe responses.
+
+    - path: "Backend/src/models/**/*.js"
+      instructions: |
+        Check indexes, status consistency, legacy data compatibility,
+        financial and rental invariants, and concurrency constraints.
+
+    - path: "Frontend/src/**/*.{js,jsx}"
+      instructions: |
+        Check stale requests, duplicate submissions, unhandled promises,
+        incorrect pagination, stale voucher state, and unnecessary refetches.
+
+    - path: "AdminFrontend/src/**/*.{js,jsx}"
+      instructions: |
+        Check permissions, stale responses, duplicate actions,
+        pagination, filters, modal behavior, and accessibility.
