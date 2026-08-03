@@ -15,7 +15,7 @@ test("voucher admin form exposes explicit eligibility and scope while usageCount
   assert.match(page, /Số lượt đã dùng \(hệ thống\).*readOnly/s);
   assert.match(page, /field === "eligibilityType" && value === "first_order"[\s\S]*usageLimitPerCustomer: 1/);
   assert.match(page, /businessStatus:.*StatusBadge type="voucher"/s);
-  assert.match(page, /useEffect\(\(\) => \{\s*load\(\);\s*\}, \[activeTab\]\)/s);
+  assert.match(page, /useEffect\(\(\) => \{\s*load\(\);\s*return \(\) => \{ loadRequestRef\.current \+= 1; \};\s*\}, \[activeTab, load\]\)/s);
   assert.match(page, /tableClassName="voucher-table"/);
   assert.match(page, /<AdminActionMenu>[\s\S]*Vô hiệu hóa/);
   assert.match(status, /voucher: \{ upcoming: "Sắp diễn ra", active: "Đang hoạt động", inactive: "Tạm tắt", expired: "Đã hết hạn", exhausted: "Đã hết lượt" \}/);

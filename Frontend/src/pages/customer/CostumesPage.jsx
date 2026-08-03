@@ -248,9 +248,9 @@ export function CostumesPage({ setView, user, notify }) {
             </div>}
             {!loading && !error && pagination.totalPages > 1 && (
               <nav className="pagination catalog-pagination" aria-label="Phân trang danh sách trang phục">
-                <button type="button" disabled={pagination.page <= 1} onClick={() => goToPage(currentPage - 1)}>Trước</button>
+                <button type="button" disabled={loading || pagination.page <= 1} onClick={() => goToPage(currentPage - 1)}>Trước</button>
                 <span>Trang {pagination.page} / {pagination.totalPages}</span>
-                <button type="button" disabled={pagination.page >= pagination.totalPages} onClick={() => goToPage(currentPage + 1)}>Sau</button>
+                <button type="button" disabled={loading || pagination.page >= pagination.totalPages} onClick={() => goToPage(currentPage + 1)}>Sau</button>
               </nav>
             )}
           </main>

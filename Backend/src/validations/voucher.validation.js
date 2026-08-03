@@ -1,5 +1,6 @@
 import { body, param, query } from "express-validator";
 import { VOUCHER_DISCOUNT_TYPES, VOUCHER_ELIGIBILITY_TYPES, VOUCHER_SCOPES, VOUCHER_STATUSES } from "../models/Voucher.js";
+import { todayInVietnam } from "../utils/date.js";
 
 const voucherMaxExtraDays = Math.max(0, Number(process.env.RENTAL_MAX_EXTRA_DAYS || 30));
 const voucherStoreOpenTime = process.env.RENTAL_STORE_OPEN_TIME || "08:00";
@@ -83,7 +84,7 @@ export const applyVoucherValidation = [
     }
     if (value.mainUseDate) {
       const date = new Date(`${value.mainUseDate}T00:00:00Z`);
-      const today = new Date().toISOString().slice(0, 10);
+      const today = todayInVietnam();
       if (Number.isNaN(date.getTime()) || value.mainUseDate < today) throw new Error("Ngày mặc của voucher phải từ hôm nay trở đi.");
     }
     for (const [field, label] of [["pickupTime", "Giờ lấy đồ"], ["returnTime", "Giờ trả đồ"]]) {

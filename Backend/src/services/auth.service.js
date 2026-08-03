@@ -161,15 +161,27 @@ function hashOtp(phoneNormalized, otp) {
 
 export async function consumePhoneOtp({ phone, otp, purpose }) {
   const phoneNormalized = normalizePhone(phone);
-  if (!phoneNormalized || !otp) throw new ApiError(400, "Vui lòng nhập số điện thoại và mã OTP.");
+  if (!phoneNormalized || !otp) {
+    const error = new ApiError(400, "Vui lòng nhập số điện thoại và mã OTP.");
+    error.code = "OTP_INPUT_INVALID";
+    throw error;
+  }
   const now = new Date();
   const record = await PhoneOtp.findOne({
     phoneNormalized,
     purpose,
-    consumedAt: null,
-    expiresAt: { $gt: now }
-  }).sort({ createdAt: -1 }).select("_id maxAttempts");
-  if (!record) throw new ApiError(401, "Mã OTP không hợp lệ hoặc đã hết hạn.");
+    consumedAt: null
+  }).sort({ createdAt: -1 }).select("_id maxAttempts attempts expiresAt");
+  if (!record) {
+    const error = new ApiError(401, "Mã OTP không hợp lệ hoặc đã hết hạn.");
+    error.code = "OTP_INVALID";
+    throw error;
+  }
+  if (new Date(record.expiresAt) <= now) {
+    const error = new ApiError(401, "Mã OTP không hợp lệ hoặc đã hết hạn.");
+    error.code = "OTP_EXPIRED";
+    throw error;
+  }
   const baseFilter = {
     _id: record._id,
     consumedAt: null,
@@ -191,9 +203,13 @@ export async function consumePhoneOtp({ phone, otp, purpose }) {
   );
   if (failed) {
     if (Number(failed.attempts) >= Number(failed.maxAttempts)) {
-      throw new ApiError(429, "Mã OTP đã vượt quá số lần thử.");
+      const error = new ApiError(429, "Mã OTP đã vượt quá số lần thử.");
+      error.code = "OTP_ATTEMPTS_EXCEEDED";
+      throw error;
     }
-    throw new ApiError(401, "Mã OTP không hợp lệ hoặc đã hết hạn.");
+    const error = new ApiError(401, "Mã OTP không hợp lệ hoặc đã hết hạn.");
+    error.code = "OTP_INVALID";
+    throw error;
   }
 
   const exhausted = await PhoneOtp.exists({
@@ -202,8 +218,14 @@ export async function consumePhoneOtp({ phone, otp, purpose }) {
     expiresAt: { $gt: now },
     $expr: { $gte: ["$attempts", "$maxAttempts"] }
   });
-  if (exhausted) throw new ApiError(429, "Mã OTP đã vượt quá số lần thử.");
-  throw new ApiError(401, "Mã OTP không hợp lệ hoặc đã hết hạn.");
+  if (exhausted) {
+    const error = new ApiError(429, "Mã OTP đã vượt quá số lần thử.");
+    error.code = "OTP_ATTEMPTS_EXCEEDED";
+    throw error;
+  }
+  const error = new ApiError(401, "Mã OTP không hợp lệ hoặc đã hết hạn.");
+  error.code = "OTP_INVALID";
+  throw error;
 }
 
 export async function requestPhoneOtp({ phone, purpose = "login", ip = "" }) {

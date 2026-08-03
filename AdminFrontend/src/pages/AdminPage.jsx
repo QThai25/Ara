@@ -2273,7 +2273,11 @@ function VoucherManager({ items, pagination, categories, occasions, costumes, cu
     ...(eligibilityFilter ? { eligibilityType: eligibilityFilter } : {})
   });
   const requestPage = (page) => reloadRef.current({ silent: true, voucherParams: { ...query(), page } });
+  const previousVoucherFiltersRef = useRef({ debouncedSearch, statusFilter, eligibilityFilter });
   useEffect(() => {
+    const previous = previousVoucherFiltersRef.current;
+    if (previous.debouncedSearch === debouncedSearch && previous.statusFilter === statusFilter && previous.eligibilityFilter === eligibilityFilter) return;
+    previousVoucherFiltersRef.current = { debouncedSearch, statusFilter, eligibilityFilter };
     requestPage(1);
   }, [debouncedSearch, statusFilter, eligibilityFilter]);
   const filtered = items;

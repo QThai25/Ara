@@ -9,7 +9,7 @@ export function resolveAdminRoutePermission(basePath, req) {
     case "/admin/dashboard":
       return req.path === "/revenue" ? P.DASHBOARD_VIEW_FINANCIAL : P.DASHBOARD_VIEW_OPERATIONAL;
     case "/admin/customers":
-      if (isPasswordResetGrantRoute(req)) return P.CUSTOMERS_RESET_PASSWORD;
+      if (isPasswordResetGrantRoute(req, basePath)) return P.CUSTOMERS_RESET_PASSWORD;
       return isRead(req) ? P.CUSTOMERS_VIEW_OPERATIONAL : P.CUSTOMERS_MANAGE_SENSITIVE;
     case "/admin/categories":
     case "/admin/brands":
