@@ -11,8 +11,11 @@ function voucherRows(response) {
 }
 
 export async function getAdminVouchers(params = {}) {
-  const response = await apiClient.get("/admin/vouchers", { params: { limit: 100, ...params } });
-  return voucherRows(response);
+  const response = await apiClient.get("/admin/vouchers", { params: { page: 1, limit: 20, ...params } });
+  return {
+    items: voucherRows(response),
+    pagination: response?.data?.pagination || response?.pagination || { page: Number(params.page) || 1, limit: Number(params.limit) || 20, total: voucherRows(response).length, totalPages: 1 }
+  };
 }
 
 export const createVoucher = (payload) => apiClient.post("/admin/vouchers", payload);

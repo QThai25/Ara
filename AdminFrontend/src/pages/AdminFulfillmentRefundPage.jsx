@@ -123,7 +123,7 @@ export function AdminFulfillmentRefundPage({ notify }) {
               { key: "order", label: "Mã đơn thuê", render: (row) => <button className="refund-order-link" onClick={() => navigate(`/orders/${idOf(row.orderId)}`)}>{orderCode(row)}</button> },
               { key: "customer", label: "Khách hàng", render: (row) => <span className="refund-customer"><strong>{customer(row).name || "Khách hàng"}</strong><small>{customer(row).phone || "Chưa có số điện thoại"}</small></span> },
               { key: "amount", label: "Số tiền", className: "money-cell", render: (row) => money(row.amount) },
-              { key: "status", label: "Trạng thái", render: (row) => <StatusBadge type="refund" value={row.status}/> },
+              { key: "status", label: "Trạng thái", render: (row) => <StatusBadge value={row.status}/> },
               { key: "date", label: "Ngày tạo / cập nhật", render: (row) => <span className="refund-date">{dateTime(row.createdAt)}<small>Cập nhật {dateTime(row.updatedAt)}</small></span> },
               { key: "action", label: "Thao tác", render: (row) => <button className="refund-action" onClick={() => primaryAction(row)}><Eye size={15}/><ActionLabel refund={row}/></button> }
             ]}

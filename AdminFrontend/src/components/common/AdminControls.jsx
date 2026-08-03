@@ -81,6 +81,11 @@ export function ModalSelect({ label, value, options = [], onChange, placeholder 
     } else if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
       if (selectable[activeIndex]) choose(selectable[activeIndex].value);
+    } else if (open && event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      setOpen(false);
+      triggerRef.current?.focus();
     } else if (event.key === "Tab") {
       setOpen(false);
     }
@@ -96,7 +101,7 @@ export function ModalSelect({ label, value, options = [], onChange, placeholder 
       {!visibleOptions.length && !loading && <p>Không có lựa chọn phù hợp</p>}
       {visibleOptions.map((option, index) => { const active = String(option.value) === String(value ?? ""); const optionIndex = index + (clearable ? 1 : 0); return <button type="button" role="option" aria-selected={active} className={`${active ? "is-selected" : ""} ${activeIndex === optionIndex ? "is-keyboard-active" : ""}`} key={String(option.value)} onMouseEnter={() => setActiveIndex(optionIndex)} onClick={() => choose(option.value)}><span>{option.label}</span>{active && <CheckCircle2 size={16}/>}</button>; })}
       {loading && <p role="status">Đang tải lựa chọn...</p>}
-      {hasMore && !loading && <button type="button" role="option" aria-selected="false" onClick={onLoadMore}><span>Tải thêm lựa chọn</span></button>}
+      {hasMore && !loading && <button type="button" onClick={onLoadMore}><span>Tải thêm lựa chọn</span></button>}
     </div>, document.body)}
   </label>;
 }

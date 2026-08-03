@@ -29,6 +29,7 @@ import { calculateRentalTransportTimeline } from "./transportTime.service.js";
 import { createRentalHold } from "./rentalAvailability.service.js";
 import { Reservation } from "../models/Reservation.js";
 import { TransportReservation } from "../models/TransportReservation.js";
+import { TransportTrip } from "../models/TransportTrip.js";
 import { DepositRefund } from "../models/DepositRefund.js";
 import { getAllowedRentalOrderActions, getOrderFinancialSnapshot, canCompleteOrder, canDispatchHomeDelivery, canStartRental } from "./rentalOrderFinancialPolicy.service.js";
 import { releaseVoucherForOrder, reserveVoucherForOrder, voucherSnapshot } from "./voucher.service.js";
@@ -53,6 +54,16 @@ function canonicalStatuses(statuses) {
     ...Object.entries(statusAliases)
       .filter(([, canonical]) => canonical === status)
       .map(([alias]) => alias)
+  ]);
+}
+
+async function rollbackDraftOrder(orderId) {
+  await Promise.all([
+    TransportTrip.deleteMany({ orderId }),
+    TransportReservation.deleteMany({ orderId }),
+    Reservation.deleteMany({ orderId }),
+    RentalOrderItem.deleteMany({ orderId }),
+    RentalOrder.deleteOne({ _id: orderId })
   ]);
 }
 
@@ -962,7 +973,8 @@ export async function createRentalOrder(userOrCustomerId, rawPayload) {
             session
           );
 
-          const items = preparedItems.map(({ costume, quantity }) => {
+          try {
+            const items = preparedItems.map(({ costume, quantity }) => {
             const rentalPricePerDay = Math.max(0, Number(costume.rentalPricePerDay || 0));
             const standardPackagePrice = resolveStandardPackagePrice(costume);
             const depositAmount = Math.max(
@@ -1052,7 +1064,17 @@ export async function createRentalOrder(userOrCustomerId, rawPayload) {
             throw saveError;
           }
 
-          return order;
+            return order;
+          } catch (error) {
+            if (!session) {
+              try {
+                await rollbackDraftOrder(order._id);
+              } catch {
+                // Keep the original creation or reservation error for the caller.
+              }
+            }
+            throw error;
+          }
         };
 
         if (rentalTransactionsSupported === false) {
@@ -1142,17 +1164,22 @@ export async function listMyOrders(customerId, params) {
 export async function listAdminOrders(params) {
   await expirePendingOrders();
   const filter = {};
+  let allowedStatuses = null;
+  const intersectStatuses = (statuses) => {
+    const next = new Set(canonicalStatuses(statuses));
+    allowedStatuses = allowedStatuses ? allowedStatuses.filter((status) => next.has(status)) : [...next];
+  };
   if (params.workflow === "inspection") {
-    filter.status = { $in: canonicalStatuses(["renting", "overdue", "returned"]) };
+    intersectStatuses(["renting", "overdue", "returned"]);
   }
   if (params.status === "returned_pending") {
-    filter.status = { $in: canonicalStatuses(["returned"]) };
+    intersectStatuses(["returned"]);
     filter.inspectedAt = null;
   } else if (params.status === "returned_inspected") {
-    filter.status = { $in: canonicalStatuses(["returned"]) };
+    intersectStatuses(["returned"]);
     filter.inspectedAt = { $ne: null };
   } else if (params.status) {
-    filter.status = { $in: canonicalStatuses([params.status]) };
+    intersectStatuses([params.status]);
   }
   if (params.paymentStatus) filter.paymentStatus = params.paymentStatus;
   if (params.pickupMethod) filter.pickupMethod = params.pickupMethod;
@@ -1161,7 +1188,8 @@ export async function listAdminOrders(params) {
   if (params.rentalDays) filter.rentalDays = Number(params.rentalDays);
   if (params.extraDays === "yes") filter.extraDays = { $gt: 0 };
   if (params.extraDays === "no") filter.extraDays = { $in: [0, null] };
-  if (String(params.overdue || "") === "true") filter.status = "overdue";
+  if (String(params.overdue || "") === "true") intersectStatuses(["overdue"]);
+  if (allowedStatuses) filter.status = { $in: allowedStatuses };
   const rangeField = {
     pickup: "rentalDate",
     main: "mainUseDate",
@@ -1169,8 +1197,11 @@ export async function listAdminOrders(params) {
   }[params.dateField] || "rentalDate";
   if (params.dateFrom || params.dateTo) {
     filter[rangeField] = {};
-    if (params.dateFrom) filter[rangeField].$gte = parseLocalDateTime(params.dateFrom);
-    if (params.dateTo) filter[rangeField].$lte = parseLocalDateTime(params.dateTo, { endOfDay: true });
+    const parseRangeValue = (value, endOfDay = false) => rangeField === "mainUseDate"
+      ? String(value).slice(0, 10)
+      : parseLocalDateTime(value, { endOfDay });
+    if (params.dateFrom) filter[rangeField].$gte = parseRangeValue(params.dateFrom);
+    if (params.dateTo) filter[rangeField].$lte = parseRangeValue(params.dateTo, true);
   }
   const search = String(params.search || "").trim();
   if (search) {

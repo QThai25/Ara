@@ -70,8 +70,16 @@ export async function recordAuditEvent({
 
 export function buildAuditLogFilter(query = {}) {
   const filter = {};
-  if (query.actorId) filter.actorId = query.actorId;
-  if (query.customerId) filter.customerId = query.customerId;
+  if (query.actorId) {
+    const actorId = mongoId(query.actorId);
+    if (!actorId) throw new ApiError(400, "actorId không hợp lệ.");
+    filter.actorId = actorId;
+  }
+  if (query.customerId) {
+    const customerId = mongoId(query.customerId);
+    if (!customerId) throw new ApiError(400, "customerId không hợp lệ.");
+    filter.customerId = customerId;
+  }
   if (query.action) filter.action = String(query.action).trim();
   if (query.actorRole) filter.actorRole = String(query.actorRole).trim();
   if (query.result) filter.result = String(query.result).trim();

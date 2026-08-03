@@ -48,6 +48,7 @@ import {
   money
 } from "../../utils/format.js";
 import { getStatusLabel } from "../../utils/status.js";
+import { newIdempotencyKey } from "../../utils/idempotency.js";
 
 const QUOTE_TYPES = [
   "deposit",
@@ -123,15 +124,6 @@ const PAYMENT_METHODS = [
     icon: QrCode
   }
 ];
-
-function newIdempotencyKey() {
-  return (
-    globalThis.crypto?.randomUUID?.() ||
-    `${Date.now()}-${Math.random()
-      .toString(16)
-      .slice(2)}`
-  );
-}
 
 function getPaymentIcon(method) {
   if (
@@ -464,6 +456,14 @@ export function MyOrderDetailPage({
     await selectOrderRefundDestination(orderId, destinationId);
     setStandaloneRefundForm(null);
     await load(undefined, { silent: true });
+  };
+
+  const chooseSavedRefundDestination = async (destination) => {
+    try {
+      await saveLegacyRefundDestination(destination);
+    } catch (error) {
+      notify?.(error.message || "Không thể chọn tài khoản nhận hoàn cọc.", "error");
+    }
   };
 
   const closePaymentModal = () => {
@@ -956,7 +956,7 @@ export function MyOrderDetailPage({
           </>
         )}
 
-      {standaloneRefundForm === "choice" && <div className="ara-payment-backdrop" onMouseDown={() => setStandaloneRefundForm(null)}><div className="ara-refund-choice-dialog" role="dialog" aria-modal="true" aria-labelledby="refund-choice-title" onMouseDown={event => event.stopPropagation()}><button className="ara-refund-dialog-close" type="button" aria-label="Đóng" onClick={() => setStandaloneRefundForm(null)}><X size={19}/></button><h2 id="refund-choice-title">Tài khoản nhận hoàn cọc</h2><p>Chọn tài khoản đã lưu hoặc bổ sung tài khoản mới. Tài khoản được chọn sẽ dùng mặc định cho đơn này.</p>{refundDestinations.filter((item) => item.isEnabled).length > 0 && <div className="ara-refund-saved-choices">{refundDestinations.filter((item) => item.isEnabled).map((item) => <button type="button" key={item.id || item._id} onClick={() => saveLegacyRefundDestination(item)}><Landmark size={20}/><span><strong>{item.bankName || item.label || "VietQR nhận hoàn cọc"}</strong><small>{item.maskedAccountNumber || "Mã VietQR đã lưu"} · {item.accountHolderName || "Đã lưu trong tài khoản"}</small></span></button>)}</div>}<div><button type="button" onClick={() => setStandaloneRefundForm("bank_account")}><Landmark size={20}/><span><strong>Thêm tài khoản ngân hàng</strong><small>Chọn ngân hàng và nhập số tài khoản</small></span></button><button type="button" onClick={() => setStandaloneRefundForm("vietqr_image")}><CreditCard size={20}/><span><strong>Thêm mã VietQR</strong><small>ARA đọc thông tin từ QR của bạn</small></span></button></div></div></div>}
+      {standaloneRefundForm === "choice" && <div className="ara-payment-backdrop" onMouseDown={() => setStandaloneRefundForm(null)}><div className="ara-refund-choice-dialog" role="dialog" aria-modal="true" aria-labelledby="refund-choice-title" onMouseDown={event => event.stopPropagation()}><button className="ara-refund-dialog-close" type="button" aria-label="Đóng" onClick={() => setStandaloneRefundForm(null)}><X size={19}/></button><h2 id="refund-choice-title">Tài khoản nhận hoàn cọc</h2><p>Chọn tài khoản đã lưu hoặc bổ sung tài khoản mới. Tài khoản được chọn sẽ dùng mặc định cho đơn này.</p>{refundDestinations.filter((item) => item.isEnabled).length > 0 && <div className="ara-refund-saved-choices">{refundDestinations.filter((item) => item.isEnabled).map((item) => <button type="button" key={item.id || item._id} onClick={() => chooseSavedRefundDestination(item)}><Landmark size={20}/><span><strong>{item.bankName || item.label || "VietQR nhận hoàn cọc"}</strong><small>{item.maskedAccountNumber || "Mã VietQR đã lưu"} · {item.accountHolderName || "Đã lưu trong tài khoản"}</small></span></button>)}</div>}<div><button type="button" onClick={() => setStandaloneRefundForm("bank_account")}><Landmark size={20}/><span><strong>Thêm tài khoản ngân hàng</strong><small>Chọn ngân hàng và nhập số tài khoản</small></span></button><button type="button" onClick={() => setStandaloneRefundForm("vietqr_image")}><CreditCard size={20}/><span><strong>Thêm mã VietQR</strong><small>ARA đọc thông tin từ QR của bạn</small></span></button></div></div></div>}
       {["bank_account", "vietqr_image"].includes(standaloneRefundForm) && <RefundDestinationForm type={standaloneRefundForm} notify={notify} onSaved={saveLegacyRefundDestination} onClose={() => setStandaloneRefundForm(null)}/>}
 
       {paymentDraft && (

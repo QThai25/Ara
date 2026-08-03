@@ -34,7 +34,7 @@ export const login = asyncHandler(async (req, res) => {
 });
 
 export const phoneLogin = asyncHandler(async (req, res) => {
-  const data = await finishCustomerLogin(req, res, await authService.loginWithPhone(req.body));
+  const data = await finishCustomerLogin(req, res, await authService.loginWithPhone(req.body, requestAuditContext(req)));
   sendSuccess(res, "Đăng nhập bằng số điện thoại thành công.", data);
 });
 
@@ -47,7 +47,7 @@ export const requestPhoneOtp = asyncHandler(async (req, res) => {
 });
 
 export const verifyPhoneOtp = asyncHandler(async (req, res) => {
-  const data = await finishCustomerLogin(req, res, await authService.verifyPhoneOtp(req.body));
+  const data = await finishCustomerLogin(req, res, await authService.verifyPhoneOtp(req.body, requestAuditContext(req)));
   sendSuccess(res, "Xác minh OTP thành công.", data);
 });
 

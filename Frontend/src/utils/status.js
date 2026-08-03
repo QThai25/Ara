@@ -88,7 +88,7 @@ export const statusTone = statusToneByDomain.generic;
 export const orderStatusOptions = ["pending_payment", "pending", "confirmed", "deposit_paid", "ready_to_pickup", "ready_for_handover", "outbound_in_transit", "renting", "return_in_transit", "returned", "completed", "expired", "canceled"].map((value) => [value, statusLabelsByDomain.order[value]]);
 export const paymentStatusOptions = ["pending", "awaiting_confirmation", "awaiting_verification", "success", "failed", "canceled", "expired", "refunded"].map((value) => [value, statusLabelsByDomain.payment[value]]);
 export const refundStatusOptions = Object.entries(statusLabelsByDomain.refund);
-export const costumeStatusOptions = [["active", "Hoạt động"], ["maintenance", statusLabelsByDomain.costume.maintenance], ["unavailable", statusLabelsByDomain.costume.unavailable], ["hidden", statusLabelsByDomain.costume.hidden]];
+export const costumeStatusOptions = [["active", statusLabelsByDomain.costume.active], ["maintenance", statusLabelsByDomain.costume.maintenance], ["unavailable", statusLabelsByDomain.costume.unavailable], ["hidden", statusLabelsByDomain.costume.hidden]];
 
 export function normalizeStatus(status, domain = "generic") {
   return statusAliasesByDomain[domain]?.[status] || statusAliasesByDomain.generic[status] || status || "";

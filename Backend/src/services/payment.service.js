@@ -743,20 +743,7 @@ export async function listAdminPayments(params = {}) {
   const search = String(params.search || "").trim();
   if (search) {
     const regex = new RegExp(escapeRegex(search), "i");
-    const [orders, customers] = await Promise.all([
-      RentalOrder.find({ orderCode: regex }).select("_id").lean(),
-      User.find({
-        role: "customer",
-        $or: [{ name: regex }, { email: regex }, { phone: regex }, { phoneNormalized: regex }]
-      }).select("_id").lean()
-    ]);
-    filter.$or = [
-      { paymentReference: regex },
-      { providerOrderId: regex },
-      { providerTransactionId: regex },
-      { orderId: { $in: orders.map((order) => order._id) } },
-      { customerId: { $in: customers.map((customer) => customer._id) } }
-    ];
+    return paginateAdminPaymentSearch(filter, regex, params);
   }
   return paginate(
     Payment.find(filter)
@@ -764,6 +751,48 @@ export async function listAdminPayments(params = {}) {
       .sort({ createdAt: -1 }),
     params
   );
+}
+
+async function paginateAdminPaymentSearch(filter, regex, params = {}) {
+  const safePage = Math.max(1, Number(params.page) || 1);
+  const safeLimit = Math.min(50, Math.max(1, Number(params.limit) || 20));
+  const [result = {}] = await Payment.aggregate([
+    { $match: filter },
+    { $lookup: { from: "rentalorders", localField: "orderId", foreignField: "_id", as: "searchOrder" } },
+    { $lookup: { from: "users", localField: "customerId", foreignField: "_id", as: "searchCustomer" } },
+    { $match: { $or: [
+      { paymentReference: regex },
+      { providerOrderId: regex },
+      { providerTransactionId: regex },
+      { "searchOrder.orderCode": regex },
+      { "searchCustomer.name": regex },
+      { "searchCustomer.email": regex },
+      { "searchCustomer.phone": regex },
+      { "searchCustomer.phoneNormalized": regex }
+    ] } },
+    { $sort: { createdAt: -1 } },
+    { $facet: {
+      items: [
+        { $skip: (safePage - 1) * safeLimit },
+        { $limit: safeLimit },
+        { $project: { _id: 1 } }
+      ],
+      total: [{ $count: "count" }]
+    } }
+  ]);
+  const ids = (result.items || []).map((item) => item._id);
+  const documents = ids.length
+    ? await Payment.find({ _id: { $in: ids } })
+      .select("-proofAsset -proofUrl -qrCode -transferInstructions.qrUrl")
+      .populate(detailPopulate)
+    : [];
+  const byId = new Map(documents.map((item) => [String(item._id), item]));
+  const items = ids.map((id) => byId.get(String(id))).filter(Boolean).map((item) => presentPayment(item, { includeProof: false }));
+  const total = Number(result.total?.[0]?.count || 0);
+  return {
+    items,
+    pagination: { page: safePage, limit: safeLimit, total, totalPages: Math.max(1, Math.ceil(total / safeLimit)) }
+  };
 }
 
 export async function getAdminPayment(id, { includeRefundSensitive = true, includeProof = true } = {}) {

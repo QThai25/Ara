@@ -38,6 +38,7 @@ import {
   rentalPriceBreakdown,
   resolveImageUrl
 } from "../../utils/format.js";
+import { newIdempotencyKey } from "../../utils/idempotency.js";
 
 const RENTAL_POLICY_VERSION = "ARA_RENTAL_POLICY_2026_01";
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -637,6 +638,7 @@ export function RentalCartPage(props) {
   const submitRef = useRef(false);
   const voucherBusyRef = useRef(false);
   const restoreVoucherRef = useRef(Boolean(savedCheckoutVoucher()));
+  const voucherRevalidationRef = useRef("");
   const idempotencyRef = useRef({ fingerprint: "", key: "" });
 
   const [items, setItems] = useState(() => getRentalCart(userId));
@@ -954,7 +956,11 @@ export function RentalCartPage(props) {
 
   async function applyVoucherCode(code, { silent = false } = {}) {
     const normalizedCode = String(code || "").trim().toUpperCase();
-    if (!user || voucherBusyRef.current || !normalizedCode || !items.length) return;
+    if (!user || !normalizedCode || !items.length) return;
+    if (voucherBusyRef.current) {
+      voucherRevalidationRef.current = normalizedCode;
+      return;
+    }
     voucherBusyRef.current = true;
     setVoucherBusy(true);
     setVoucherError("");
@@ -1000,13 +1006,21 @@ export function RentalCartPage(props) {
       return undefined;
     }
     const shouldRestore = restoreVoucherRef.current;
-    const shouldRevalidate = Boolean(appliedVoucher?.voucher?.code && appliedVoucher.fingerprint !== voucherFingerprint);
-    if (!shouldRestore && !shouldRevalidate) return undefined;
+    const pendingCode = voucherRevalidationRef.current;
+    const fingerprintMismatch = Boolean(appliedVoucher?.voucher?.code && appliedVoucher.fingerprint !== voucherFingerprint);
+    if (!shouldRestore && !fingerprintMismatch && !pendingCode) return undefined;
+    const code = pendingCode || appliedVoucher?.voucher?.code || voucherCode;
+    if (fingerprintMismatch && !pendingCode) {
+      voucherRevalidationRef.current = code;
+      setAppliedVoucher(null);
+      return undefined;
+    }
+    if (voucherBusyRef.current) return undefined;
+    voucherRevalidationRef.current = "";
     restoreVoucherRef.current = false;
-    const code = appliedVoucher?.voucher?.code || voucherCode;
     const timer = window.setTimeout(() => applyVoucherCode(code, { silent: true }), 250);
     return () => window.clearTimeout(timer);
-  }, [user, voucherFingerprint, appliedVoucher?.voucher?.code, appliedVoucher?.fingerprint]);
+  }, [user, voucherBusy, voucherFingerprint, appliedVoucher?.voucher?.code, appliedVoucher?.fingerprint]);
 
   const removeVoucherCode = () => {
     setAppliedVoucher(null);
@@ -1203,7 +1217,7 @@ export function RentalCartPage(props) {
         }))
       });
       if (idempotencyRef.current.fingerprint !== fingerprint) {
-        idempotencyRef.current = { fingerprint, key: crypto.randomUUID() };
+        idempotencyRef.current = { fingerprint, key: newIdempotencyKey() };
       }
       const response = await createRentalOrder({
         customerInfo: {

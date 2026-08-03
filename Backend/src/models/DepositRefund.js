@@ -27,5 +27,6 @@ const schema = new mongoose.Schema({
   auditTrail: [{ actorId: { type: mongoose.Schema.Types.ObjectId, ref: "User" }, role: String, action: String, reason: String, before: mongoose.Schema.Types.Mixed, after: mongoose.Schema.Types.Mixed, timestamp: { type: Date, default: Date.now } }]
 }, { timestamps: true });
 schema.index({ status: 1, createdAt: -1 });
+schema.index({ status: 1, completedAt: 1 });
 schema.index({ transactionReference: 1 }, { unique: true, partialFilterExpression: { transactionReference: { $type: "string", $gt: "" } } });
 export const DepositRefund = mongoose.model("DepositRefund", schema);

@@ -1,6 +1,7 @@
 import { ApiError } from "../utils/ApiError.js";
 import { hasAdminPermission } from "../utils/adminPermissions.js";
 import { recordAuditEvent, requestAuditContext } from "../services/auditLog.service.js";
+import { isPasswordResetGrantRoute, passwordResetGrantCustomerId } from "../utils/adminRoute.js";
 
 export function requireAdminPermission(permissionOrResolver) {
   return function adminPermissionMiddleware(req, _res, next) {
@@ -14,9 +15,8 @@ export function requireAdminPermission(permissionOrResolver) {
       return;
     }
 
-    const passwordResetGrantMatch = /\/admin\/customers\/([^/?]+)\/password-reset-grant(?:\?|$)/.exec(req.originalUrl);
-    const passwordResetGrantRoute = Boolean(passwordResetGrantMatch);
-    const passwordResetCustomerId = passwordResetGrantMatch?.[1] || "";
+    const passwordResetGrantRoute = isPasswordResetGrantRoute(req);
+    const passwordResetCustomerId = passwordResetGrantCustomerId(req);
     recordAuditEvent({
       actor: req.user,
       action: passwordResetGrantRoute ? "password_reset_grant_rejected" : "authorization.permission_denied",

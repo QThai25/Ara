@@ -10,32 +10,13 @@ import { buildReportQuery, parseReportQuery, presetRange } from "../utils/report
 import { getRevenueFlow } from "../utils/dashboardReportData.js";
 import { formatReportCurrency, formatReportDate } from "../utils/reportFormat.js";
 import * as reportService from "../services/adminReportService.js";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
+import { useReportFilters } from "../hooks/useReportFilters.js";
 
 export function AdminReportPage({ notify }) {
-  const [searchParams, setSearchParams] = useSearchParams();
-  const [filters, setFilters] = useState(() => parseReportQuery(searchParams));
+  const { filters, setFilters } = useReportFilters({ includeTab: true, includePage: true });
   const [state, setState] = useState({ loading: true, exporting: false, error: "", data: {} });
   const requestRef = useRef(0);
-  const syncingFromUrlRef = useRef(false);
-
-  useEffect(() => {
-    const nextFilters = parseReportQuery(searchParams);
-    const currentQuery = buildReportQuery(filters, { includeTab: true, includePage: true }).toString();
-    if (searchParams.toString() !== currentQuery) {
-      syncingFromUrlRef.current = true;
-      setFilters(nextFilters);
-    }
-  }, [searchParams]);
-
-  useEffect(() => {
-    if (syncingFromUrlRef.current) {
-      syncingFromUrlRef.current = false;
-      return;
-    }
-    const next = buildReportQuery(filters, { includeTab: true, includePage: true });
-    if (next.toString() !== searchParams.toString()) setSearchParams(next, { replace: true });
-  }, [filters, searchParams, setSearchParams]);
 
   useEffect(() => {
     const requestId = ++requestRef.current;

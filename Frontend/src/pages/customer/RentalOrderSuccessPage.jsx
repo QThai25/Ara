@@ -117,6 +117,13 @@ export function RentalOrderSuccessPage() {
   }, [payment?.id, payment?._id, payment?.status, refreshPayment]);
 
   const copy = async (label, value) => { if (!value) return; await navigator.clipboard.writeText(String(value)); setCopied(label); setTimeout(() => setCopied(""), 1800); };
+  const refreshPaymentManually = async (id) => {
+    try {
+      await refreshPayment(id);
+    } catch {
+      setError("Không thể tự động cập nhật trạng thái thanh toán. Vui lòng bấm “Kiểm tra trạng thái” để thử lại.");
+    }
+  };
   const submit = async () => {
     const method = methods.find(item => item.method === selected);
     if (!method?.enabled || submittingRef.current || !quote?.canPay) return;
@@ -167,7 +174,7 @@ export function RentalOrderSuccessPage() {
           <div className="ara-guest-payment-status"><strong>{payment.status === "awaiting_confirmation" ? "Đang chờ ARA xác nhận chuyển khoản" : "Đang chờ payOS xác nhận"}</strong><span>{payment.status === "awaiting_confirmation" ? "Sau khi chuyển khoản, ARA sẽ kiểm tra và xác nhận thanh toán." : "Trạng thái được kiểm tra tự động mỗi 3 giây."}</span></div>
           {(payment.qrCode || transfer.qrUrl) && <div className="ara-guest-payment-qr">{payment.qrCode ? <QRCodeSVG value={payment.qrCode} size={230}/> : <img src={transfer.qrUrl} alt="QR chuyển khoản ARA"/>}</div>}
           <dl><div><dt>Số tiền</dt><dd>{money(payment.amount)}</dd></div>{transfer.bankName && <div><dt>Ngân hàng</dt><dd>{transfer.bankName}</dd></div>}<div><dt>Chủ tài khoản</dt><dd>{transfer.accountHolder || transfer.accountName || "ARA"}</dd></div><div><dt>Số tài khoản</dt><dd>{transfer.accountNumber || "—"}<button onClick={() => copy("account", transfer.accountNumber)}><Copy size={15}/></button></dd></div><div><dt>Nội dung CK</dt><dd>{payment.paymentReference}<button onClick={() => copy("reference", payment.paymentReference)}><Copy size={15}/></button></dd></div><div><dt>Hết hạn</dt><dd>{payment.expiresAt ? new Date(payment.expiresAt).toLocaleString("vi-VN") : "—"}</dd></div></dl>
-          <div className="ara-guest-payment-actions">{payment.method === "payos" && payment.payUrl && <button onClick={openPayos}>Mở trang thanh toán</button>}<button className="secondary" onClick={() => refreshPayment(payment.id || payment._id)}><RefreshCw size={16}/> Kiểm tra trạng thái</button></div>
+          <div className="ara-guest-payment-actions">{payment.method === "payos" && payment.payUrl && <button onClick={openPayos}>Mở trang thanh toán</button>}<button className="secondary" onClick={() => refreshPaymentManually(payment.id || payment._id)}><RefreshCw size={16}/> Kiểm tra trạng thái</button></div>
         </section> : <section className="ara-guest-payment-picker"><h2>Chọn phương thức thanh toán</h2><div className="ara-guest-payment-methods">{methods.map(item => <button key={item.method} type="button" disabled={!item.enabled} className={selected === item.method ? "selected" : ""} onClick={() => setSelected(item.method)}>{item.method === "payos" ? <QrCode/> : <Landmark/>}<span><strong>{item.name}</strong><small>{item.description}</small>{!item.enabled && <em>{item.disabledReason}</em>}</span></button>)}</div><div className="ara-guest-payment-quote"><span>Thanh toán toàn bộ</span><strong>{money(quote?.payableAmount || 0)}</strong></div><button className="ara-guest-payment-submit" disabled={!selected || !quote?.canPay || submitting || (Number(receipt.totalDepositAmount || 0) > 0 && !receipt.hasRefundDestination)} onClick={submit}>{submitting ? "Đang tạo thanh toán…" : "Tiếp tục thanh toán"}</button></section>}
         {error && <p className="form-error">{error}</p>}</> : <p>Phiên đặt thuê không còn dữ liệu. Hãy tra cứu bằng số điện thoại và mã đơn để cấp lại quyền thanh toán.</p>}
     </main><aside className="guest-checkout-aside"><h2>Cần thay đổi đơn?</h2><p>Để sửa hoặc hủy đơn, vui lòng liên hệ trực tiếp ARA.</p><a href="tel:0364019798"><Phone size={18}/> Gọi ARA</a><Link to="/rental-orders/lookup">Tra cứu đơn</Link><Link to="/costumes"><ShoppingBag size={18}/> Tiếp tục xem đồ</Link></aside></div>

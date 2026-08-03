@@ -8,7 +8,7 @@ export const RESET_TICKET_MAX_AGE_MS = 5 * 60 * 1000;
 function baseOptions(path, maxAge) {
   return {
     httpOnly: true,
-    secure: env.isProduction,
+    secure: env.isProduction || env.trustedDeviceCookieSameSite === "none",
     sameSite: env.trustedDeviceCookieSameSite,
     path,
     ...(maxAge ? { maxAge } : {})

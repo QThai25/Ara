@@ -157,7 +157,9 @@ function maskPhone(value) {
 
 function dateTimeText(value) {
   if (!value) return "—";
-  return new Intl.DateTimeFormat("vi-VN", { dateStyle: "short", timeStyle: "short" }).format(new Date(value));
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return new Intl.DateTimeFormat("vi-VN", { dateStyle: "short", timeStyle: "short" }).format(date);
 }
 
 export function AdminCustomerDetailPage({ notify }) {
@@ -183,34 +185,40 @@ export function AdminCustomerDetailPage({ notify }) {
   const [securityBusy, setSecurityBusy] = useState(false);
   const [clock, setClock] = useState(Date.now());
   const securityBusyRef = useRef(false);
+  const grantRequestRef = useRef(0);
 
   const loadResetGrant = useCallback(async () => {
     if (!canResetPassword) return;
+    const requestId = ++grantRequestRef.current;
     setResetGrantLoading(true);
     setResetGrantError("");
     try {
-      setResetGrant(await getCustomerPasswordResetGrant(id));
+      const grant = await getCustomerPasswordResetGrant(id);
+      if (requestId !== grantRequestRef.current) return;
+      setResetGrant(grant);
     } catch (grantError) {
+      if (requestId !== grantRequestRef.current) return;
       setResetGrantError(grantError.message || "Không thể tải trạng thái quyền đặt lại mật khẩu.");
     } finally {
-      setResetGrantLoading(false);
+      if (requestId === grantRequestRef.current) setResetGrantLoading(false);
     }
   }, [canResetPassword, id]);
 
   useEffect(() => {
     loadResetGrant();
+    return () => { grantRequestRef.current += 1; };
   }, [loadResetGrant]);
-
-  useEffect(() => {
-    if (resetGrant?.status !== "active") return undefined;
-    const timer = window.setInterval(() => setClock(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, [resetGrant?.status]);
 
   const remainingSeconds = resetGrant?.status === "active"
     ? Math.max(0, Math.ceil((new Date(resetGrant.expiresAt).getTime() - clock) / 1000))
     : 0;
   const visibleResetStatus = resetGrant?.status === "active" && remainingSeconds === 0 ? "expired" : (resetGrant?.status || "none");
+
+  useEffect(() => {
+    if (visibleResetStatus !== "active") return undefined;
+    const timer = window.setInterval(() => setClock(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [visibleResetStatus]);
 
   const confirmSecurityAction = async () => {
     if (!confirmAction || securityBusyRef.current) return;

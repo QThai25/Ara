@@ -127,13 +127,20 @@ export async function login({ email, password }, auditContext = {}) {
   return { token: signToken(user), user: publicUser(user) };
 }
 
-export async function loginWithPhone({ phone, password }) {
+export async function loginWithPhone({ phone, password }, auditContext = {}) {
   const phoneNormalized = normalizePhone(phone);
   const user = await User.findOne({ phoneNormalized }).select("+tokenVersion");
-  if (!user) throw new ApiError(401, "Số điện thoại hoặc mật khẩu không đúng.");
-  if (user.status === "blocked") throw new ApiError(403, "Tài khoản của bạn đang bị khóa.");
+  if (!user) {
+    await recordAuditEvent({ action: "auth.login_failed", resourceType: "authentication", reason: "unknown_account", ...auditContext });
+    throw new ApiError(401, "Số điện thoại hoặc mật khẩu không đúng.");
+  }
+  if (user.status === "blocked") {
+    await recordAuditEvent({ actor: user, action: "auth.login_blocked", resourceType: "authentication", resourceId: user._id, reason: "account_blocked", ...auditContext });
+    throw new ApiError(403, "Tài khoản của bạn đang bị khóa.");
+  }
   const matched = user.password ? await bcrypt.compare(password, user.password) : false;
   if (!matched) {
+    await recordAuditEvent({ actor: user, action: "auth.login_failed", resourceType: "authentication", resourceId: user._id, reason: "invalid_password", ...auditContext });
     const message = user.isGuest && !user.password
       ? "Số điện thoại này chưa có mật khẩu. Vui lòng đăng ký tài khoản để thiết lập mật khẩu."
       : "Số điện thoại hoặc mật khẩu không đúng.";
@@ -141,6 +148,7 @@ export async function loginWithPhone({ phone, password }) {
   }
   user.lastLoginAt = new Date();
   await user.save();
+  await recordAuditEvent({ actor: user, action: "auth.login_succeeded", resourceType: "authentication", resourceId: user._id, ...auditContext });
   return { token: signToken(user), user: publicUser(user) };
 }
 
@@ -237,8 +245,14 @@ export async function requestPhoneOtp({ phone, purpose = "login", ip = "" }) {
   };
 }
 
-export async function verifyPhoneOtp({ phone, otp, purpose = "login" }) {
-  const phoneNormalized = await consumePhoneOtp({ phone, otp, purpose });
+export async function verifyPhoneOtp({ phone, otp, purpose = "login" }, auditContext = {}) {
+  let phoneNormalized;
+  try {
+    phoneNormalized = await consumePhoneOtp({ phone, otp, purpose });
+  } catch (error) {
+    await recordAuditEvent({ action: "auth.otp_failed", resourceType: "authentication", reason: error.code || "invalid_otp", ...auditContext });
+    throw error;
+  }
 
   let user = await User.findOne({ phoneNormalized }).select("+tokenVersion");
   if (!user) {
@@ -253,13 +267,20 @@ export async function verifyPhoneOtp({ phone, otp, purpose = "login" }) {
       phoneVerified: true
     });
   } else {
-    if (user.status === "blocked") throw new ApiError(403, "Tài khoản của bạn đang bị khóa.");
-    if (isAdminRole(user.role)) throw new ApiError(403, "Tài khoản quản trị phải đăng nhập bằng email và mật khẩu.");
+    if (user.status === "blocked") {
+      await recordAuditEvent({ actor: user, action: "auth.login_blocked", resourceType: "authentication", resourceId: user._id, reason: "account_blocked", ...auditContext });
+      throw new ApiError(403, "Tài khoản của bạn đang bị khóa.");
+    }
+    if (isAdminRole(user.role)) {
+      await recordAuditEvent({ actor: user, action: "auth.login_blocked", resourceType: "authentication", resourceId: user._id, reason: "admin_otp_forbidden", ...auditContext });
+      throw new ApiError(403, "Tài khoản quản trị phải đăng nhập bằng email và mật khẩu.");
+    }
     user.phoneVerified = true;
     if (!user.authMode) user.authMode = user.password ? "password" : "phone_otp";
     await user.save();
   }
 
+  await recordAuditEvent({ actor: user, action: "auth.login_succeeded", resourceType: "authentication", resourceId: user._id, ...auditContext });
   return { token: signToken(user), user: publicUser(user) };
 }
 

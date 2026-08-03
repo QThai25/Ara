@@ -142,25 +142,36 @@ export const quoteRental = asyncHandler(async (req, res) => {
   try {
     result = await quoteAndCheck(req.body, quoteOptions);
     if (req.body.voucherCode) {
-      const voucherItems = await voucherService.resolveVoucherItems(items, {
-        ...req.body,
-        rentalDays: result.rentalDays
-      });
-      const rentalAmount = voucherItems.reduce((sum, item) => sum + item.subtotal, 0);
-      const voucherResult = await voucherService.validateVoucher({
-        code: req.body.voucherCode,
-        customerId: req.user?._id,
-        customerInfo: req.body.customerInfo,
-        items: voucherItems,
-        rentalAmount
-      });
-      result.voucher = voucherService.serializePublicVoucher(voucherResult.voucher);
-      result.pricing = {
-        ...result.pricing,
-        discount: voucherResult.discountAmount,
-        eligibleRentalAmount: voucherResult.eligibleRentalAmount,
-        grandTotal: Math.max(0, Number(result.pricing?.grandTotal || 0) - voucherResult.discountAmount)
-      };
+      try {
+        const voucherItems = await voucherService.resolveVoucherItems(items, {
+          ...req.body,
+          rentalDays: result.rentalDays
+        });
+        const rentalAmount = voucherItems.reduce((sum, item) => sum + item.subtotal, 0);
+        const voucherResult = await voucherService.validateVoucher({
+          code: req.body.voucherCode,
+          customerId: req.user?._id,
+          customerInfo: req.body.customerInfo,
+          allowCustomerInfoResolution: Boolean(req.user),
+          items: voucherItems,
+          rentalAmount
+        });
+        result.voucher = voucherService.serializePublicVoucher(voucherResult.voucher);
+        result.pricing = {
+          ...result.pricing,
+          discount: voucherResult.discountAmount,
+          eligibleRentalAmount: voucherResult.eligibleRentalAmount,
+          grandTotal: Math.max(0, Number(result.pricing?.grandTotal || 0) - voucherResult.discountAmount)
+        };
+      } catch (error) {
+        if (!(error instanceof ApiError)) throw error;
+        result.voucherError = {
+          statusCode: error.statusCode,
+          code: error.code || "VOUCHER_INVALID",
+          message: error.message,
+          data: error.data
+        };
+      }
     }
     if (shipping.feeMode === "external_direct_payment") {
       result.feeMode = shipping.feeMode;

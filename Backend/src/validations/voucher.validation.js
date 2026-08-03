@@ -1,6 +1,10 @@
 import { body, param, query } from "express-validator";
 import { VOUCHER_DISCOUNT_TYPES, VOUCHER_ELIGIBILITY_TYPES, VOUCHER_SCOPES, VOUCHER_STATUSES } from "../models/Voucher.js";
 
+const voucherMaxExtraDays = Math.max(0, Number(process.env.RENTAL_MAX_EXTRA_DAYS || 30));
+const voucherStoreOpenTime = process.env.RENTAL_STORE_OPEN_TIME || "08:00";
+const voucherStoreCloseTime = process.env.RENTAL_STORE_CLOSE_TIME || process.env.STORE_CLOSING_TIME || "22:00";
+
 export const voucherIdValidation = [param("id").isMongoId().withMessage("Mã voucher không hợp lệ.")];
 
 const nullablePositiveInteger = (field, label) => body(field)
@@ -68,5 +72,26 @@ export const applyVoucherValidation = [
   body("items.*.costumeId").isMongoId().withMessage("Trang phục không hợp lệ."),
   body("items.*.quantity").optional().isInt({ min: 1, max: 20 }).withMessage("Số lượng trang phục không hợp lệ.").toInt(),
   body("rentalDays").optional().isInt({ min: 1, max: 365 }).withMessage("Số ngày thuê không hợp lệ.").toInt(),
+  body("mainUseDate").optional({ checkFalsy: true }).matches(/^\d{4}-\d{2}-\d{2}$/).withMessage("Ngày mặc của voucher không hợp lệ."),
+  body("pickupTime").optional({ checkFalsy: true }).matches(/^\d{2}:\d{2}$/).withMessage("Giờ lấy đồ của voucher không hợp lệ."),
+  body("returnTime").optional({ checkFalsy: true }).matches(/^\d{2}:\d{2}$/).withMessage("Giờ trả đồ của voucher không hợp lệ."),
+  body("extraDays").optional({ checkFalsy: true }).isInt({ min: 0, max: voucherMaxExtraDays }).withMessage(`Số ngày giữ thêm của voucher phải từ 0 đến ${voucherMaxExtraDays}.`).toInt(),
+  body().custom((value) => {
+    const hasScheduleField = Boolean(value.mainUseDate || value.pickupTime || value.returnTime || Number(value.extraDays || 0) > 0);
+    if (hasScheduleField && (!value.mainUseDate || !value.pickupTime || !value.returnTime)) {
+      throw new Error("Voucher cần đầy đủ ngày mặc, giờ lấy đồ và giờ trả đồ.");
+    }
+    if (value.mainUseDate) {
+      const date = new Date(`${value.mainUseDate}T00:00:00Z`);
+      const today = new Date().toISOString().slice(0, 10);
+      if (Number.isNaN(date.getTime()) || value.mainUseDate < today) throw new Error("Ngày mặc của voucher phải từ hôm nay trở đi.");
+    }
+    for (const [field, label] of [["pickupTime", "Giờ lấy đồ"], ["returnTime", "Giờ trả đồ"]]) {
+      if (value[field] && (value[field] < voucherStoreOpenTime || value[field] > voucherStoreCloseTime)) {
+        throw new Error(`${label} của voucher phải nằm trong giờ hoạt động ${voucherStoreOpenTime}–${voucherStoreCloseTime}.`);
+      }
+    }
+    return true;
+  }),
   body("customerInfo.phone").optional().isString().trim().isLength({ max: 30 }).withMessage("Số điện thoại không hợp lệ.")
 ];

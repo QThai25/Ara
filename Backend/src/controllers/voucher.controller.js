@@ -12,6 +12,8 @@ export const apply = asyncHandler(async (req, res) => {
   const result = await service.validateVoucher({
     code: req.body.code,
     customerId: req.user?._id,
+    customerInfo: req.body.customerInfo,
+    allowCustomerInfoResolution: Boolean(req.user),
     items,
     rentalAmount
   });

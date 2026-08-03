@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import mongoose from "mongoose";
+import { Voucher } from "../src/models/Voucher.js";
+import { VoucherRedemption } from "../src/models/VoucherRedemption.js";
 
 import {
   calculateVoucherDiscount,
@@ -9,7 +12,8 @@ import {
   INVALID_FIRST_ORDER_STATUSES,
   itemMatchesScope,
   isValidRentalOrderStatus,
-  voucherBusinessStatus
+  voucherBusinessStatus,
+  reserveVoucherForOrder
 } from "../src/services/voucher.service.js";
 
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
@@ -95,4 +99,71 @@ test("customer voucher listing and apply routes require an authenticated account
   assert.match(controller, /service\.listPublic\(req\.user\?\._id\)/);
   assert.match(service, /isEligibleForPublicListing/);
   assert.match(service, /hasRemainingCustomerUsage/);
+});
+
+test("standalone voucher reservations stop at the per-customer limit under concurrent sequence collisions", async () => {
+  const originals = {
+    voucherFindOne: Voucher.findOne,
+    voucherFindOneAndUpdate: Voucher.findOneAndUpdate,
+    voucherUpdateOne: Voucher.updateOne,
+    redemptionCountDocuments: VoucherRedemption.countDocuments,
+    redemptionFindOne: VoucherRedemption.findOne,
+    redemptionCreate: VoucherRedemption.create
+  };
+  const customerId = new mongoose.Types.ObjectId();
+  const voucherId = new mongoose.Types.ObjectId();
+  const voucher = {
+    _id: voucherId,
+    code: "CONCURRENT",
+    status: "active",
+    isDeleted: false,
+    startAt: new Date(Date.now() - 60_000),
+    endAt: new Date(Date.now() + 60_000),
+    usageCount: 0,
+    totalUsageLimit: 10,
+    usageLimitPerCustomer: 2,
+    eligibilityType: "all",
+    applicableScope: "all",
+    discountType: "fixed",
+    discountValue: 10,
+    minimumOrderAmount: 0
+  };
+  const redemptions = [];
+  Voucher.findOne = async () => voucher;
+  Voucher.findOneAndUpdate = async () => voucher;
+  Voucher.updateOne = async () => ({ acknowledged: true });
+  VoucherRedemption.countDocuments = async () => redemptions.length;
+  VoucherRedemption.findOne = () => ({
+    sort() { return this; },
+    select() { return redemptions.at(-1) || null; }
+  });
+  VoucherRedemption.create = async ([document]) => {
+    if (redemptions.some((item) => item.customerUsageSequence === document.customerUsageSequence)) {
+      const duplicate = new Error("duplicate customer usage sequence");
+      duplicate.code = 11000;
+      throw duplicate;
+    }
+    const redemption = { ...document, status: "reserved" };
+    redemptions.push(redemption);
+    return [redemption];
+  };
+  try {
+    const results = await Promise.allSettled([1, 2, 3].map((orderNumber) => reserveVoucherForOrder({
+      code: "CONCURRENT",
+      customerId,
+      orderId: new mongoose.Types.ObjectId(`00000000000000000000000${orderNumber}`),
+      items: [],
+      rentalAmount: 100
+    })));
+    assert.equal(results.filter((result) => result.status === "fulfilled").length, 2);
+    assert.equal(results.filter((result) => result.status === "rejected").length, 1);
+    assert.equal(redemptions.length, 2);
+  } finally {
+    Voucher.findOne = originals.voucherFindOne;
+    Voucher.findOneAndUpdate = originals.voucherFindOneAndUpdate;
+    Voucher.updateOne = originals.voucherUpdateOne;
+    VoucherRedemption.countDocuments = originals.redemptionCountDocuments;
+    VoucherRedemption.findOne = originals.redemptionFindOne;
+    VoucherRedemption.create = originals.redemptionCreate;
+  }
 });

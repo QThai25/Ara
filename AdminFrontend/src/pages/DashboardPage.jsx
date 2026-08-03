@@ -10,10 +10,10 @@ import { buildReportQuery, parseReportQuery, presetRange } from "../utils/report
 import { formatReportCurrency } from "../utils/reportFormat.js";
 import { getRevenueFlow, mapDashboardAnalytics } from "../utils/dashboardReportData.js";
 import { resolveImageUrl } from "../utils/format.js";
-import { useSearchParams } from "react-router-dom";
 import { useAdminAuth } from "../context/AdminAuthContext.jsx";
 import { ADMIN_PERMISSIONS as P } from "../constants/adminPermissions.js";
 import { getDashboardSummary, getTopCostumes as getOperationalTopCostumes } from "../services/dashboardService.js";
+import { useReportFilters } from "../hooks/useReportFilters.js";
 
 export function DashboardPage({ notify }) {
   const { can } = useAdminAuth();
@@ -23,30 +23,10 @@ export function DashboardPage({ notify }) {
 }
 
 function OwnerDashboard({ notify }) {
-  const [searchParams, setSearchParams] = useSearchParams();
-  const [filters, setFilters] = useState(() => parseReportQuery(searchParams));
+  const { filters, setFilters } = useReportFilters();
   const [state, setState] = useState({ loading: true, error: "", overview: null, trend: null, methods: null, orders: null, topCostumes: null });
   const [reloadKey, setReloadKey] = useState(0);
   const requestRef = useRef(0);
-  const syncingFromUrlRef = useRef(false);
-
-  useEffect(() => {
-    const nextFilters = parseReportQuery(searchParams);
-    const currentQuery = buildReportQuery(filters, { includeTab: false }).toString();
-    if (searchParams.toString() !== currentQuery) {
-      syncingFromUrlRef.current = true;
-      setFilters(nextFilters);
-    }
-  }, [searchParams]);
-
-  useEffect(() => {
-    if (syncingFromUrlRef.current) {
-      syncingFromUrlRef.current = false;
-      return;
-    }
-    const next = buildReportQuery(filters, { includeTab: false });
-    if (next.toString() !== searchParams.toString()) setSearchParams(next, { replace: true });
-  }, [filters, searchParams, setSearchParams]);
 
   useEffect(() => {
     const requestId = ++requestRef.current;

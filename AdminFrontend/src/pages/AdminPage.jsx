@@ -42,6 +42,7 @@ import {
 
 
 import React, {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -115,12 +116,18 @@ export function AdminPage({ activeTab, notify, costumeEditor = null }) {
   const [occasions, setOccasions] = useState(fallbackOccasionOptions);
   const [styles, setStyles] = useState(fallbackStyleOptions);
   const [vouchers, setVouchers] = useState([]);
+  const [voucherPagination, setVoucherPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 1 });
   const [banners, setBanners] = useState([]);
   const [selectedOrderId, setSelectedOrderId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const load = async (keepOrderId = selectedOrderId, { silent = false } = {}) => {
+  const loadRequestRef = useRef(0);
+  const dataRef = useRef(null);
+  dataRef.current = { summary, orders, costumes, customers, payments, categories, brands, occasions, styles, vouchers, voucherPagination, banners, selectedOrderId };
+
+  const load = useCallback(async (keepOrderId = dataRef.current.selectedOrderId, { silent = false, voucherParams = {} } = {}) => {
+    const requestId = ++loadRequestRef.current;
     if (!silent) {
       setLoading(true);
       setError("");
@@ -136,22 +143,25 @@ export function AdminPage({ activeTab, notify, costumeEditor = null }) {
       if ([adminTabs.costumes, adminTabs.brands].includes(activeTab)) jobs.brands = getAdminBrands();
       if ([adminTabs.costumes, adminTabs.occasions, adminTabs.categories, adminTabs.vouchers].includes(activeTab)) jobs.occasions = getAdminOccasions().catch(() => fallbackOccasionOptions);
       if ([adminTabs.costumes, adminTabs.styles, adminTabs.categories].includes(activeTab)) jobs.styles = getAdminStyles().catch(() => fallbackStyleOptions);
-      if (activeTab === adminTabs.vouchers) jobs.vouchers = getAdminVouchers();
+      if (activeTab === adminTabs.vouchers) jobs.vouchers = getAdminVouchers({ page: 1, limit: 20, ...voucherParams });
       if (activeTab === adminTabs.banners) jobs.banners = getAdminBanners().catch(() => []);
       const keys = Object.keys(jobs);
       const values = await Promise.all(Object.values(jobs));
       const loaded = Object.fromEntries(keys.map((key, index) => [key, values[index]]));
-      const sum = loaded.summary ?? summary;
-      const ord = loaded.orders ?? orders;
-      const cos = loaded.costumes ?? costumes;
-      const cus = loaded.customers ?? customers;
-      const pay = loaded.payments ?? payments;
-      const cats = loaded.categories ?? categories;
-      const brandList = loaded.brands ?? brands;
-      const occasionList = loaded.occasions ?? occasions;
-      const styleList = loaded.styles ?? styles;
-      const voucherList = loaded.vouchers ?? vouchers;
-      const bannerList = loaded.banners ?? banners;
+      if (requestId !== loadRequestRef.current) return;
+      const current = dataRef.current;
+      const sum = loaded.summary ?? current.summary;
+      const ord = loaded.orders ?? current.orders;
+      const cos = loaded.costumes ?? current.costumes;
+      const cus = loaded.customers ?? current.customers;
+      const pay = loaded.payments ?? current.payments;
+      const cats = loaded.categories ?? current.categories;
+      const brandList = loaded.brands ?? current.brands;
+      const occasionList = loaded.occasions ?? current.occasions;
+      const styleList = loaded.styles ?? current.styles;
+      const voucherList = loaded.vouchers ?? { items: current.vouchers, pagination: current.voucherPagination };
+      const bannerList = loaded.banners ?? current.banners;
+      const voucherItems = asArray(voucherList?.items ?? voucherList);
       const safeOrders = asArray(ord);
       setSummary(sum);
       setOrders(safeOrders);
@@ -162,22 +172,25 @@ export function AdminPage({ activeTab, notify, costumeEditor = null }) {
       setBrands(asArray(brandList));
       setOccasions(asArray(occasionList).length ? asArray(occasionList) : fallbackOccasionOptions);
       setStyles(asArray(styleList).length ? asArray(styleList) : fallbackStyleOptions);
-      setVouchers(asArray(voucherList));
+      setVouchers(voucherItems);
+      setVoucherPagination(voucherList?.pagination || current.voucherPagination);
       setBanners(asArray(bannerList));
-      const nextId = keepOrderId && findById(safeOrders, keepOrderId) ? keepOrderId : (!selectedOrderId ? itemId(safeOrders[0]) : selectedOrderId);
+      const nextId = keepOrderId && findById(safeOrders, keepOrderId) ? keepOrderId : (!current.selectedOrderId ? itemId(safeOrders[0]) : current.selectedOrderId);
       setSelectedOrderId(nextId || null);
       return safeOrders;
     } catch (err) {
+      if (requestId !== loadRequestRef.current) return;
       if (!silent) setError(err.message);
-      notify(err.message, "error");
+      notify?.(err.message, "error");
     } finally {
-      if (!silent) setLoading(false);
+      if (requestId === loadRequestRef.current && !silent) setLoading(false);
     }
-  };
+  }, [activeTab, notify]);
 
   useEffect(() => {
     load();
-  }, [activeTab]);
+    return () => { loadRequestRef.current += 1; };
+  }, [activeTab, load]);
 
   useEffect(() => {
     let timer;
@@ -185,7 +198,7 @@ export function AdminPage({ activeTab, notify, costumeEditor = null }) {
     window.addEventListener("ara:order-updated", refresh);
     window.addEventListener("ara:payment-updated", refresh);
     return () => { clearTimeout(timer); window.removeEventListener("ara:order-updated", refresh); window.removeEventListener("ara:payment-updated", refresh); };
-  }, [selectedOrderId]);
+  }, [load, selectedOrderId]);
 
   useEffect(() => {
     const base = (import.meta.env.VITE_API_URL || "http://localhost:4000/api").replace(/\/api\/?$/, "");
@@ -195,7 +208,7 @@ export function AdminPage({ activeTab, notify, costumeEditor = null }) {
     socket.on("order:updated", refresh);
     socket.on("payment:updated", refresh);
     return () => { clearTimeout(timer); socket.disconnect(); };
-  }, [selectedOrderId]);
+  }, [load, selectedOrderId]);
 
   const selectedOrder = useMemo(() => findById(orders, selectedOrderId), [orders, selectedOrderId]);
 
@@ -212,7 +225,7 @@ export function AdminPage({ activeTab, notify, costumeEditor = null }) {
 
   const chrome = (children) => (
     <section className="admin-page">
-      {loading ? <LoadingState /> : error ? <ErrorState message={error} onRetry={load} /> : children}
+      {loading ? <LoadingState /> : error ? <ErrorState message={error} onRetry={() => load(selectedOrderId)} /> : children}
     </section>
   );
 
@@ -226,7 +239,7 @@ export function AdminPage({ activeTab, notify, costumeEditor = null }) {
   if (activeTab === adminTabs.inspections) return chrome(<AdminOrders orders={orders.filter((order) => ["renting", "returned", "overdue"].includes(order.status))} selected={selectedOrder} selectedOrderId={selectedOrderId} setSelectedOrderId={setSelectedOrderId} notify={notify} reload={load} inspectionOnly />);
   if (activeTab === adminTabs.payments) return chrome(<PaymentManager rows={payments} notify={notify} reload={load} canConfirm={can(P.PAYMENTS_CONFIRM_BANK_TRANSFER)} />);
   if (activeTab === adminTabs.customers) return chrome(<SimpleResource title="Quản lý khách hàng" rows={customers} columns={["name", "email", "phone", "status"]} labels={["Tên", "Email", "Số điện thoại", "Trạng thái"]} />);
-  if (activeTab === adminTabs.vouchers) return chrome(<VoucherManager items={vouchers} categories={categories} occasions={occasions} costumes={costumes} customers={customers} notify={notify} reload={load} />);
+  if (activeTab === adminTabs.vouchers) return chrome(<VoucherManager items={vouchers} pagination={voucherPagination} categories={categories} occasions={occasions} costumes={costumes} customers={customers} notify={notify} reload={(options) => load(selectedOrderId, options)} />);
   if (activeTab === adminTabs.banners) return chrome(<BannerManager items={banners} notify={notify} reload={load} />);
   return chrome(<Reports stats={dashboardStats} orders={orders} costumes={costumes} summary={summary} />);
 }
@@ -2241,29 +2254,44 @@ function voucherDiscount(value) {
   return value.discountType === "percent" ? `${value.discountValue}%` : money(value.discountValue);
 }
 
-function VoucherManager({ items, categories, occasions, costumes, customers, notify, reload }) {
+function VoucherManager({ items, pagination, categories, occasions, costumes, customers, notify, reload }) {
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebouncedValue(search, 600);
   const [statusFilter, setStatusFilter] = useState("");
   const [eligibilityFilter, setEligibilityFilter] = useState("");
   const [modal, setModal] = useState(null);
   const [busyId, setBusyId] = useState("");
-  const filtered = items.filter((item) => {
-    const matchesSearch = [item.code, item.name].join(" ").toLowerCase().includes(debouncedSearch.toLowerCase());
-    return matchesSearch
-      && (!statusFilter || item.businessStatus === statusFilter)
-      && (!eligibilityFilter || item.eligibilityType === eligibilityFilter);
+  const reloadRef = useRef(reload);
+  reloadRef.current = reload;
+  const pageSize = Number(pagination?.limit) || 20;
+  const currentPage = Number(pagination?.page) || 1;
+  const query = () => ({
+    page: currentPage,
+    limit: pageSize,
+    ...(debouncedSearch ? { search: debouncedSearch } : {}),
+    ...(statusFilter ? { status: statusFilter } : {}),
+    ...(eligibilityFilter ? { eligibilityType: eligibilityFilter } : {})
   });
+  const requestPage = (page) => reloadRef.current({ silent: true, voucherParams: { ...query(), page } });
+  useEffect(() => {
+    requestPage(1);
+  }, [debouncedSearch, statusFilter, eligibilityFilter]);
+  const filtered = items;
+  const reloadCurrent = () => reloadRef.current({ silent: true, voucherParams: query() });
   const save = async (payload, editingId) => {
+    if (busyId) return;
     try {
       if (payload.discountType === "percent" && (Number(payload.discountValue) < 1 || Number(payload.discountValue) > 100)) return notify("Giảm phần trăm phải từ 1 đến 100.", "error");
       if (payload.endAt && payload.startAt && new Date(payload.endAt) <= new Date(payload.startAt)) return notify("Ngày kết thúc phải sau ngày bắt đầu.", "error");
+      setBusyId(editingId || "new");
       const response = editingId ? await updateVoucher(editingId, payload) : await createVoucher(payload);
       notify(response.message);
       setModal(null);
-      await reload();
+      await reloadCurrent();
     } catch (error) {
       notify(error.message || "Không thể lưu voucher.", "error");
+    } finally {
+      setBusyId("");
     }
   };
   const remove = async (item) => {
@@ -2272,7 +2300,7 @@ function VoucherManager({ items, categories, occasions, costumes, customers, not
     try {
       const response = await removeVoucher(itemId(item));
       notify(response.message);
-      await reload();
+      await reloadCurrent();
     } catch (error) {
       notify(error.message || "Không thể vô hiệu hóa voucher.", "error");
     } finally {
@@ -2286,7 +2314,7 @@ function VoucherManager({ items, categories, occasions, costumes, customers, not
     try {
       const response = await toggleVoucherStatus(itemId(item));
       notify(response.message);
-      await reload();
+      await reloadCurrent();
     } catch (error) {
       notify(error.message || "Không thể cập nhật trạng thái voucher.", "error");
     } finally {
@@ -2314,11 +2342,16 @@ function VoucherManager({ items, categories, occasions, costumes, customers, not
             {!items.length && <AdminButton variant="primary" onClick={() => setModal({})}><Plus size={15} /> Tạo voucher đầu tiên</AdminButton>}
           </div>
         ) : (
-          <AdminTable
-            rows={filtered}
+            <AdminTable
+              rows={filtered}
             columns={["code", "name", "discount", "eligibility", "minimum", "usage", "perCustomer", "validity", "businessStatus"]}
             labels={["Mã", "Tên", "Mức giảm", "Đối tượng", "Đơn tối thiểu", "Đã dùng/Tổng", "Mỗi khách", "Hiệu lực", "Trạng thái"]}
-            tableClassName="voucher-table"
+              tableClassName="voucher-table"
+              page={currentPage}
+              pageSize={pageSize}
+              total={pagination?.total || 0}
+              totalPages={pagination?.totalPages || 1}
+              onPageChange={requestPage}
             colWidths={["104px", "150px", "104px", "150px", "126px", "126px", "92px", "164px", "124px", "64px"]}
             format={{
               discount: (_, row) => voucherDiscount(row),
@@ -2343,12 +2376,12 @@ function VoucherManager({ items, categories, occasions, costumes, customers, not
           />
         )}
       </div>
-      {modal && <VoucherForm initial={modal.item} categories={categories} occasions={occasions} costumes={costumes} customers={customers} onClose={() => setModal(null)} onSave={save} />}
+      {modal && <VoucherForm initial={modal.item} categories={categories} occasions={occasions} costumes={costumes} customers={customers} notify={notify} onClose={() => setModal(null)} onSave={save} />}
     </>
   );
 }
 
-function VoucherForm({ initial, categories, occasions, costumes, customers, onClose, onSave }) {
+function VoucherForm({ initial, categories, occasions, costumes, customers, notify, onClose, onSave }) {
   const [form, setForm] = useState({
     code: initial?.code || "", name: initial?.name || "", description: initial?.description || "",
     discountType: initial?.discountType || "percent", discountValue: initial?.discountValue ?? "",
@@ -2368,16 +2401,25 @@ function VoucherForm({ initial, categories, occasions, costumes, customers, onCl
   const nextDate = form.startDate ? (() => { const date = new Date(`${form.startDate}T00:00:00Z`); date.setUTCDate(date.getUTCDate() + 1); return date.toISOString().slice(0, 10); })() : undefined;
   const submit = (event) => {
     event.preventDefault();
-    onSave({
+    if (!initial && (!form.startDate || !form.endDate)) {
+      notify?.("Vui lòng chọn ngày bắt đầu và ngày kết thúc.", "error");
+      return;
+    }
+    const payload = {
       ...form,
-      startAt: form.startDate ? `${form.startDate}T00:00:00+07:00` : "",
-      endAt: form.endDate ? `${form.endDate}T23:59:59.999+07:00` : "",
       totalUsageLimit: form.totalUsageLimit === "" ? null : Number(form.totalUsageLimit),
       maximumDiscountAmount: form.maximumDiscountAmount === "" ? null : Number(form.maximumDiscountAmount),
       minimumOrderAmount: Number(form.minimumOrderAmount || 0),
       usageLimitPerCustomer: Number(form.usageLimitPerCustomer || 1),
       usageCount: undefined
-    }, initial ? itemId(initial) : null);
+    };
+    if (!initial || (form.startDate && form.startDate !== String(initial.startAt || "").slice(0, 10))) {
+      payload.startAt = form.startDate ? `${form.startDate}T00:00:00+07:00` : "";
+    }
+    if (!initial || (form.endDate && form.endDate !== String(initial.endAt || "").slice(0, 10))) {
+      payload.endAt = form.endDate ? `${form.endDate}T23:59:59.999+07:00` : "";
+    }
+    onSave(payload, initial ? itemId(initial) : null);
   };
   const options = (values, label) => asArray(values).map((item) => ({ value: itemId(item), label: item[label] || item.name || item.code })).filter((item) => item.value);
   return (
@@ -2995,19 +3037,22 @@ function isMoneyColumn(column) {
   return /price|amount|fee|deposit|revenue|total|value/i.test(column);
 }
 
-function AdminTable({ title, rows = [], columns, labels, format = {}, actions, colWidths = [], columnClasses = {}, tableClassName = "", mobileCards = false }) {
+function AdminTable({ title, rows = [], columns, labels, format = {}, actions, colWidths = [], columnClasses = {}, tableClassName = "", mobileCards = false, page: externalPage, pageSize: externalPageSize = 10, total: externalTotal, totalPages: externalTotalPages, onPageChange }) {
   const safeRows = asArray(rows);
-  const [page, setPage] = useState(1);
-  const pageSize = 10;
-  const totalPages = Math.max(1, Math.ceil(safeRows.length / pageSize));
-  const pagedRows = safeRows.slice((page - 1) * pageSize, page * pageSize);
+  const isServerPaginated = externalTotalPages !== undefined;
+  const [internalPage, setInternalPage] = useState(1);
+  const page = isServerPaginated ? Number(externalPage) || 1 : internalPage;
+  const pageSize = Number(externalPageSize) || 10;
+  const totalPages = isServerPaginated ? Math.max(1, Number(externalTotalPages) || 1) : Math.max(1, Math.ceil(safeRows.length / pageSize));
+  const pagedRows = isServerPaginated ? safeRows : safeRows.slice((page - 1) * pageSize, page * pageSize);
+  const wrapperClasses = tableClassName.split(/\s+/).filter(Boolean).map((token) => `${token}-wrap`).join(" ");
 
   useEffect(() => {
-    if (page > totalPages) setPage(totalPages);
-  }, [page, totalPages]);
+    if (!isServerPaginated && internalPage > totalPages) setInternalPage(totalPages);
+  }, [internalPage, isServerPaginated, totalPages]);
 
   return (
-    <div className={`admin-table-wrap ${mobileCards ? "admin-table-mobile-cards" : ""} ${tableClassName ? `${tableClassName}-wrap` : ""}`.trim()}>
+    <div className={`admin-table-wrap ${mobileCards ? "admin-table-mobile-cards" : ""} ${wrapperClasses}`.trim()}>
       {title && <h2>{title}</h2>}
       {safeRows.length === 0 ? <EmptyState /> : (
         <>
@@ -3033,7 +3078,7 @@ function AdminTable({ title, rows = [], columns, labels, format = {}, actions, c
               </tr>
             ))}</tbody>
           </table>
-          {totalPages > 1 && <Pagination page={page} totalPages={totalPages} setPage={setPage} />}
+          {totalPages > 1 && <Pagination page={page} totalPages={totalPages} setPage={onPageChange || setInternalPage} />}
         </>
       )}
     </div>
@@ -3043,9 +3088,9 @@ function AdminTable({ title, rows = [], columns, labels, format = {}, actions, c
 function Pagination({ page, totalPages, setPage }) {
   return (
     <div className="pagination">
-      <button disabled={page <= 1} onClick={() => setPage((current) => current - 1)}>Trước</button>
+      <button disabled={page <= 1} onClick={() => setPage(page - 1)}>Trước</button>
       <span>{page}/{totalPages}</span>
-      <button disabled={page >= totalPages} onClick={() => setPage((current) => current + 1)}>Sau</button>
+      <button disabled={page >= totalPages} onClick={() => setPage(page + 1)}>Sau</button>
     </div>
   );
 }

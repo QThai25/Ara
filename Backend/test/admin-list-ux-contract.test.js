@@ -21,7 +21,8 @@ test("admin payment list sends search filters and consumes pagination metadata",
     read("../../AdminFrontend/src/pages/AdminPaymentPage.jsx")
   ]);
   assert.match(backend, /paymentReference:\s*regex/);
-  assert.match(backend, /User\.find\(\{[\s\S]*phone:\s*regex/);
+  assert.match(backend, /\$lookup:\s*\{\s*from:\s*"users"[\s\S]*searchCustomer\.phone/);
+  assert.match(backend, /\$facet:\s*\{[\s\S]*items:/);
   assert.match(page, /getAdminPayments\(\{[\s\S]*search:\s*debouncedSearch/);
   assert.match(page, /setPagination\(data\.pagination\)/);
   assert.doesNotMatch(page, /setInterval/);

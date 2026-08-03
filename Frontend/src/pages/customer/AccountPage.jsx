@@ -52,7 +52,7 @@ export function AccountPage({ user, notify, onUserUpdated }) {
   const load = useCallback(async ({ silent = false, signal } = {}) => {
     const requestId = ++loadRequestRef.current;
     if (!silent) setLoading(true);
-    setError("");
+    if (!silent) setError("");
     try {
       const [addressItems, destinationItems, creditItems] = await Promise.all([
         listAddresses({ signal }),
@@ -66,7 +66,7 @@ export function AccountPage({ user, notify, onUserUpdated }) {
       return true;
     } catch (loadError) {
       if (signal?.aborted || requestId !== loadRequestRef.current) return false;
-      setError(loadError.message || "Không thể tải thông tin tài khoản. Vui lòng thử lại.");
+      if (!silent) setError(loadError.message || "Không thể tải thông tin tài khoản. Vui lòng thử lại.");
       return false;
     } finally {
       if (!silent && requestId === loadRequestRef.current) setLoading(false);

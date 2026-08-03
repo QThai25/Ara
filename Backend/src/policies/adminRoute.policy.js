@@ -1,4 +1,5 @@
 import { ADMIN_PERMISSIONS as P } from "../utils/adminPermissions.js";
+import { isPasswordResetGrantRoute } from "../utils/adminRoute.js";
 
 const isRead = (req) => ["GET", "HEAD"].includes(req.method);
 const pathMatches = (req, pattern) => pattern.test(req.path);
@@ -8,7 +9,7 @@ export function resolveAdminRoutePermission(basePath, req) {
     case "/admin/dashboard":
       return req.path === "/revenue" ? P.DASHBOARD_VIEW_FINANCIAL : P.DASHBOARD_VIEW_OPERATIONAL;
     case "/admin/customers":
-      if (pathMatches(req, /\/[^/]+\/password-reset-grant$/)) return P.CUSTOMERS_RESET_PASSWORD;
+      if (isPasswordResetGrantRoute(req)) return P.CUSTOMERS_RESET_PASSWORD;
       return isRead(req) ? P.CUSTOMERS_VIEW_OPERATIONAL : P.CUSTOMERS_MANAGE_SENSITIVE;
     case "/admin/categories":
     case "/admin/brands":

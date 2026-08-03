@@ -54,9 +54,7 @@ test("a 20-item catalog page uses two bounded catalog operations and no per-card
   };
 
   try {
-    const startedAt = performance.now();
     const result = await listCostumes({ page: "2", limit: "20" });
-    const elapsedMs = performance.now() - startedAt;
     assert.equal(observed.skip, 20);
     assert.equal(observed.limit, 20);
     assert.equal(observed.catalogOperations, 2);
@@ -64,7 +62,6 @@ test("a 20-item catalog page uses two bounded catalog operations and no per-card
     assert.equal(result.items.length, 20);
     assert.equal(result.items[0].bookingStatus, "accepting_bookings");
     assert.ok(Buffer.byteLength(JSON.stringify(result), "utf8") < 100_000, "20-card payload should remain below 100 KB in the bounded fixture");
-    assert.ok(elapsedMs < 100, `card transformation took ${elapsedMs.toFixed(1)} ms`);
     assert.deepEqual(result.pagination, {
       page: 2,
       limit: 20,

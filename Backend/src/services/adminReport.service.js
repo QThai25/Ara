@@ -98,6 +98,71 @@ function paymentFilterLookups(filters = {}) {
   return pipeline;
 }
 
+function refundFilterLookups(filters = {}) {
+  const pipeline = [];
+  const clauses = [];
+  const orderMatch = {};
+  if (filters.status && filters.status !== "all") orderMatch["refundOrder.status"] = filters.status;
+  if (filters.customerId) orderMatch.customerId = objectId(filters.customerId);
+
+  if (Object.keys(orderMatch).length || filters.brandId || filters.categoryId || filters.costumeId || filters.search) {
+    pipeline.push(
+      { $lookup: { from: "rentalorders", localField: "orderId", foreignField: "_id", as: "refundOrder" } },
+      { $unwind: { path: "$refundOrder", preserveNullAndEmptyArrays: false } }
+    );
+    if (Object.keys(orderMatch).length) clauses.push({ $and: Object.entries(orderMatch).map(([key, value]) => ({ [key]: value })) });
+  }
+
+  if (filters.brandId || filters.categoryId || filters.costumeId) {
+    const itemMatch = {};
+    if (filters.costumeId) itemMatch["matchedCostume._id"] = objectId(filters.costumeId);
+    if (filters.brandId) itemMatch["matchedCostume.brandId"] = objectId(filters.brandId);
+    if (filters.categoryId) itemMatch["matchedCostume.categoryId"] = objectId(filters.categoryId);
+    pipeline.push({
+      $lookup: {
+        from: "rentalorderitems",
+        let: { refundOrderId: "$orderId" },
+        pipeline: [
+          { $match: { $expr: { $eq: ["$orderId", "$$refundOrderId"] } } },
+          { $lookup: { from: "costumes", localField: "costumeId", foreignField: "_id", as: "matchedCostume" } },
+          { $unwind: { path: "$matchedCostume", preserveNullAndEmptyArrays: false } },
+          { $match: itemMatch },
+          { $limit: 1 }
+        ],
+        as: "matchingRefundItems"
+      }
+    }, { $match: { matchingRefundItems: { $ne: [] } } });
+  }
+
+  const paymentMatch = {};
+  if (MONEY_TYPES.includes(filters.paymentType)) paymentMatch.paymentType = filters.paymentType;
+  const method = filters.paymentMethod || filters.method;
+  if (method && method !== "all") paymentMatch.method = method;
+  if (filters.channel && filters.channel !== "all") paymentMatch.channel = filters.channel;
+  if (Object.keys(paymentMatch).length || filters.search) {
+    pipeline.push({ $lookup: { from: "payments", localField: "depositPaymentIds", foreignField: "_id", as: "refundPayments" } });
+    if (Object.keys(paymentMatch).length) clauses.push({ refundPayments: { $elemMatch: paymentMatch } });
+  }
+
+  if (filters.search) {
+    const regex = new RegExp(escapeRegex(filters.search), "i");
+    pipeline.push(
+      { $lookup: { from: "users", localField: "customerId", foreignField: "_id", as: "refundCustomer" } },
+      { $unwind: { path: "$refundCustomer", preserveNullAndEmptyArrays: true } }
+    );
+    clauses.push({ $or: [
+      { "refundPayments.paymentReference": regex },
+      { "refundCustomer.name": regex },
+      { "refundCustomer.email": regex },
+      { "refundCustomer.phone": regex }
+    ] });
+  }
+
+  if (clauses.length === 1) pipeline.push({ $match: clauses[0] });
+  if (clauses.length > 1) pipeline.push({ $match: { $and: clauses } });
+  return pipeline;
+}
+
 async function revenueSummary(range, filters = {}) {
   const [[paymentRow = {}], [refundRow = {}]] = await Promise.all([
     Payment.aggregate([
@@ -123,6 +188,7 @@ export function buildCompletedRefundMatch(range, filters = {}) {
 function refundSummaryRows(range, filters = {}) {
   return DepositRefund.aggregate([
     { $match: buildCompletedRefundMatch(range, filters) },
+    ...refundFilterLookups(filters),
     { $group: { _id: null, refundedAmount: { $sum: "$amount" }, refundCount: { $sum: 1 } } },
     { $project: { _id: 0, refundedAmount: 1, refundCount: 1 } }
   ]);
@@ -264,6 +330,7 @@ export async function getRevenueTrend(query = {}) {
     ]),
     DepositRefund.aggregate([
       { $match: buildCompletedRefundMatch(range, query) },
+      ...refundFilterLookups(query),
       { $group: { _id: periodExpression("$completedAt", range.groupBy), refundedAmount: { $sum: "$amount" }, refundCount: { $sum: 1 } } },
       { $project: { _id: 0, period: "$_id", refundedAmount: 1, refundCount: 1 } },
       { $sort: { period: 1 } }

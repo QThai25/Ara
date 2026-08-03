@@ -119,8 +119,9 @@ export function assertVoucherAvailability(voucher, now = new Date()) {
   }
 }
 
-async function resolveCustomerId({ customerId, customerInfo }, session) {
+async function resolveCustomerId({ customerId, customerInfo, allowCustomerInfoResolution = false }, session) {
   if (mongoose.isValidObjectId(customerId)) return customerId;
+  if (!allowCustomerInfoResolution) return null;
   const phoneNormalized = normalizePhone(customerInfo?.phone);
   if (!phoneNormalized) return null;
   const query = User.findOne({ phoneNormalized }).select("_id");
@@ -176,14 +177,14 @@ export function assertMinimumOrder(voucher, rentalAmount) {
   }
 }
 
-export async function validateVoucher({ code, customerId = null, customerInfo = null, items = [], rentalAmount = 0, currentOrderId = null, now = new Date(), session = null }) {
+export async function validateVoucher({ code, customerId = null, customerInfo = null, allowCustomerInfoResolution = false, items = [], rentalAmount = 0, currentOrderId = null, now = new Date(), session = null }) {
   const normalizedCode = String(code || "").trim().toUpperCase();
   if (!normalizedCode) throw error(400, "VOUCHER_CODE_REQUIRED", "Vui lòng nhập mã ưu đãi.");
   const query = Voucher.findOne({ code: normalizedCode, isDeleted: false });
   if (session) query.session(session);
   const voucher = await query;
   assertVoucherAvailability(voucher, now);
-  const effectiveCustomerId = await resolveCustomerId({ customerId, customerInfo }, session);
+  const effectiveCustomerId = await resolveCustomerId({ customerId, customerInfo, allowCustomerInfoResolution }, session);
   await assertEligibility(voucher, effectiveCustomerId, currentOrderId, session);
 
   const grossRentalAmount = Math.max(0, Number(rentalAmount) || items.reduce((sum, item) => sum + Number(item.subtotal || 0), 0));
@@ -298,7 +299,7 @@ export async function reserveVoucherForOrder(options) {
 export async function releaseVoucherForOrder(orderId, reason = "order_canceled", session = null) {
   const redemption = await VoucherRedemption.findOneAndUpdate(
     { orderId, ...activeRedemptionFilter },
-    { $set: { status: "released", firstOrderClaim: false, releasedAt: new Date(), releaseReason: reason } },
+    { $set: { status: "released", firstOrderClaim: false, releasedAt: new Date(), releaseReason: reason }, $unset: { idempotencyKey: 1 } },
     sessionOptions(session, { new: true })
   );
   if (!redemption) return null;
@@ -332,7 +333,7 @@ async function hasRemainingCustomerUsage(voucher, customerId, session = null) {
   return (await usageQuery) < Number(voucher.usageLimitPerCustomer || 1);
 }
 
-async function isEligibleForPublicListing(voucher, customerId, session = null) {
+async function isEligibleForPublicListing(voucher, customerId, hasOrder, session = null) {
   if (!mongoose.isValidObjectId(customerId)) return false;
 
   if (voucher.eligibilityType === "specific_customers" && !voucher.eligibleCustomerIds.some((id) => String(id) === String(customerId))) {
@@ -340,7 +341,6 @@ async function isEligibleForPublicListing(voucher, customerId, session = null) {
   }
 
   if (["first_order", "returning_customer"].includes(voucher.eligibilityType)) {
-    const hasOrder = await hasValidRentalOrder(customerId, null, session);
     if (voucher.eligibilityType === "first_order" && hasOrder) return false;
     if (voucher.eligibilityType === "returning_customer" && !hasOrder) return false;
   }
@@ -356,10 +356,11 @@ export async function listPublic(customerId = null, now = new Date()) {
     startAt: { $lte: now },
     endAt: { $gte: now },
     $or: [{ totalUsageLimit: null }, { $expr: { $lt: ["$usageCount", "$totalUsageLimit"] } }]
-  }).sort({ endAt: 1, createdAt: -1 });
+  }).sort({ endAt: 1, createdAt: -1 }).limit(48);
   if (!mongoose.isValidObjectId(customerId)) return [];
+  const hasOrder = await hasValidRentalOrder(customerId, null);
   const eligible = await Promise.all(vouchers.map(async (item) => (
-    await isEligibleForPublicListing(item, customerId) ? serializePublicVoucher(item, now) : null
+    await isEligibleForPublicListing(item, customerId, hasOrder) ? serializePublicVoucher(item, now) : null
   )));
   return eligible.filter(Boolean);
 }
