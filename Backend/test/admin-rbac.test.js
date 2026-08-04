@@ -86,6 +86,7 @@ test("route policy distinguishes staff operations from owner-only direct API acc
   assert.equal(resolveAdminRoutePermission("/admin/reports", request("GET", "/overview")), P.REPORTS_VIEW);
   assert.equal(resolveAdminRoutePermission("/admin/customers", request("GET", "/")), P.CUSTOMERS_VIEW_OPERATIONAL);
   assert.equal(resolveAdminRoutePermission("/admin/customers", request("POST", "/customer-id/password-reset-grant")), P.CUSTOMERS_RESET_PASSWORD);
+  assert.equal(resolveAdminRoutePermission("/admin/customers", { method: "POST", originalUrl: "/api/admin/customers/customer-id/password-reset-grant" }), P.CUSTOMERS_RESET_PASSWORD);
   assert.equal(resolveAdminRoutePermission("/admin/customers", request("DELETE", "/customer-id/password-reset-grant")), P.CUSTOMERS_RESET_PASSWORD);
   assert.equal(resolveAdminRoutePermission("/admin/customers", request("DELETE", "/customer-id")), P.CUSTOMERS_MANAGE_SENSITIVE);
   assert.equal(resolveAdminRoutePermission("/admin/staff", request("GET", "/")), P.STAFF_MANAGE);

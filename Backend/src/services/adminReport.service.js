@@ -98,18 +98,16 @@ function paymentFilterLookups(filters = {}) {
   return pipeline;
 }
 
-function refundFilterLookups(filters = {}) {
+export function refundFilterLookups(filters = {}) {
   const pipeline = [];
   const clauses = [];
-  const orderMatch = {};
-  if (filters.status && filters.status !== "all") orderMatch["refundOrder.status"] = filters.status;
 
   if (filters.status && filters.status !== "all") {
     pipeline.push(
       { $lookup: { from: "rentalorders", localField: "orderId", foreignField: "_id", as: "refundOrder" } },
-      { $unwind: { path: "$refundOrder", preserveNullAndEmptyArrays: false } }
+      { $unwind: { path: "$refundOrder", preserveNullAndEmptyArrays: false } },
+      { $match: { "refundOrder.status": filters.status } }
     );
-    clauses.push({ $and: Object.entries(orderMatch).map(([key, value]) => ({ [key]: value })) });
   }
 
   if (filters.brandId || filters.categoryId || filters.costumeId) {

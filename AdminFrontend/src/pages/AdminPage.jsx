@@ -194,21 +194,29 @@ export function AdminPage({ activeTab, notify, costumeEditor = null }) {
 
   useEffect(() => {
     let timer;
-    const refresh = () => { clearTimeout(timer); timer = setTimeout(() => load(selectedOrderId), 180); };
+    const refresh = () => {
+      clearTimeout(timer);
+      if (activeTab === adminTabs.vouchers) return;
+      timer = setTimeout(() => load(selectedOrderId), 180);
+    };
     window.addEventListener("ara:order-updated", refresh);
     window.addEventListener("ara:payment-updated", refresh);
     return () => { clearTimeout(timer); window.removeEventListener("ara:order-updated", refresh); window.removeEventListener("ara:payment-updated", refresh); };
-  }, [load, selectedOrderId]);
+  }, [activeTab, load, selectedOrderId]);
 
   useEffect(() => {
     const base = (import.meta.env.VITE_API_URL || "http://localhost:4000/api").replace(/\/api\/?$/, "");
     const socket = io(base, { auth: { token: localStorage.getItem("ara_admin_token") }, transports: ["websocket", "polling"] });
     let timer;
-    const refresh = () => { clearTimeout(timer); timer = setTimeout(() => load(selectedOrderId), 120); };
+    const refresh = () => {
+      clearTimeout(timer);
+      if (activeTab === adminTabs.vouchers) return;
+      timer = setTimeout(() => load(selectedOrderId), 120);
+    };
     socket.on("order:updated", refresh);
     socket.on("payment:updated", refresh);
     return () => { clearTimeout(timer); socket.disconnect(); };
-  }, [load, selectedOrderId]);
+  }, [activeTab, load, selectedOrderId]);
 
   const selectedOrder = useMemo(() => findById(orders, selectedOrderId), [orders, selectedOrderId]);
 
@@ -2261,8 +2269,11 @@ function VoucherManager({ items, pagination, categories, occasions, costumes, cu
   const [eligibilityFilter, setEligibilityFilter] = useState("");
   const [modal, setModal] = useState(null);
   const [busyId, setBusyId] = useState("");
+  const [paginationLocked, setPaginationLocked] = useState(false);
   const reloadRef = useRef(reload);
   reloadRef.current = reload;
+  const paginationResetRef = useRef(false);
+  const pendingFilterResetRef = useRef(false);
   const pageSize = Number(pagination?.limit) || 20;
   const currentPage = Number(pagination?.page) || 1;
   const query = () => ({
@@ -2272,13 +2283,40 @@ function VoucherManager({ items, pagination, categories, occasions, costumes, cu
     ...(statusFilter ? { status: statusFilter } : {}),
     ...(eligibilityFilter ? { eligibilityType: eligibilityFilter } : {})
   });
-  const requestPage = (page) => reloadRef.current({ silent: true, voucherParams: { ...query(), page } });
+  const queryRef = useRef(query);
+  queryRef.current = query;
+  const requestPage = (page) => {
+    if (paginationResetRef.current) return;
+    return reloadRef.current({ silent: true, voucherParams: { ...queryRef.current(), page } });
+  };
+  const startFilterReset = () => {
+    paginationResetRef.current = true;
+    setPaginationLocked(true);
+    Promise.resolve()
+      .then(() => reloadRef.current({ silent: true, voucherParams: { ...queryRef.current(), page: 1 } }))
+      .finally(() => {
+        paginationResetRef.current = false;
+        if (pendingFilterResetRef.current) {
+          pendingFilterResetRef.current = false;
+          startFilterReset();
+          return;
+        }
+        setPaginationLocked(false);
+      });
+  };
+  const resetPage = () => {
+    if (paginationResetRef.current) {
+      pendingFilterResetRef.current = true;
+      return;
+    }
+    startFilterReset();
+  };
   const previousVoucherFiltersRef = useRef({ debouncedSearch, statusFilter, eligibilityFilter });
   useEffect(() => {
     const previous = previousVoucherFiltersRef.current;
     if (previous.debouncedSearch === debouncedSearch && previous.statusFilter === statusFilter && previous.eligibilityFilter === eligibilityFilter) return;
     previousVoucherFiltersRef.current = { debouncedSearch, statusFilter, eligibilityFilter };
-    requestPage(1);
+    resetPage();
   }, [debouncedSearch, statusFilter, eligibilityFilter]);
   const filtered = items;
   const reloadCurrent = () => reloadRef.current({ silent: true, voucherParams: query() });
@@ -2356,6 +2394,7 @@ function VoucherManager({ items, pagination, categories, occasions, costumes, cu
               total={pagination?.total || 0}
               totalPages={pagination?.totalPages || 1}
               onPageChange={requestPage}
+              paginationDisabled={paginationLocked}
             colWidths={["104px", "150px", "104px", "150px", "126px", "126px", "92px", "164px", "124px", "64px"]}
             format={{
               discount: (_, row) => voucherDiscount(row),
@@ -3041,7 +3080,7 @@ function isMoneyColumn(column) {
   return /price|amount|fee|deposit|revenue|total|value/i.test(column);
 }
 
-function AdminTable({ title, rows = [], columns, labels, format = {}, actions, colWidths = [], columnClasses = {}, tableClassName = "", mobileCards = false, page: externalPage, pageSize: externalPageSize = 10, total: externalTotal, totalPages: externalTotalPages, onPageChange }) {
+function AdminTable({ title, rows = [], columns, labels, format = {}, actions, colWidths = [], columnClasses = {}, tableClassName = "", mobileCards = false, page: externalPage, pageSize: externalPageSize = 10, total: externalTotal, totalPages: externalTotalPages, onPageChange, paginationDisabled = false }) {
   const safeRows = asArray(rows);
   const isServerPaginated = externalTotalPages !== undefined;
   const [internalPage, setInternalPage] = useState(1);
@@ -3082,19 +3121,19 @@ function AdminTable({ title, rows = [], columns, labels, format = {}, actions, c
               </tr>
             ))}</tbody>
           </table>
-          {totalPages > 1 && <Pagination page={page} totalPages={totalPages} setPage={onPageChange || setInternalPage} />}
+          {totalPages > 1 && <Pagination page={page} totalPages={totalPages} setPage={onPageChange || setInternalPage} disabled={paginationDisabled} />}
         </>
       )}
     </div>
   );
 }
 
-function Pagination({ page, totalPages, setPage }) {
+function Pagination({ page, totalPages, setPage, disabled = false }) {
   return (
     <div className="pagination">
-      <button disabled={page <= 1} onClick={() => setPage(page - 1)}>Trước</button>
+      <button disabled={disabled || page <= 1} onClick={() => setPage(page - 1)}>Trước</button>
       <span>{page}/{totalPages}</span>
-      <button disabled={page >= totalPages} onClick={() => setPage(page + 1)}>Sau</button>
+      <button disabled={disabled || page >= totalPages} onClick={() => setPage(page + 1)}>Sau</button>
     </div>
   );
 }
