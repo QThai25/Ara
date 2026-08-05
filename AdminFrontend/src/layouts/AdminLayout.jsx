@@ -72,7 +72,7 @@ export function AdminLayout({ user, logout, toast, children }) {
       .then((items) => { if (active) setWaitingChats((items || []).length); })
       .catch(() => {});
     refresh();
-    const base = (import.meta.env.VITE_API_URL || "http://localhost:4000/api").replace(/\/api\/?$/, "");
+    const base = (import.meta.env.VITE_API_URL || "").replace(/\/api\/?$/, "");
     const socket = io(base, { auth: { token: localStorage.getItem("ara_admin_token") } });
     socket.on("conversation:update", refresh);
     socket.on("conversation:updated", refresh);

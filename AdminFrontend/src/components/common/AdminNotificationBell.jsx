@@ -11,7 +11,7 @@ export function AdminNotificationBell({ user }) {
   useEffect(() => { if (user) load(); }, [user?._id, user?.id]);
   useEffect(() => {
     if (!user) return undefined;
-    const socket = io((import.meta.env.VITE_API_URL || "http://localhost:4000/api").replace(/\/api\/?$/, ""), { auth: { token: localStorage.getItem("ara_admin_token") } });
+    const socket = io((import.meta.env.VITE_API_URL || "").replace(/\/api\/?$/, ""), { auth: { token: localStorage.getItem("ara_admin_token") } });
     socket.on("notification:new", (item) => setItems((current) => [item, ...current].slice(0, 7)));
     socket.on("notification:unread-count", ({ count: value }) => setCount(Number(value || 0)));
     socket.on("order:updated", (detail) => window.dispatchEvent(new CustomEvent("ara:order-updated", { detail })));

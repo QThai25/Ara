@@ -60,7 +60,7 @@ function GuestRoute({ user, children }) {
 function AdminRedirect({ user }) {
   if (!user) return <Navigate to="/login" replace />;
   if (!adminRoles.includes(user.role)) return <Navigate to="/" replace />;
-  window.location.assign(import.meta.env.VITE_ADMIN_URL || "http://localhost:5174");
+  window.location.assign(import.meta.env.VITE_ADMIN_URL || "/");
   return null;
 }
 

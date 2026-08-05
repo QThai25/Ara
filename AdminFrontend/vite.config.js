@@ -8,7 +8,7 @@ export default defineConfig(({ mode }) => {
   if (mode === "production" && !apiUrl) throw new Error("VITE_API_BASE_URL is required for production builds.");
   return {
     plugins: [react(), tailwindcss()],
-    define: { "import.meta.env.VITE_API_URL": JSON.stringify(apiUrl || "http://localhost:4000/api") },
+    define: { "import.meta.env.VITE_API_URL": JSON.stringify(apiUrl || "") },
     build: {
       target: "es2020",
       sourcemap: false,

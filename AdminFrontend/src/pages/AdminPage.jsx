@@ -205,7 +205,7 @@ export function AdminPage({ activeTab, notify, costumeEditor = null }) {
   }, [activeTab, load, selectedOrderId]);
 
   useEffect(() => {
-    const base = (import.meta.env.VITE_API_URL || "http://localhost:4000/api").replace(/\/api\/?$/, "");
+    const base = (import.meta.env.VITE_API_URL || "").replace(/\/api\/?$/, "");
     const socket = io(base, { auth: { token: localStorage.getItem("ara_admin_token") }, transports: ["websocket", "polling"] });
     let timer;
     const refresh = () => {

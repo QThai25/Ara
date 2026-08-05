@@ -1,5 +1,69 @@
 # ARA Costume Rental
 
+## Docker full stack
+
+Docker Compose runs all three applications:
+
+| Service | Container port | Local URL | Build source |
+| --- | ---: | --- | --- |
+| Backend | 4000 | http://localhost:4000/health | `Backend/Dockerfile` |
+| Customer | 80 | http://localhost:5173 | `Frontend/Dockerfile` |
+| Admin | 80 | http://localhost:5174 | `AdminFrontend/Dockerfile` |
+
+The repository has separate npm projects, so each Dockerfile uses its own `package-lock.json` and `npm ci`. Backend uses Node 22; the React/Vite applications build into `dist` and are served by Nginx. Nginx sends unknown paths to `index.html`, so React Router works after a browser refresh.
+
+Before starting, create `Backend/.env.production` from `Backend/.env.production.example` and fill the backend secrets. This file is intentionally not committed. Compose loads it with `env_file`; it then applies local-only defaults for `NODE_ENV`, CORS, URLs and PayOS so the default local command can use `localhost` safely.
+
+```powershell
+docker compose config
+docker compose up --build
+docker compose ps
+docker compose logs -f
+```
+
+The same public, non-secret build values are documented in `docker-compose.env.example`. To use them explicitly:
+
+```powershell
+docker compose --env-file docker-compose.env.example up --build
+```
+
+Vite values are build-time values because the frontend is static. Browser requests must use a browser-reachable URL such as `http://localhost:4000/api`; do not use the Docker-only hostname `backend` in `VITE_API_BASE_URL`. The Docker network is available to all services for future server-side communication, but the current browser bundle does not make requests from inside the frontend container.
+
+For a production Compose run, provide public values before building:
+
+```powershell
+$env:DOCKER_NODE_ENV = "production"
+$env:DOCKER_CORS_ORIGINS = "https://www.example.com,https://admin.example.com"
+$env:DOCKER_FRONTEND_URL = "https://www.example.com"
+$env:DOCKER_BACKEND_URL = "https://api.example.com"
+$env:VITE_API_BASE_URL = "https://api.example.com/api"
+$env:VITE_ADMIN_URL = "https://admin.example.com"
+$env:VITE_CUSTOMER_URL = "https://www.example.com"
+docker compose up --build -d
+```
+
+Set `PAYOS_ENABLED` and its credentials in the backend env only when PayOS is intended for that environment. Do not put backend secrets or `PAYOS_*` values into Vite variables.
+
+## Independent Vercel deployments
+
+Customer and AdminFrontend remain independent Vite projects and do not depend on Docker to build. In Vercel, set the project root to the corresponding directory, install with `npm ci`, build with `npm run build`, and publish `dist`.
+
+Customer variables:
+
+```text
+VITE_API_BASE_URL=https://api.example.com/api
+VITE_ADMIN_URL=https://admin.example.com
+```
+
+Admin variables:
+
+```text
+VITE_API_BASE_URL=https://api.example.com/api
+VITE_CUSTOMER_URL=https://www.example.com
+```
+
+Each SPA already has a `vercel.json` rewrite to `/index.html`. Backend remains a regular Node/Express service and is not configured as a Vercel serverless deployment.
+
 ARA gồm ba ứng dụng JavaScript độc lập:
 
 - `Backend`: Express, MongoDB/Mongoose, Socket.IO, JWT, Cloudinary và payOS.

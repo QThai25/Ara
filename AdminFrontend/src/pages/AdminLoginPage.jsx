@@ -11,7 +11,7 @@ export function AdminLoginPage() {
   const { adminUser, login, loading, isAuthenticated, isAdmin } = useAdminAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const customerUrl = import.meta.env.VITE_CUSTOMER_URL || "http://localhost:5173";
+  const customerUrl = import.meta.env.VITE_CUSTOMER_URL || "/";
   const update = (field, value) => {
     setForm((current) => ({ ...current, [field]: value }));
     if (error) setError("");

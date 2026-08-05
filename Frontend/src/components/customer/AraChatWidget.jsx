@@ -20,7 +20,7 @@ export function AraChatWidget({open,onOpenChange,user,unread,onUnreadChange}){
  const navigate=useNavigate(),[conversation,setConversation]=useState(null),[messages,setMessages]=useState([]),[draft,setDraft]=useState(()=>localStorage.getItem("ara_chat_draft")||""),[loading,setLoading]=useState(false),[loadError,setLoadError]=useState(""),[loadAttempt,setLoadAttempt]=useState(0),[sending,setSending]=useState(false),[typing,setTyping]=useState(false),socketRef=useRef(null),endRef=useRef(null),openingRef=useRef(null),openRef=useRef(open);
  openRef.current=open;
  const conversationId=idOf(conversation);
- const base=useMemo(()=>(import.meta.env.VITE_API_URL||"http://localhost:4000/api").replace(/\/api\/?$/,""),[]);
+ const base=useMemo(()=>(import.meta.env.VITE_API_URL||"").replace(/\/api\/?$/,""),[]);
  const addMessage=message=>setMessages(current=>{const index=current.findIndex(item=>sameMessage(item,message));if(index<0)return[...current,message];const next=[...current];next[index]={...current[index],...message};return next});
  const mergeMessages=incoming=>setMessages(current=>(incoming||[]).reduce((list,message)=>{const index=list.findIndex(item=>sameMessage(item,message));if(index<0)return[...list,message];const next=[...list];next[index]={...list[index],...message};return next},current));
  useEffect(()=>{localStorage.setItem("ara_chat_draft",draft)},[draft]);

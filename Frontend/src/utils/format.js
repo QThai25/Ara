@@ -119,7 +119,7 @@ export function normalizeCostume(costume) {
 export function resolveImageUrl(image) {
   if (!image) return "/placeholder.png";
   if (/^https?:\/\//i.test(image)) return image;
-  const apiBase = (import.meta.env.VITE_API_URL || "http://localhost:4000/api").replace(/\/api\/?$/, "");
+  const apiBase = (import.meta.env.VITE_API_URL || "").replace(/\/api\/?$/, "");
   if (image.startsWith("/uploads")) return `${apiBase}${image}`;
   if (image.startsWith("/")) return image;
   return "/placeholder.png";

@@ -292,7 +292,7 @@ export function MyOrderDetailPage({
   useEffect(()=>{getOrderRefund(id).then(setRefund).catch(()=>setRefund(null));},[id]);
 
   useEffect(() => {
-    const base = (import.meta.env.VITE_API_URL || "http://localhost:4000/api").replace(/\/api\/?$/, "");
+    const base = (import.meta.env.VITE_API_URL || "").replace(/\/api\/?$/, "");
     const socket = io(base, { auth: { token: localStorage.getItem("ara_token") }, transports: ["websocket", "polling"] });
     let timer;
     const refresh = (event) => {

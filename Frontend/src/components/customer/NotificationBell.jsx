@@ -38,7 +38,7 @@ export function NotificationBell({ user }) {
   useEffect(() => { if (open) load(); }, [statusFilter, category]);
   useEffect(() => {
     if (!user) return undefined;
-    const base = (import.meta.env.VITE_API_URL || "http://localhost:4000/api").replace(/\/api\/?$/, "");
+    const base = (import.meta.env.VITE_API_URL || "").replace(/\/api\/?$/, "");
     const socket = io(base, { auth: { token: localStorage.getItem("ara_token") } });
     socket.on("notification:new", (notification) => {
       if (statusFilter === "true" || (category && notification.category !== category)) return;
