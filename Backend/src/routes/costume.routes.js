@@ -3,13 +3,13 @@ import * as controller from "../controllers/costume.controller.js";
 import { auth } from "../middlewares/auth.middleware.js";
 import { adminOnly } from "../middlewares/admin.middleware.js";
 import { validate } from "../middlewares/validate.middleware.js";
-import { createCostumeValidation, updateCostumeStatusValidation, updateCostumeValidation } from "../validations/costume.validation.js";
+import { createCostumeValidation, listCostumeValidation, updateCostumeStatusValidation, updateCostumeValidation } from "../validations/costume.validation.js";
 import { listCostumeReviews } from "../controllers/review.controller.js";
 
 export const costumeRoutes = Router();
 export const adminCostumeRoutes = Router();
 
-costumeRoutes.get("/", controller.listCostumes);
+costumeRoutes.get("/", listCostumeValidation, validate, controller.listCostumes);
 costumeRoutes.get("/:id/reviews", listCostumeReviews);
 costumeRoutes.get("/:id/availability", controller.checkAvailability);
 costumeRoutes.get("/:id/availability-calendar", controller.getAvailabilityCalendar);

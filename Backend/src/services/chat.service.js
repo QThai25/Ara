@@ -7,6 +7,16 @@ import { notifyAdmins, createNotificationOnce } from "./notification.service.js"
 
 export const isAdminUser = (user) => ["admin","staff","owner"].includes(user?.role);
 const clean = (value, max = 4000) => String(value || "").replace(/<[^>]*>/g, "").trim().slice(0, max);
+const welcomeMessageInput = (conversation, context = {}) => ({
+  clientMessageId: `welcome:${conversation._id}`,
+  senderType: "bot",
+  type: "quick_reply",
+  content: "Xin chào, mình là Trợ lý ARI 👋\nMình có thể giúp bạn tìm trang phục, kiểm tra lịch thuê hoặc hướng dẫn đặt đơn.",
+  payload: {
+    quickReplies: ["Tìm trang phục phù hợp","Hướng dẫn đặt thuê","Kiểm tra lịch trống","Kiểm tra đơn của tôi","Thanh toán và tiền cọc","Cách nhận và trả đồ","Gặp nhân viên hỗ trợ"],
+    pageContext: { currentPath: clean(context.currentPath, 300), costumeId: mongoose.isValidObjectId(context.costumeId) ? context.costumeId : null }
+  }
+});
 
 export function chatIdentity(user, guestSessionId = "") {
   if (user?._id) return { customerId: user._id, guestSessionId: "" };
@@ -37,17 +47,27 @@ export async function createConversation(user, guestSessionId, context = {}) {
   }).sort({ lastMessageAt: -1 });
   if (active) return active;
   const conversation = await ChatConversation.create({ ...identity, category: "general" });
-  await saveMessage(conversation, {
-    clientMessageId: `welcome:${conversation._id}`,
-    senderType: "bot",
-    type: "quick_reply",
-    content: "Xin chào, mình là Trợ lý ARI 👋\nMình có thể giúp bạn tìm trang phục, kiểm tra lịch thuê hoặc hướng dẫn đặt đơn.",
-    payload: {
-      quickReplies: ["Tìm trang phục phù hợp","Hướng dẫn đặt thuê","Kiểm tra lịch trống","Kiểm tra đơn của tôi","Thanh toán và tiền cọc","Cách nhận và trả đồ","Gặp nhân viên hỗ trợ"],
-      pageContext: { currentPath: clean(context.currentPath, 300), costumeId: mongoose.isValidObjectId(context.costumeId) ? context.costumeId : null }
-    }
-  });
+  await saveMessage(conversation, welcomeMessageInput(conversation, context));
   return conversation;
+}
+
+async function listConversationMessages(conversation, user, { before, limit = 30 } = {}) {
+  const filter = { conversationId: conversation._id };
+  if (!isAdminUser(user)) filter.type = { $ne: "internal_note" };
+  if (before && mongoose.isValidObjectId(before)) filter._id = { $lt: before };
+  const safeLimit = Math.min(50, Math.max(1, Number(limit) || 30));
+  const items = await ChatMessage.find(filter).populate("senderId", "name role").sort({ _id: -1 }).limit(safeLimit).lean();
+  return { items: items.reverse(), nextCursor: items.length === safeLimit ? String(items[0]._id) : null };
+}
+
+export async function openConversation(user, guestSessionId, context = {}) {
+  const conversation = await createConversation(user, guestSessionId, context);
+  const history = await listConversationMessages(conversation, user, { limit: context.messageLimit });
+  if (!history.items.length) {
+    const welcome = await saveMessage(conversation, welcomeMessageInput(conversation, context));
+    return { conversation, items: [welcome], nextCursor: null };
+  }
+  return { conversation, ...history };
 }
 
 export async function saveMessage(conversation, input, options = {}) {
@@ -115,12 +135,7 @@ export async function sendAdminMessage(id, admin, input) {
 
 export async function listMessages(id, user, guestSessionId, { before, limit = 30 } = {}) {
   const conversation = await requireConversation(id, user, guestSessionId);
-  const filter = { conversationId: conversation._id };
-  if (!isAdminUser(user)) filter.type = { $ne: "internal_note" };
-  if (before && mongoose.isValidObjectId(before)) filter._id = { $lt: before };
-  const safeLimit = Math.min(50, Math.max(1, Number(limit) || 30));
-  const items = await ChatMessage.find(filter).populate("senderId", "name role").sort({ _id: -1 }).limit(safeLimit).lean();
-  return { items: items.reverse(), nextCursor: items.length === safeLimit ? String(items[0]._id) : null };
+  return listConversationMessages(conversation, user, { before, limit });
 }
 
 export async function markRead(id, user, guestSessionId) {

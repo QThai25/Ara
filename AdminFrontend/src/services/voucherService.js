@@ -1,13 +1,21 @@
 import { apiClient } from "./apiClient.js";
 
-export const mockVouchers = [
-  { code: "ARA10", name: "Giảm 10% cho đơn đầu tiên", discountType: "percent", discountValue: 10, status: "active" },
-  { code: "MEMBER50", name: "Giảm 50.000đ cho thành viên", discountType: "fixed", discountValue: 50000, status: "active" }
-];
+function voucherRows(response) {
+  const payload = response?.data ?? response;
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.items)) return payload.items;
+  if (Array.isArray(payload?.vouchers)) return payload.vouchers;
+  if (Array.isArray(response?.items)) return response.items;
+  if (Array.isArray(response?.vouchers)) return response.vouchers;
+  return [];
+}
 
-export async function getAdminVouchers() {
-  const response = await apiClient.get("/admin/vouchers");
-  return Array.isArray(response.data) ? response.data : [];
+export async function getAdminVouchers(params = {}) {
+  const response = await apiClient.get("/admin/vouchers", { params: { page: 1, limit: 20, ...params } });
+  return {
+    items: voucherRows(response),
+    pagination: response?.data?.pagination || response?.pagination || { page: Number(params.page) || 1, limit: Number(params.limit) || 20, total: voucherRows(response).length, totalPages: 1 }
+  };
 }
 
 export const createVoucher = (payload) => apiClient.post("/admin/vouchers", payload);

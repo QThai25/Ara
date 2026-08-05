@@ -4,6 +4,7 @@ import { BrowserRouter } from "react-router-dom";
 import App from "./App.jsx";
 import "./styles.css";
 import "./styles/admin-controls.css";
+import "./styles/revenue-analytics.tailwind.css";
 
 createRoot(document.getElementById("root")).render(
   <React.StrictMode>

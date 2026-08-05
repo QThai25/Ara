@@ -10,14 +10,6 @@ const rentalPolicies = [
         label: "Xác nhận giữ lịch",
         text: "Lịch thuê chỉ được giữ sau khi khách hàng hoàn tất khoản đặt cọc theo hướng dẫn của ARA."
       },
-      {
-        label: "Khoảng đệm vệ sinh",
-        text: "Sau thời điểm hoàn trả, trang phục được khóa thêm 3 giờ để kiểm tra và vệ sinh."
-      },
-      {
-        label: "Đặt lịch tiếp theo",
-        text: "Khách hàng vẫn có thể chọn và đặt những ngày bắt đầu sau khi khoảng vệ sinh 3 giờ kết thúc."
-      }
     ]
   },
   {
@@ -44,11 +36,11 @@ const rentalPolicies = [
     items: [
       {
         label: "Gói thuê tiêu chuẩn",
-        text: "Mỗi ngày thuê bằng đúng 24 giờ, tính từ lúc trang phục rời cửa hàng đến khi quay lại cửa hàng. Thời gian giao đi và nhận về nằm trong thời hạn này."
+        text: "Mỗi ngày thuê bằng đúng 24 giờ, tính từ lúc khách hàng thực nhận trang phục đến khi khách hàng hoàn trả hoặc bàn giao trang phục cho đơn vị vận chuyển nhận lại."
       },
       {
         label: "Giao và nhận lại tận nơi",
-        text: "Thời gian vận chuyển đi và về đều nằm trong gói 24 giờ; màn hình xác nhận sẽ hiển thị rõ thời gian khách dự kiến giữ đồ."
+        text: "Thời gian vận chuyển giao đi trước khi khách nhận đồ và vận chuyển về sau khi khách bàn giao đồ không tính vào thời gian thuê. Màn hình xác nhận sẽ hiển thị rõ thời điểm bắt đầu và hạn hoàn trả."
       }
     ]
   },

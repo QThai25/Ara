@@ -11,7 +11,6 @@ import {
   ChevronRight
 } from "lucide-react";
 
-import { fallbackImages } from "../../utils/catalogData.js";
 import { paths, views } from "../../routes/views.js";
 import { normalizeImageList, resolveImageUrl } from "../../utils/format.js";
 
@@ -23,6 +22,28 @@ const DEFAULT_BANNER = {
   buttonText: "Thuê ngay",
   buttonLink: paths.catalog
 };
+
+export function HeroSectionSkeleton() {
+  return (
+    <section
+      className="mei-hero ara-hero hero-carousel ara-hero-skeleton"
+      aria-label="Đang tải banner nổi bật"
+      aria-busy="true"
+    >
+      <div className="ara-hero-skeleton__viewport">
+        <div className="ara-hero-skeleton__media" />
+        <div className="ara-hero-skeleton__content">
+          <span className="ara-hero-skeleton__eyebrow" />
+          <span className="ara-hero-skeleton__title" />
+          <span className="ara-hero-skeleton__line" />
+          <span className="ara-hero-skeleton__line ara-hero-skeleton__line--short" />
+          <span className="ara-hero-skeleton__actions" />
+          <span className="ara-hero-skeleton__gallery" />
+        </div>
+      </div>
+    </section>
+  );
+}
 
 function splitHeroTitle(title = "") {
   const words = title.trim().split(/\s+/);
@@ -58,48 +79,28 @@ export function HeroSection({
   const [isDragging, setIsDragging] = useState(false);
   const [paused, setPaused] = useState(false);
 
-  const heroProducts = useMemo(() => {
-    const fallbackProducts = fallbackImages.map(
-      (image, index) => ({
-        id: `fallback-${index}`,
-        name: `Thiết kế Ara ${index + 1}`,
-        images: [image]
-      })
-    );
-
-    return [...products, ...fallbackProducts].slice(0, 12);
-  }, [products]);
-
   const slides = useMemo(() => {
     const activeBanners = banners.length
       ? [...banners].sort((left, right) => Number(Boolean(right.isPrimary)) - Number(Boolean(left.isPrimary)) || Number(left.sortOrder || 0) - Number(right.sortOrder || 0))
       : [banner].filter(Boolean);
 
-    const baseSlides = activeBanners.length
-      ? activeBanners
-      : [DEFAULT_BANNER];
+    const baseSlides = activeBanners;
 
     return baseSlides.map((item, index) => {
       const bannerImages = normalizeImageList(item.images, item.image, 6);
-      const fallbackGallery = bannerImages.length ? [] : normalizeImageList(
-        heroProducts.flatMap((product) => product.images?.length ? product.images : [product.image]),
-        fallbackImages[0],
-        6
-      );
-      const galleryImages = bannerImages.length ? bannerImages : fallbackGallery;
 
       return {
         ...DEFAULT_BANNER,
         ...item,
         id: item.id || item._id || `hero-${index}`,
-        gallery: galleryImages.map((image, imageIndex) => ({
+        gallery: bannerImages.map((image, imageIndex) => ({
           id: `${item.id || item._id || index}-image-${imageIndex}`,
           name: item.title || "Ara banner",
           image
         }))
       };
     });
-  }, [banner, banners, heroProducts]);
+  }, [banner, banners]);
 
   const slideCount = slides.length;
   const canSlide = slideCount > 1;
@@ -277,6 +278,8 @@ export function HeroSection({
       link || paths.catalog
     );
   };
+
+  if (!slideCount) return null;
 
   return (
     <section

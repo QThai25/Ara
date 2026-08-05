@@ -21,6 +21,9 @@ import { WishlistPage } from "../pages/customer/WishlistPage.jsx";
 import { LegalPage } from "../pages/customer/LegalPage.jsx";
 import { PaymentResultPage } from "../pages/customer/PaymentResultPage.jsx";
 import { AccountPage } from "../pages/customer/AccountPage.jsx";
+import { ForgotPasswordPage } from "../pages/customer/ForgotPasswordPage.jsx";
+import { NotFoundPage } from "../pages/customer/NotFoundPage.jsx";
+import { OffersPage } from "../pages/customer/OffersPage.jsx";
 
 const adminRoles = ["admin", "staff", "owner"];
 
@@ -44,8 +47,8 @@ function ScrollToRoutePosition() {
   return null;
 }
 
-function RequireAuth({ user, children }) {
-  if (!user) return <Navigate to="/login" replace />;
+function RequireAuth({ user, children, redirectTo = "/login" }) {
+  if (!user) return <Navigate to={redirectTo} replace />;
   return children;
 }
 
@@ -57,7 +60,7 @@ function GuestRoute({ user, children }) {
 function AdminRedirect({ user }) {
   if (!user) return <Navigate to="/login" replace />;
   if (!adminRoles.includes(user.role)) return <Navigate to="/" replace />;
-  window.location.assign(import.meta.env.VITE_ADMIN_URL || "http://localhost:5174");
+  window.location.assign(import.meta.env.VITE_ADMIN_URL || "/");
   return null;
 }
 
@@ -75,11 +78,12 @@ function CustomerRoutes({ user, saveSession, logout, toast, notify }) {
         <Route path="/brands" element={<CostumesPage setView={setView} user={user} notify={notify} />} />
         <Route path="/about" element={<AboutPage />} />
         <Route path="/contact" element={<ContactPage notify={notify} />} />
+        <Route path="/offers" element={<RequireAuth user={user} redirectTo="/register"><OffersPage user={user} notify={notify} /></RequireAuth>} />
         <Route path="/my-rentals" element={<RequireAuth user={user}><MyOrdersPage user={user} setView={setView} notify={notify} /></RequireAuth>} />
         <Route path="/my-rentals/:id" element={<RequireAuth user={user}><MyOrderDetailPage user={user} notify={notify} /></RequireAuth>} />
         <Route path="/my-payments" element={<RequireAuth user={user}><MyPaymentsPage notify={notify} /></RequireAuth>} />
         <Route path="/my-payments/:id" element={<RequireAuth user={user}><MyPaymentDetailPage /></RequireAuth>} />
-        <Route path="/notifications" element={<RequireAuth user={user}><NotificationsPage /></RequireAuth>} />
+        <Route path="/notifications" element={<RequireAuth user={user}><NotificationsPage notify={notify} /></RequireAuth>} />
         <Route path="/account" element={<RequireAuth user={user}><AccountPage user={user} notify={notify} onUserUpdated={updated => saveSession({ token: localStorage.getItem("ara_token") || "", user: updated })} /></RequireAuth>} />
         <Route path="/admin" element={<AdminRedirect user={user} />} />
         <Route path="/admin/*" element={<AdminRedirect user={user} />} />
@@ -96,7 +100,8 @@ function CustomerRoutes({ user, saveSession, logout, toast, notify }) {
         <Route path="/payment/result" element={<PaymentResultPage />} />
         <Route path="/login" element={<GuestRoute user={user}><AuthPage mode="login" saveSession={saveSession} notify={notify} setView={setView} /></GuestRoute>} />
         <Route path="/register" element={<GuestRoute user={user}><AuthPage mode="register" saveSession={saveSession} notify={notify} setView={setView} /></GuestRoute>} />
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="/forgot-password" element={<GuestRoute user={user}><ForgotPasswordPage notify={notify} /></GuestRoute>} />
+        <Route path="*" element={<NotFoundPage />} />
       </Routes>
     </CustomerLayout>
   );

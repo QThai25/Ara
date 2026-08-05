@@ -9,6 +9,7 @@ import { emitChatMessage, emitConversationUpdate } from "../realtime/socket.js";
 
 const guest=req=>req.get("X-Chat-Session-Id")||req.body?.guestSessionId||"";
 export const createConversation=asyncHandler(async(req,res)=>sendSuccess(res,"Đã mở Trợ lý ARI.",await chat.createConversation(req.user,guest(req),req.body),201));
+export const openConversation=asyncHandler(async(req,res)=>sendSuccess(res,"Đã mở Trợ lý ARI.",await chat.openConversation(req.user,guest(req),req.body)));
 export const getConversation=asyncHandler(async(req,res)=>sendSuccess(res,"Chi tiết hội thoại.",await chat.requireConversation(req.params.id,req.user,guest(req))));
 export const messages=asyncHandler(async(req,res)=>sendSuccess(res,"Lịch sử trò chuyện.",await chat.listMessages(req.params.id,req.user,guest(req),req.query)));
 export const sendMessage=asyncHandler(async(req,res)=>{const conversation=await chat.requireConversation(req.params.id,req.user,guest(req));const message=await chat.sendCustomerMessage(req.params.id,req.user,guest(req),req.body);emitChatMessage(conversation,message);const reply=await bot.respondToCustomer(conversation,message,req.user,guest(req));if(reply)emitChatMessage(conversation,reply);sendSuccess(res,"Đã gửi tin nhắn.",{message,botReply:reply},201);});

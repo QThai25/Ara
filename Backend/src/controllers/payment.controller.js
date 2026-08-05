@@ -1,6 +1,7 @@
 import * as paymentService from "../services/payment.service.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { sendSuccess } from "../utils/apiResponse.js";
+import { ADMIN_PERMISSIONS, hasAdminPermission } from "../utils/adminPermissions.js";
 
 export const createPayment = asyncHandler(
   async (req, res) =>
@@ -24,7 +25,7 @@ export const changeOrderPaymentPreference = asyncHandler(async (req, res) => sen
 export const reportTransfer = asyncHandler(async (req, res) => sendSuccess(
   res,
   "Đã ghi nhận thông báo chuyển khoản và chuyển sang chờ xác minh.",
-  await paymentService.reportManualTransfer(req.params.id, req.paymentActor || req.user, req.body)
+  await paymentService.reportManualTransfer(req.params.id, req.paymentActor || req.user, req.body, req.file)
 ));
 export const momoIpn = asyncHandler(async (req, res) => res.json(await paymentService.handleMomoIpn(req.body)));
 export const vnpayIpn = asyncHandler(async (req, res) => res.json(await paymentService.handleVnpayIpn(req.query)));
@@ -77,7 +78,11 @@ export const getAdminPayment = asyncHandler(
       res,
       "Lấy chi tiết thanh toán thành công.",
       await paymentService.getAdminPayment(
-        req.params.id
+        req.params.id,
+        {
+          includeRefundSensitive: hasAdminPermission(req.user, ADMIN_PERMISSIONS.REFUNDS_VIEW_SENSITIVE),
+          includeProof: hasAdminPermission(req.user, ADMIN_PERMISSIONS.PAYMENTS_CONFIRM_BANK_TRANSFER)
+        }
       )
     )
 );

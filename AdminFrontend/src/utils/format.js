@@ -1,10 +1,10 @@
-import { costumeStatusOptions, getStatusLabel, normalizeStatus, orderStatusOptions, statusAliases, statusLabels } from "./status.js";
+import { costumeStatusOptions, getStatusLabel, normalizeStatus, orderStatusOptions, statusLabels } from "./status.js";
 
 export const orderLabels = Object.fromEntries(orderStatusOptions);
 export const costumeLabels = Object.fromEntries(costumeStatusOptions);
-export { getStatusLabel, normalizeStatus, statusAliases, statusLabels };
+export { getStatusLabel, normalizeStatus, statusLabels };
 
-export const steps = ["confirmed", "ready_to_pickup", "renting", "returned", "completed"];
+export const steps = ["pending_payment", "confirmed", "ready_for_handover", "outbound_in_transit", "renting", "return_in_transit", "returned", "completed"];
 
 export function formatCurrency(value) {
   const number = Number(value || 0);
@@ -13,6 +13,23 @@ export function formatCurrency(value) {
 
 export function money(value) {
   return formatCurrency(value);
+}
+
+export function normalizePhoneForSearch(value = "") {
+  const digits = String(value).replace(/\D/g, "");
+  if (!digits) return "";
+  if (digits.startsWith("0084")) return `0${digits.slice(4)}`;
+  if (digits.startsWith("84")) return `0${digits.slice(2)}`;
+  if (/^[35789]\d{8}$/.test(digits)) return `0${digits}`;
+  return digits;
+}
+
+export function formatVietnamPhone(value = "") {
+  const normalized = normalizePhoneForSearch(value);
+  if (/^0\d{9}$/.test(normalized)) {
+    return `${normalized.slice(0, 4)} ${normalized.slice(4, 7)} ${normalized.slice(7)}`;
+  }
+  return normalized;
 }
 
 export function formatDateTime(value, mode = "dateTime") {
@@ -66,16 +83,31 @@ export function todayPlus(days) {
 
 export function normalizeCostume(costume) {
   if (!costume || typeof costume !== "object") return {};
-  const assetImages = Array.isArray(costume.imageAssets) ? costume.imageAssets.map((asset) => asset?.url).filter(Boolean) : [];
-  const image = costume.image || costume.thumbnail || assetImages[0] || costume.images?.[0] || "";
-  const images = Array.isArray(costume.images) && costume.images.length ? costume.images : assetImages.length ? assetImages : [image].filter(Boolean);
+  const imageValue = (value) => typeof value === "string" ? value : value?.url || value?.image || "";
+  const assetImages = Array.isArray(costume.imageAssets)
+    ? [...costume.imageAssets]
+      .sort((left, right) => Number(left?.sortOrder || 0) - Number(right?.sortOrder || 0))
+      .map(imageValue)
+      .filter(Boolean)
+    : [];
+  const storedImages = Array.isArray(costume.images)
+    ? costume.images.map(imageValue).filter(Boolean)
+    : [];
+  const images = Array.from(new Set([
+    imageValue(costume.image),
+    imageValue(costume.imageUrl),
+    imageValue(costume.thumbnail),
+    ...assetImages,
+    ...storedImages
+  ].filter(Boolean)));
+  const image = images[0] || "";
   return { ...costume, image, images, category: costume.category || costume.categoryId };
 }
 
 export function resolveImageUrl(image) {
   if (!image) return "/placeholder.png";
   if (/^https?:\/\//i.test(image)) return image;
-  const apiBase = (import.meta.env.VITE_API_URL || "http://localhost:4000/api").replace(/\/api\/?$/, "");
+  const apiBase = (import.meta.env.VITE_API_URL || "").replace(/\/api\/?$/, "");
   if (image.startsWith("/uploads")) return `${apiBase}${image}`;
   if (image.startsWith("/")) return image;
   return "/placeholder.png";

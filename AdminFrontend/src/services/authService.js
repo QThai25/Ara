@@ -44,3 +44,7 @@ export async function logoutAdmin() {
     clearAdminSession();
   }
 }
+
+export async function changeAdminPassword(currentPassword, newPassword) {
+  return apiClient.post("/auth/change-password", { currentPassword, newPassword });
+}

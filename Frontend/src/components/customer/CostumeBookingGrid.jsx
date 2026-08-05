@@ -1,5 +1,21 @@
 import React, { useEffect, useRef } from "react";
 
+export function bookingSlotDescription(day, slot, checking = false, selected = false) {
+  if (checking) return `Khung ${slot.time} ngày ${day.dateLabel || day.date}: đang kiểm tra lịch trống`;
+  if (selected) return `Khung ${slot.time} ngày ${day.dateLabel || day.date}: đang được chọn`;
+  if (slot.available) return `Khung ${slot.time} ngày ${day.dateLabel || day.date}: còn trống, có thể chọn`;
+  const reason = slot.message || ({
+    past: "khung giờ đã qua",
+    held: "đang được khách khác giữ chỗ",
+    maintenance: "trang phục đang bảo trì",
+    insufficient_quantity: "không đủ số lượng cho khoảng thuê",
+    booked: "đã có lịch thuê",
+    turnaround: "đang trong thời gian vệ sinh và chuẩn bị",
+    insufficient_window: "không đủ thời gian trước lịch thuê tiếp theo"
+  }[slot.reason || slot.conflictReason || slot.status]) || "khoảng thuê bị trùng lịch";
+  return `Khung ${slot.time} ngày ${day.dateLabel || day.date}: không thể chọn vì ${reason}`;
+}
+
 export function CostumeBookingGrid({
   days = [],
   timeSlots = [],
@@ -96,6 +112,7 @@ export function CostumeBookingGrid({
       </div>
 
       <div className="booking-grid-wrap" ref={gridScrollRef}>
+        <p id="booking-slot-accessibility-help" className="booking-slot-accessibility-help">Mỗi khung giờ được đọc kèm trạng thái còn trống hoặc lý do không thể chọn.</p>
         <table className="booking-grid-table">
           <thead>
             <tr>
@@ -124,21 +141,26 @@ export function CostumeBookingGrid({
                 <tr key={day.date} className={day.isToday ? "today-row" : ""}>
                   <td className="sticky-col first-col">{day.weekdayLabel}</td>
                   <td className="sticky-col second-col">{day.dateLabel}</td>
-                  {day.slots.map((slot) => (
+                  {day.slots.map((slot) => {
+                    const slotKey = `${day.date}-${slot.time}`;
+                    const checking = checkingSlotKey === slotKey;
+                    const selected = slot.available && day.date === selectedRentalDate && slot.time === selectedPickupTime;
+                    return (
                     <td key={`${day.date}-${slot.time}`}>
                       <button
                         type="button"
-                        className={`${slotClass({ ...slot, date: day.date })} ${checkingSlotKey === `${day.date}-${slot.time}` ? "checking" : ""}`.trim()}
+                        className={`${slotClass({ ...slot, date: day.date })} ${checking ? "checking" : ""}`.trim()}
                         disabled={Boolean(checkingSlotKey) || !slot.available}
                         onClick={() => onSelectSlot?.(day, slot)}
-                        aria-disabled={slot.status !== "available"}
-                        aria-label={`Chọn ${day.date} ${slot.time}`}
+                        aria-disabled={Boolean(checkingSlotKey) || !slot.available}
+                        aria-describedby="booking-slot-accessibility-help"
+                        aria-label={bookingSlotDescription(day, slot, checking, selected)}
                         title={!slot.available ? (slot.message || (slot.reason === "past" ? "Khung giờ đã qua" : slot.conflictReason === "held" ? "Đang được khách khác giữ chỗ" : slot.reason === "maintenance" ? "Trang phục đang bảo trì" : slot.reason === "insufficient_quantity" ? "Không đủ số lượng cho khoảng thuê" : "Khoảng thuê bị trùng lịch")) : `Chọn ${slot.time} ngày ${day.date}`}
                       >
-                        <span>{checkingSlotKey === `${day.date}-${slot.time}` ? "Đang kiểm tra" : slot.time}</span>
+                        <span>{checking ? "Đang kiểm tra" : slot.time}</span>
                       </button>
                     </td>
-                  ))}
+                  );})}
                 </tr>
               ))
             ) : (

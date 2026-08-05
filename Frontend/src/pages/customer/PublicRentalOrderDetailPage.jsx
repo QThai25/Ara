@@ -23,7 +23,7 @@ export function PublicRentalOrderDetailPage() {
         <Link className="public-order-back" to="/rental-orders/lookup"><ArrowLeft size={16} /> Tra cứu đơn khác</Link>
         <header className="public-order-head">
           <div><span>ARA · ORDER LOOKUP</span><h1>{order.orderCode}</h1><p>Thông tin đơn thuê được hiển thị ở chế độ chỉ xem.</p></div>
-          <div className="public-order-status"><small>TRẠNG THÁI ĐƠN</small><strong><PackageCheck size={18} />{getStatusLabel(order.status)}</strong><small>THANH TOÁN</small><strong><CreditCard size={18} />{paymentLabels[order.paymentStatus] || "Chưa thanh toán"}</strong></div>
+          <div className="public-order-status"><small>TRẠNG THÁI ĐƠN</small><strong><PackageCheck size={18} />{getStatusLabel(order.status, "order")}</strong><small>THANH TOÁN</small><strong><CreditCard size={18} />{paymentLabels[order.paymentStatus] || "Chưa thanh toán"}</strong></div>
         </header>
         <section className="public-order-facts">
           <article><CalendarDays /><span>Ngày nhận</span><strong>{formatDate(order.rentalDate)}</strong></article>

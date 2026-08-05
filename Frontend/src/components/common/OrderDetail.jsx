@@ -1,4 +1,4 @@
-import { AlertTriangle, CreditCard } from "lucide-react";
+import { AlertCircle, AlertTriangle, CreditCard, Info, Landmark } from "lucide-react";
 import React from "react";
 
 import {
@@ -7,7 +7,6 @@ import {
   formatDateTime,
   money,
   orderLabels,
-  orderTotal,
   steps
 } from "../../utils/format.js";
 
@@ -81,6 +80,10 @@ export function OrderDetail({
   pay,
   resumePayment,
   paymentQuotes = {},
+  payments = [],
+  onAddRefundDestination,
+  savedRefundDestination = null,
+  paymentActionPending = false,
   readonly = false
 }) {
   if (!order) {
@@ -121,6 +124,17 @@ export function OrderDetail({
   const canPayFull = !isCashOnPickup && Boolean(paymentQuotes.full?.canPay && paymentQuotes.full.payableAmount > 0);
   const canPayRentalBalance = !isCashOnPickup && Boolean(paymentQuotes.rental_balance?.canPay && paymentQuotes.rental_balance.payableAmount > 0);
   const canPayPenalty = Boolean(paymentQuotes.penalty?.canPay && paymentQuotes.penalty.payableAmount > 0);
+  const latestPayment = [...payments].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))[0];
+  const paymentMethod = latestPayment?.method || (isCashOnPickup ? "cash" : "bank_transfer");
+  const isPayos = ["payos", "payos_qr"].includes(paymentMethod);
+  const methodLabel = isPayos ? "QR PayOS" : isCashOnPickup ? "Tiền mặt khi nhận đồ" : "Chuyển khoản ngân hàng";
+  const methodHelp = isPayos ? "Thanh toán bằng VietQR và tự động xác nhận" : isCashOnPickup ? "Thanh toán trực tiếp tại ARA khi nhận trang phục" : "ARA sẽ xác nhận sau khi nhận được tiền";
+  const preferredQuote = canPayFull ? ["full", paymentQuotes.full] : canPayDeposit ? ["deposit", paymentQuotes.deposit] : canPayRentalBalance ? ["rental_balance", paymentQuotes.rental_balance] : null;
+  const totalDue = Number(preferredQuote?.[1]?.payableAmount ?? order.pricing?.remainingAmount ?? 0);
+  const isCompleted = orderStatus === "completed";
+  const paidAmount = Number(order.pricing?.paidAmount || 0);
+  const refundedDeposit = Number(order.financialSnapshot?.depositAmountRefunded || order.pricing?.refundedAmount || 0);
+  const refundDestination = order.refundDestinationSnapshot || (!isCompleted ? savedRefundDestination : null);
 
   const hasLogistics =
     order.approvedAt ||
@@ -166,8 +180,10 @@ export function OrderDetail({
           <div
             key={step}
             className={
-              currentStep >= 0 && index <= currentStep
+              currentStep >= 0 && index < currentStep
                 ? "done"
+                : index === currentStep
+                ? "current"
                 : ""
             }
           >
@@ -294,29 +310,29 @@ export function OrderDetail({
         </dl>
       )}
 
-      <dl className="summary">
-        <div><dt>Phương thức thanh toán</dt><dd>{isCashOnPickup ? "Tiền mặt khi nhận đồ" : "Chuyển khoản ngân hàng"}</dd></div>
-        <div><dt>Trạng thái thanh toán</dt><dd>{getPaymentStatusLabel(paymentStatus)}</dd></div>
-        <div>
-          <dt>Tiền thuê</dt>
-          <dd>{money(order.totalRentalPrice)}</dd>
-        </div>
+      <section className="ara-customer-payment-card" aria-labelledby="customer-payment-title">
+        <header className="ara-customer-payment-card__header">
+          <div><h3 id="customer-payment-title">{isCompleted ? "Quyết toán đơn thuê" : "Thanh toán đơn thuê"}</h3><p>{isCompleted ? `Đơn đã hoàn tất lúc ${formatDateTime(order.completedAt)}` : order.approvedAt ? `ARA đã xác nhận đơn lúc ${formatDateTime(order.approvedAt)}` : `Đơn được tạo lúc ${formatDateTime(order.createdAt)}`}</p>{!isCompleted && order.paymentExpiresAt && <small>Thanh toán trước {formatDateTime(order.paymentExpiresAt)}</small>}</div>
+          <span className={`ara-customer-payment-status is-${isCompleted ? "completed" : paymentStatus}`}>{isCompleted ? "Đã quyết toán" : getPaymentStatusLabel(paymentStatus)}</span>
+        </header>
 
-        <div>
-          <dt>Tiền cọc</dt>
-          <dd>{money(order.totalDepositAmount)}</dd>
-        </div>
+        <div className="ara-customer-payment-total"><span>{isCompleted ? "Tổng tiền đã thu" : "Tổng cần thanh toán"}</span><strong>{money(isCompleted ? paidAmount : totalDue)}</strong></div>
+        <dl className="ara-customer-payment-breakdown">
+          <div><dt>Phí thuê</dt><dd>{money(order.totalRentalPrice)}</dd></div>
+          {Number(order.totalDepositAmount || 0) > 0 && <div className="is-deposit"><dt>Tiền cọc <button type="button" className="ara-payment-info" title="Tiền cọc được hoàn sau khi bạn trả đồ và ARA hoàn tất kiểm tra." aria-label="Giải thích tiền cọc"><Info size={15}/></button></dt><dd>{money(order.totalDepositAmount)}</dd><small>{isCompleted ? `Đã hoàn ${money(refundedDeposit)}${Number(order.depositDeduction || 0) ? ` · Khấu trừ ${money(order.depositDeduction)}` : ""}.` : "Khoản này sẽ được hoàn sau khi bạn trả đồ và ARA kiểm tra trang phục."}</small></div>}
+          {Number(order.totalPenalty || penaltyAmount || 0) > 0 && <div><dt>Phí phát sinh</dt><dd>{money(order.totalPenalty || penaltyAmount)}</dd></div>}
+        </dl>
 
-        <div>
-          <dt>Phí phạt</dt>
-          <dd>{money(penaltyAmount)}</dd>
-        </div>
+        {Number(order.totalDepositAmount || 0) > 0 && (refundDestination ? <div className="ara-refund-destination-summary"><span className="ara-refund-destination-summary__icon"><Landmark size={20}/></span><div><small>{isCompleted ? "Tài khoản đã nhận hoàn cọc" : "Tài khoản nhận hoàn cọc mặc định"}</small><strong>{refundDestination.bankName || refundDestination.label || "VietQR nhận hoàn cọc"}</strong><span>{refundDestination.maskedAccountNumber || "Mã VietQR đã lưu"} · {refundDestination.accountName || refundDestination.accountHolderName || "Đã lưu trong tài khoản"}</span></div>{!isCompleted && onAddRefundDestination && <button type="button" disabled={paymentActionPending} onClick={onAddRefundDestination}>Thay đổi</button>}</div> : !isCompleted && <div className="ara-refund-destination-warning" role="status"><AlertCircle size={21}/><div><strong>Chưa có tài khoản nhận hoàn cọc</strong><p>Hãy bổ sung tài khoản để ARA có thể hoàn lại tiền cọc sau khi nhận và kiểm tra đồ.</p></div>{onAddRefundDestination && <button type="button" disabled={paymentActionPending} onClick={onAddRefundDestination}>Bổ sung tài khoản</button>}</div>)}
 
-        <div>
-          <dt>Tổng cuối</dt>
-          <dd>{money(orderTotal(order))}</dd>
-        </div>
-      </dl>
+        <div className="ara-customer-payment-method"><div><span>Phương thức thanh toán</span><strong>{methodLabel}</strong><small>{isCompleted ? "Thông tin thanh toán đã được chốt cùng đơn thuê" : methodHelp}</small></div>{!isCompleted && preferredQuote && <button type="button" disabled={paymentActionPending} onClick={() => pay(order, preferredQuote[0], preferredQuote[1])}>Thay đổi</button>}</div>
+
+        {!readonly && (canPayDeposit || canPayFull || canPayRentalBalance) && <div className="ara-customer-payment-actions">
+          {canPayDeposit && <button type="button" disabled={paymentActionPending} onClick={() => pay(order, "deposit", paymentQuotes.deposit)}><CreditCard size={16}/>{paymentActionPending ? "Đang mở thanh toán…" : `Đặt cọc ${money(paymentQuotes.deposit.payableAmount)}`}</button>}
+          {canPayFull && <button type="button" className="primary" disabled={paymentActionPending} onClick={() => pay(order, "full", paymentQuotes.full)}><CreditCard size={16}/>{paymentActionPending ? "Đang mở thanh toán…" : `Thanh toán đủ ${money(paymentQuotes.full.payableAmount)}`}</button>}
+          {canPayRentalBalance && <button type="button" className="primary" disabled={paymentActionPending} onClick={() => pay(order, "rental_balance", paymentQuotes.rental_balance)}><CreditCard size={16}/>{paymentActionPending ? "Đang mở thanh toán…" : `Thanh toán phần còn lại ${money(paymentQuotes.rental_balance.payableAmount)}`}</button>}
+        </div>}
+      </section>
       {isCashOnPickup && paymentStatus === "unpaid" && <p className="payment-state">Bạn thanh toán trực tiếp tại ARA khi nhận trang phục.</p>}
 
       {paymentMessage && (
@@ -344,7 +360,7 @@ export function OrderDetail({
         </div>
       )}
 
-      {order.inspectedAt && (
+      {order.inspectedAt && !isCompleted && (
         <div className="order-settlement-summary">
           <strong>Quyết toán sau trả đồ</strong>
           <span>Phí phát sinh: {money(order.totalPenalty || penaltyAmount)}</span>
@@ -362,42 +378,6 @@ export function OrderDetail({
               onClick={() => cancel(order)}
             >
               Hủy đơn
-            </button>
-          )}
-
-          {canPayDeposit && (
-            <button
-              type="button"
-              onClick={() =>
-                pay(order, "deposit", paymentQuotes.deposit)
-              }
-            >
-              <CreditCard size={16} />
-              Đặt cọc
-            </button>
-          )}
-
-          {canPayFull && (
-            <button
-              type="button"
-              className="primary"
-              onClick={() =>
-                pay(order, "full", paymentQuotes.full)
-              }
-            >
-              <CreditCard size={16} />
-              Thanh toán đủ
-            </button>
-          )}
-
-          {canPayRentalBalance && (
-            <button
-              type="button"
-              className="primary"
-              onClick={() => pay(order, "rental_balance", paymentQuotes.rental_balance)}
-            >
-              <CreditCard size={16} />
-              Thanh toán phần còn lại
             </button>
           )}
 

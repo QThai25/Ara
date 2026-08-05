@@ -30,7 +30,7 @@ export function RevenueTrendChart({ data = [] }) {
       <Legend iconType="circle" iconSize={8} wrapperStyle={{ paddingTop: 16 }} />
       <Area type="monotone" dataKey="netRevenue" name="Thực nhận" stroke={CHART_COLORS.netRevenue} fill="url(#fill-netRevenue)" strokeWidth={3} activeDot={{ r: 5 }} />
       <Line type="monotone" dataKey="depositRevenue" name="Tiền cọc" stroke={CHART_COLORS.depositRevenue} strokeWidth={2} dot={false} />
-      <Line type="monotone" dataKey="rentalRevenue" name="Tiền thuê" stroke={CHART_COLORS.rentalRevenue} strokeWidth={2} dot={false} />
+      <Line type="monotone" dataKey="rentalRevenue" name="Thanh toán đơn thuê" stroke={CHART_COLORS.rentalRevenue} strokeWidth={2} dot={false} />
       <Line type="monotone" dataKey="penaltyRevenue" name="Khoản phạt" stroke={CHART_COLORS.penaltyRevenue} strokeWidth={2} dot={false} />
       <Line type="monotone" dataKey="refundedAmount" name="Hoàn tiền" stroke={CHART_COLORS.refundedAmount} strokeWidth={2} dot={false} strokeDasharray="5 4" />
     </AreaChart>
@@ -41,6 +41,34 @@ export function DonutBreakdownChart({ data = [], center }) {
   return <div className="report-donut-layout"><ResponsiveContainer width="100%" height={260}><PieChart><Pie data={data} dataKey="amount" nameKey="label" innerRadius={70} outerRadius={98} paddingAngle={4} cornerRadius={6}>{data.map((_, index) => <Cell key={index} fill={palette[index % palette.length]} />)}</Pie><Tooltip formatter={moneyTooltip} contentStyle={tooltipStyle}/></PieChart></ResponsiveContainer><div className="report-donut-center">{center}</div><div className="report-chart-legend">{data.map((item, index) => <div key={item.key}><i style={{ background: palette[index % palette.length] }} /><span>{item.label}</span><strong title={formatReportCurrency(item.amount || item.revenue || 0)}>{formatReportCurrency(item.amount || item.revenue || 0)}</strong><em>{item.percentage || 0}%</em></div>)}</div></div>;
 }
 
+export function RevenueFlowChart({ collectedAmount = 0, refundedAmount = 0, netRevenue = 0 }) {
+  return (
+    <div
+      className="report-revenue-flow"
+      role="img"
+      aria-label={`Tổng đã thu ${formatReportCurrency(collectedAmount)}, trừ đã hoàn ${formatReportCurrency(refundedAmount)}, bằng thực nhận ${formatReportCurrency(netRevenue)}`}
+    >
+      <article className="report-revenue-flow__step is-collected">
+        <span>Bước 1 · Tổng đã thu</span>
+        <strong>{formatReportCurrency(collectedAmount)}</strong>
+        <small>Các khoản thanh toán thành công</small>
+      </article>
+      <div className="report-revenue-flow__operator" aria-hidden="true">−</div>
+      <article className="report-revenue-flow__step is-refunded">
+        <span>Bước 2 · Đã hoàn</span>
+        <strong>{formatReportCurrency(refundedAmount)}</strong>
+        <small>Tiền đã chuyển trả khách</small>
+      </article>
+      <div className="report-revenue-flow__operator" aria-hidden="true">=</div>
+      <article className="report-revenue-flow__step is-net">
+        <span>Bước 3 · Thực nhận</span>
+        <strong>{formatReportCurrency(netRevenue)}</strong>
+        <small>Số tiền còn lại sau hoàn</small>
+      </article>
+    </div>
+  );
+}
+
 export function BarMoneyChart({ data = [], dataKey = "amount", nameKey = "label", layout = "vertical", valueType = "money" }) {
   const vertical = layout === "vertical";
   const isCount = valueType === "count";
@@ -49,5 +77,5 @@ export function BarMoneyChart({ data = [], dataKey = "amount", nameKey = "label"
 }
 
 export function OrderTrendChart({ data = [] }) {
-  return <div className="report-chart-canvas"><ResponsiveContainer width="100%" height={300}><BarChart data={data} margin={{ top: 12, right: 12, left: 0, bottom: 4 }} barGap={2}><CartesianGrid vertical={false} stroke="#eadfce" strokeDasharray="4 5" /><XAxis dataKey="period" axisLine={false} tickLine={false} tick={{ fontSize: 11 }} minTickGap={24} /><YAxis domain={[0, "auto"]} allowDecimals={false} axisLine={false} tickLine={false} /><Tooltip contentStyle={tooltipStyle} /><Legend iconType="circle" iconSize={8} /><Bar dataKey="total" name="Đơn mới" fill={CHART_COLORS.total} maxBarSize={24} radius={[6, 6, 0, 0]} /><Bar dataKey="confirmed" name="Đã xác nhận" fill={CHART_COLORS.confirmed} maxBarSize={24} radius={[6, 6, 0, 0]} /><Bar dataKey="completed" name="Hoàn tất" fill={CHART_COLORS.completed} maxBarSize={24} radius={[6, 6, 0, 0]} /><Bar dataKey="canceled" name="Đã hủy" fill={CHART_COLORS.canceled} maxBarSize={24} radius={[6, 6, 0, 0]} /></BarChart></ResponsiveContainer></div>;
+  return <div className="report-chart-canvas"><ResponsiveContainer width="100%" height={300}><BarChart data={data} margin={{ top: 12, right: 12, left: 0, bottom: 4 }} barGap={2}><CartesianGrid vertical={false} stroke="#eadfce" strokeDasharray="4 5" /><XAxis dataKey="period" axisLine={false} tickLine={false} tick={{ fontSize: 11 }} minTickGap={24} /><YAxis domain={[0, "auto"]} allowDecimals={false} axisLine={false} tickLine={false} /><Tooltip contentStyle={tooltipStyle} /><Legend iconType="circle" iconSize={8} /><Bar dataKey="created" name="Đơn mới" fill={CHART_COLORS.total} maxBarSize={22} radius={[6, 6, 0, 0]} /><Bar dataKey="pickedUp" name="Nhận đồ" fill={CHART_COLORS.confirmed} maxBarSize={22} radius={[6, 6, 0, 0]} /><Bar dataKey="returned" name="Trả đồ" fill={CHART_COLORS.completed} maxBarSize={22} radius={[6, 6, 0, 0]} /><Bar dataKey="completed" name="Hoàn tất" fill={CHART_COLORS.rentalRevenue} maxBarSize={22} radius={[6, 6, 0, 0]} /></BarChart></ResponsiveContainer></div>;
 }

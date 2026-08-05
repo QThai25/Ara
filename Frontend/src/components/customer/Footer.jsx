@@ -134,7 +134,7 @@ export function Footer() {
 
               <a
                 className="mei-footer-contact__item"
-                href="https://www.google.com/maps/search/?api=1&query=55%20%C4%90%C3%A0o%20Duy%20Anh%2C%20Ho%20Chi%20Minh%20City%2C%20Vietnam%2C%20700000"
+                href="https://www.google.com/maps/place/41%2F1+Nguy%E1%BB%85n+B%E1%BB%89nh+Khi%C3%AAm,+T%C3%A2n+%C4%90%E1%BB%8Bnh,+H%E1%BB%93+Ch%C3%AD+Minh+71050,+Vi%E1%BB%87t+Nam/@10.7906485,106.7010865,17z/data=!3m1!4b1!4m6!3m5!1s0x317528b56bb113e9:0x30a985cce86c3187!8m2!3d10.7906485!4d106.7010865!16s%2Fg%2F11kqnz42k0?entry=ttu&g_ep=EgoyMDI2MDcyOS4wIKXMDSoASAFQAw%3D%3D"
                 target="_blank"
                 rel="noopener noreferrer"
               >

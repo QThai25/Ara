@@ -1,11 +1,11 @@
 import { canonicalSlug, occasionLabelBySlug, styleLabelBySlug } from "./catalogData.js";
-import { costumeStatusOptions, getStatusLabel, normalizeStatus, orderStatusOptions, statusAliases, statusLabels } from "./status.js";
+import { costumeStatusOptions, getStatusLabel, normalizeStatus, orderStatusOptions, statusLabels } from "./status.js";
 
 export const orderLabels = Object.fromEntries(orderStatusOptions);
 export const costumeLabels = Object.fromEntries(costumeStatusOptions);
-export { getStatusLabel, normalizeStatus, statusAliases, statusLabels };
+export { getStatusLabel, normalizeStatus, statusLabels };
 
-export const steps = ["confirmed", "ready_to_pickup", "renting", "returned", "completed"];
+export const steps = ["pending_payment", "confirmed", "ready_for_handover", "outbound_in_transit", "renting", "return_in_transit", "returned", "completed"];
 
 export function money(value) {
   return new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND" }).format(value || 0);
@@ -119,7 +119,7 @@ export function normalizeCostume(costume) {
 export function resolveImageUrl(image) {
   if (!image) return "/placeholder.png";
   if (/^https?:\/\//i.test(image)) return image;
-  const apiBase = (import.meta.env.VITE_API_URL || "http://localhost:4000/api").replace(/\/api\/?$/, "");
+  const apiBase = (import.meta.env.VITE_API_URL || "").replace(/\/api\/?$/, "");
   if (image.startsWith("/uploads")) return `${apiBase}${image}`;
   if (image.startsWith("/")) return image;
   return "/placeholder.png";

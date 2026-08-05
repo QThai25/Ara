@@ -34,5 +34,5 @@ export const orderStatusText = {
 // are derived exclusively from RentalOrderItem intervals and quantity.
 export const rentableCostumeStatuses = ["active", "available"];
 export const operationalCostumeStatuses = ["active", "maintenance", "unavailable", "hidden"];
-export const activeBookingStatuses = ["pending", "pending_confirmation", "confirmed", "deposit_paid", "deposited", "paid", "ready_to_pickup", "ready_for_pickup", "renting", "overdue"];
+export const activeBookingStatuses = ["pending", "pending_confirmation", "pending_payment", "confirmed", "preparing", "deposit_paid", "deposited", "paid", "ready_for_handover", "ready_to_pickup", "ready_for_pickup", "outbound_in_transit", "renting", "overdue", "return_in_transit", "returned"];
 export const adminRoles = ["admin", "staff", "owner"];

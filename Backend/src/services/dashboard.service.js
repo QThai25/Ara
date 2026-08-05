@@ -8,7 +8,7 @@ function revenueOf(order) {
   return Number(order.totalRentalPrice || 0) + Number(order.lateFee || 0) + Number(order.damageFee || 0);
 }
 
-export async function getSummary() {
+export async function getSummary({ includeFinancial = true } = {}) {
   const [totalCostumes, totalOrders, pendingOrders, customers, completed] = await Promise.all([
     Costume.countDocuments(),
     RentalOrder.countDocuments(),
@@ -16,7 +16,13 @@ export async function getSummary() {
     User.countDocuments({ role: "customer" }),
     RentalOrder.find({ status: "completed" })
   ]);
-  return { totalCostumes, totalOrders, pendingOrders, customers, revenue: completed.reduce((sum, order) => sum + revenueOf(order), 0) };
+  return {
+    totalCostumes,
+    totalOrders,
+    pendingOrders,
+    customers,
+    ...(includeFinancial ? { revenue: completed.reduce((sum, order) => sum + revenueOf(order), 0) } : {})
+  };
 }
 
 export async function getRevenue() {

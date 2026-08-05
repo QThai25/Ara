@@ -1,5 +1,15 @@
 # Production audit — 2026-07-28
 
+> Đây là snapshot của đợt audit 28/07/2026. Trạng thái release mới nhất nằm tại `reports/PRE_DEPLOY_REPORT.md` và `docs/deployment-readiness.md`.
+
+## Cập nhật 30/07/2026
+
+- Admin authorization hiện có hai role canonical `owner`/`staff`, centralized permission policy và session invalidation bằng `tokenVersion`.
+- Thêm staff management, audit log và migration `admin -> owner` dry-run mặc định.
+- Backend regression hiện đạt 181/181; AdminFrontend có 4/4 static tests; hai frontend build pass.
+- Chưa chạy browser E2E, Atlas migration dry-run hoặc production integration nên trạng thái hiện tại là sẵn sàng cho staging verification, chưa phải phê duyệt deploy production.
+- Admin chart chunk hiện khoảng 594 kB; số build dưới đây chỉ là số đo tại audit 28/07.
+
 ## 1. Architecture
 
 Express/Mongoose persistent backend trên VPS, MongoDB Atlas, hai React/Vite SPA trên Vercel, Cloudinary cho media, SMTP cho email, payOS tùy chọn, Socket.IO realtime. Chi tiết stack và data flow ở `deployment-readiness.md`.
@@ -39,6 +49,8 @@ Helmet, CORS allowlist fail-fast, body limits, upload MIME/5 MB (đã có), auth
 - [ ] Atlas VPS-only IP, least-privilege user, backup/PITR và alerts.
 - [ ] Điền domain HTTPS vào backend CORS và các Vite URL trước build.
 - [ ] `SEED_DEMO_DATA=false`, `DEV_OTP_CODE` trống, PayOS/SMTP chỉ bật khi đủ credentials.
+- [ ] Dry-run migration role, xác nhận active Owner và chỉ apply sau backup/phê duyệt.
+- [ ] Smoke Owner/Staff, direct 403, block/reset session và forced password change.
 - [ ] Health 200, Mongo connected, Nginx TLS/WebSocket, Vercel SPA deep links.
 - [ ] Smoke customer/admin auth, IDOR negative tests, booking concurrency, payment webhook signature/idempotency.
 - [ ] Log rotation, disk/CPU/RAM/5xx/latency alerts.

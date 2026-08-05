@@ -55,6 +55,10 @@ costumeSchema.virtual("rentalPrice").get(function rentalPrice() {
 
 costumeSchema.index({ operationalStatus: 1, createdAt: -1 });
 costumeSchema.index({ categoryId: 1, operationalStatus: 1, createdAt: -1 });
+costumeSchema.index({ brandSlug: 1, operationalStatus: 1, createdAt: -1 });
+costumeSchema.index({ size: 1, operationalStatus: 1, createdAt: -1 });
+costumeSchema.index({ color: 1, operationalStatus: 1, createdAt: -1 });
+costumeSchema.index({ rentalPricePerDay: 1, operationalStatus: 1, createdAt: -1 });
 
 function classificationValues(values = []) {
   return values.map((item) => ({

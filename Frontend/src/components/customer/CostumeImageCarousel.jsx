@@ -318,6 +318,9 @@ export function CostumeImageCarousel({
             <img
               src={resolveImageUrl(src)}
               alt={`${name} - ảnh ${imageIndex + 1}`}
+              width={variant === "detail" ? 1200 : 720}
+              height={variant === "detail" ? 1500 : 900}
+              fetchpriority={variant === "detail" && imageIndex === 0 ? "high" : "auto"}
               loading={
                 imageIndex === 0
                   ? "eager"

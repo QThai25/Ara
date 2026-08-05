@@ -28,7 +28,7 @@ test("payOS model, routes and provider use the official SDK API", () => {
 test("payOS stays in the ARA modal, polls provider status and never sends a client amount", () => {
   const page = fs.readFileSync(new URL("../../Frontend/src/pages/customer/MyOrderDetailPage.jsx", import.meta.url), "utf8");
   const service = fs.readFileSync(new URL("../../Frontend/src/services/paymentService.js", import.meta.url), "utf8");
-  assert.match(page, /method: "payos"/);
+  assert.match(page, /method: "payos_qr"/);
   assert.match(page, /QRCodeSVG/);
   assert.match(page, /getPaymentStatus/);
   assert.match(page, /setTimeout\(check, 1500\)/);

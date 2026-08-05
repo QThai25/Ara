@@ -17,9 +17,18 @@ export const uploadCostumeImage = multer({
 
 export const uploadRefundQrImage = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 },
+  limits: { fileSize: 3 * 1024 * 1024 },
   fileFilter: (_req, file, callback) => {
     if (!allowedTypes.has(file.mimetype)) return callback(new ApiError(400, "Ảnh QR chỉ hỗ trợ PNG, JPG, JPEG hoặc WEBP."));
+    callback(null, true);
+  }
+});
+
+export const uploadRefundProofImage = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, callback) => {
+    if (!allowedTypes.has(file.mimetype)) return callback(new ApiError(400, "Chứng từ chỉ hỗ trợ PNG, JPG, JPEG hoặc WEBP."));
     callback(null, true);
   }
 });

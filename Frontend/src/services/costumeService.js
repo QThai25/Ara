@@ -3,28 +3,51 @@ import { normalizeCostume } from "../utils/format.js";
 import { createTimedRequestCache, throwIfAborted } from "../utils/timedRequestCache.js";
 
 const availabilityCache = createTimedRequestCache();
+const costumeDetailCache = createTimedRequestCache({ staleTime: 300_000, gcTime: 900_000 });
+const costumeListCache = createTimedRequestCache({ staleTime: 120_000, gcTime: 600_000 });
+const costumeDetailRequests = new Map();
+const costumeListRequests = new Map();
+
+export async function getCostumePage(query = "", config = {}) {
+  const cacheKey = costumeListCache.key(["costumes-page", query]);
+  const cached = costumeListCache.get(cacheKey);
+  if (cached !== undefined) return cached;
+  const canShareRequest = !config.signal;
+  if (canShareRequest && costumeListRequests.has(cacheKey)) return costumeListRequests.get(cacheKey);
+
+  const request = apiClient.get(`/costumes${query}`, config).then((response) => {
+    const payload = response.data ?? response;
+    const rows = Array.isArray(payload) ? payload : payload?.items || [];
+    const pagination = Array.isArray(payload)
+      ? { page: 1, limit: rows.length, total: rows.length, totalPages: rows.length ? 1 : 0, hasPreviousPage: false, hasNextPage: false }
+      : payload?.pagination || { page: 1, limit: rows.length, total: rows.length, totalPages: rows.length ? 1 : 0, hasPreviousPage: false, hasNextPage: false };
+    return costumeListCache.set(cacheKey, {
+      items: rows.map(normalizeCostume),
+      pagination
+    });
+  }).finally(() => {
+    if (canShareRequest) costumeListRequests.delete(cacheKey);
+  });
+  if (canShareRequest) costumeListRequests.set(cacheKey, request);
+  return request;
+}
 
 export async function getCostumes(query = "", config = {}) {
-  const response = await apiClient.get(
-    `/costumes${query}`,
-    config
-  );
-
-  const rows =
-    response.data?.items ||
-    response.data ||
-    [];
-
-  return rows.map(normalizeCostume);
+  return (await getCostumePage(query, config)).items;
 }
 
 export async function getCostume(id) {
-  const response = await apiClient.get(
-    `/costumes/${id}`
-  );
+  const cacheKey = costumeDetailCache.key(["costume", id]);
+  const cached = costumeDetailCache.get(cacheKey);
+  if (cached !== undefined) return cached;
+  if (costumeDetailRequests.has(cacheKey)) return costumeDetailRequests.get(cacheKey);
 
-  const data = response.data || response;
-  return normalizeCostume(data);
+  const request = apiClient.get(`/costumes/${id}`).then((response) => {
+    const data = response.data || response;
+    return costumeDetailCache.set(cacheKey, normalizeCostume(data));
+  }).finally(() => costumeDetailRequests.delete(cacheKey));
+  costumeDetailRequests.set(cacheKey, request);
+  return request;
 }
 
 export async function getCategories() {

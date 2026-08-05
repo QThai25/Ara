@@ -5,12 +5,12 @@ import { RentalOrderItem } from "../models/RentalOrderItem.js";
 import { User } from "../models/User.js";
 import { ReturnInspection } from "../models/ReturnInspection.js";
 import { Costume } from "../models/Costume.js";
+import { DepositRefund } from "../models/DepositRefund.js";
 import { calculateChange, fillMissingTimePeriods, periodExpression, resolveDateRange, resolvePreviousPeriod } from "../utils/reportDateRange.js";
 import { INVALID_ORDER_STATUSES, normalizeOrderStatus, orderStatusLabel, VALID_RENTAL_ORDER_STATUSES } from "../utils/reportStatusNormalizer.js";
 
-const SUCCESS_REVENUE_STATUSES = ["success", "refunded"];
-const REFUND_TYPES = ["refund"];
-const MONEY_TYPES = ["deposit", "full", "rental_balance", "penalty", "refund"];
+const SUCCESS_REVENUE_STATUSES = ["success"];
+const MONEY_TYPES = ["deposit", "full", "rental_balance", "penalty"];
 const ACTIVE_OPERATION_STATUSES = ["renting", "overdue"];
 
 function objectId(value) {
@@ -26,21 +26,16 @@ function amountBuckets() {
     depositRevenue: { $sum: { $cond: [{ $eq: ["$paymentType", "deposit"] }, "$amount", 0] } },
     rentalRevenue: { $sum: { $cond: [{ $in: ["$paymentType", ["full", "rental_balance"]] }, "$amount", 0] } },
     penaltyRevenue: { $sum: { $cond: [{ $eq: ["$paymentType", "penalty"] }, "$amount", 0] } },
-    refundedAmount: { $sum: { $cond: [{ $in: ["$paymentType", REFUND_TYPES] }, "$amount", 0] } },
-    grossRevenue: { $sum: { $cond: [{ $not: [{ $in: ["$paymentType", REFUND_TYPES] }] }, "$amount", 0] } },
+    grossRevenue: { $sum: "$amount" },
     transactionCount: { $sum: 1 }
   };
-}
-
-function netRevenueExpr() {
-  return { $subtract: ["$grossRevenue", "$refundedAmount"] };
 }
 
 function paymentDateField() {
   return { $ifNull: ["$paidAt", { $ifNull: ["$confirmedAt", "$updatedAt"] }] };
 }
 
-function basePaymentMatch(range, filters = {}) {
+export function buildSuccessfulPaymentMatch(range, filters = {}) {
   const match = {
     status: { $in: SUCCESS_REVENUE_STATUSES },
     paymentType: { $in: MONEY_TYPES },
@@ -51,7 +46,7 @@ function basePaymentMatch(range, filters = {}) {
       ]
     }
   };
-  if (filters.paymentType && filters.paymentType !== "all") match.paymentType = filters.paymentType;
+  if (MONEY_TYPES.includes(filters.paymentType)) match.paymentType = filters.paymentType;
   const method = filters.paymentMethod || filters.method;
   if (method && method !== "all") match.method = method;
   if (filters.channel && filters.channel !== "all") match.channel = filters.channel;
@@ -103,25 +98,137 @@ function paymentFilterLookups(filters = {}) {
   return pipeline;
 }
 
+export function refundFilterLookups(filters = {}) {
+  const pipeline = [];
+  const clauses = [];
+
+  if (filters.status && filters.status !== "all") {
+    pipeline.push(
+      { $lookup: { from: "rentalorders", localField: "orderId", foreignField: "_id", as: "refundOrder" } },
+      { $unwind: { path: "$refundOrder", preserveNullAndEmptyArrays: false } },
+      { $match: { "refundOrder.status": filters.status } }
+    );
+  }
+
+  if (filters.brandId || filters.categoryId || filters.costumeId) {
+    const itemMatch = {};
+    if (filters.costumeId) itemMatch["matchedCostume._id"] = objectId(filters.costumeId);
+    if (filters.brandId) itemMatch["matchedCostume.brandId"] = objectId(filters.brandId);
+    if (filters.categoryId) itemMatch["matchedCostume.categoryId"] = objectId(filters.categoryId);
+    pipeline.push({
+      $lookup: {
+        from: "rentalorderitems",
+        let: { refundOrderId: "$orderId" },
+        pipeline: [
+          { $match: { $expr: { $eq: ["$orderId", "$$refundOrderId"] } } },
+          { $lookup: { from: "costumes", localField: "costumeId", foreignField: "_id", as: "matchedCostume" } },
+          { $unwind: { path: "$matchedCostume", preserveNullAndEmptyArrays: false } },
+          { $match: itemMatch },
+          { $limit: 1 }
+        ],
+        as: "matchingRefundItems"
+      }
+    }, { $match: { matchingRefundItems: { $ne: [] } } });
+  }
+
+  const paymentMatch = {};
+  if (MONEY_TYPES.includes(filters.paymentType)) paymentMatch.paymentType = filters.paymentType;
+  const method = filters.paymentMethod || filters.method;
+  if (method && method !== "all") paymentMatch.method = method;
+  if (filters.channel && filters.channel !== "all") paymentMatch.channel = filters.channel;
+  if (Object.keys(paymentMatch).length || filters.search) {
+    pipeline.push({ $lookup: { from: "payments", localField: "depositPaymentIds", foreignField: "_id", as: "refundPayments" } });
+    if (Object.keys(paymentMatch).length) clauses.push({ refundPayments: { $elemMatch: paymentMatch } });
+  }
+
+  if (filters.search) {
+    const regex = new RegExp(escapeRegex(filters.search), "i");
+    pipeline.push(
+      { $lookup: { from: "users", localField: "customerId", foreignField: "_id", as: "refundCustomer" } },
+      { $unwind: { path: "$refundCustomer", preserveNullAndEmptyArrays: true } }
+    );
+    clauses.push({ $or: [
+      { "refundPayments.paymentReference": regex },
+      { "refundCustomer.name": regex },
+      { "refundCustomer.email": regex },
+      { "refundCustomer.phone": regex }
+    ] });
+  }
+
+  if (clauses.length === 1) pipeline.push({ $match: clauses[0] });
+  if (clauses.length > 1) pipeline.push({ $match: { $and: clauses } });
+  return pipeline;
+}
+
 async function revenueSummary(range, filters = {}) {
-  const [row = {}] = await Payment.aggregate([
-    { $match: basePaymentMatch(range, filters) },
-    ...paymentFilterLookups(filters),
-    { $group: { _id: null, ...amountBuckets() } },
-    { $project: { _id: 0, depositRevenue: 1, rentalRevenue: 1, penaltyRevenue: 1, refundedAmount: 1, grossRevenue: 1, netRevenue: netRevenueExpr(), transactionCount: 1 } }
+  const [[paymentRow = {}], [refundRow = {}]] = await Promise.all([
+    Payment.aggregate([
+      { $match: buildSuccessfulPaymentMatch(range, filters) },
+      ...paymentFilterLookups(filters),
+      { $group: { _id: null, ...amountBuckets() } },
+      { $project: { _id: 0, depositRevenue: 1, rentalRevenue: 1, penaltyRevenue: 1, grossRevenue: 1, transactionCount: 1 } }
+    ]),
+    refundSummaryRows(range, filters)
   ]);
-  return normalizeMoneySummary(row);
+  return mergeMoneySummary(paymentRow, refundRow);
+}
+
+export function buildCompletedRefundMatch(range, filters = {}) {
+  const match = {
+    status: "completed",
+    completedAt: { $gte: range.from, $lte: range.to }
+  };
+  if (filters.customerId) match.customerId = objectId(filters.customerId);
+  return match;
+}
+
+function refundSummaryRows(range, filters = {}) {
+  return DepositRefund.aggregate([
+    { $match: buildCompletedRefundMatch(range, filters) },
+    ...refundFilterLookups(filters),
+    { $group: { _id: null, refundedAmount: { $sum: "$amount" }, refundCount: { $sum: 1 } } },
+    { $project: { _id: 0, refundedAmount: 1, refundCount: 1 } }
+  ]);
+}
+
+export function mergeMoneySummary(paymentRow = {}, refundRow = {}) {
+  const grossRevenue = Number(paymentRow.grossRevenue || 0);
+  const refundedAmount = Number(refundRow.refundedAmount || 0);
+  return normalizeMoneySummary({
+    ...paymentRow,
+    successfulPayments: grossRevenue,
+    refundedAmount,
+    grossRevenue,
+    transactionCount: Number(paymentRow.transactionCount || 0),
+    successfulPaymentCount: Number(paymentRow.transactionCount || paymentRow.successfulPaymentCount || 0),
+    refundCount: Number(refundRow.refundCount || 0)
+  });
 }
 
 function normalizeMoneySummary(row = {}) {
+  const successfulPayments = Number(row.successfulPayments ?? row.grossRevenue ?? 0);
+  const refundedAmount = Number(row.refundedAmount || 0);
+  const rawNetRevenue = successfulPayments - refundedAmount;
+  const warnings = rawNetRevenue < 0 ? [{
+    code: "REFUNDS_EXCEED_SUCCESSFUL_PAYMENTS",
+    message: "Tiền hoàn trong kỳ lớn hơn tổng thanh toán thành công. Doanh thu thực nhận hiển thị ở mức 0; số chênh lệch gốc được giữ trong metadata.",
+    successfulPayments,
+    refundedAmount,
+    rawNetRevenue
+  }] : [];
   return {
     depositRevenue: Number(row.depositRevenue || 0),
     rentalRevenue: Number(row.rentalRevenue || 0),
     penaltyRevenue: Number(row.penaltyRevenue || 0),
-    refundedAmount: Number(row.refundedAmount || 0),
-    grossRevenue: Number(row.grossRevenue || 0),
-    netRevenue: Number(row.netRevenue || 0),
-    transactionCount: Number(row.transactionCount || 0)
+    successfulPayments,
+    refundedAmount,
+    grossRevenue: successfulPayments,
+    rawNetRevenue,
+    netRevenue: Math.max(0, rawNetRevenue),
+    transactionCount: Number(row.transactionCount || row.successfulPaymentCount || 0),
+    successfulPaymentCount: Number(row.successfulPaymentCount || row.transactionCount || 0),
+    refundCount: Number(row.refundCount || 0),
+    warnings
   };
 }
 
@@ -179,6 +286,12 @@ export async function getOverview(query = {}) {
   const prevAvgOrderValue = prevOrders.totalOrders ? prevRevenue.netRevenue / prevOrders.totalOrders : 0;
   return {
     filters: { from: range.fromText, to: range.toText, groupBy: range.groupBy },
+    warnings: revenue.warnings,
+    metadata: revenue.rawNetRevenue < 0 ? {
+      rawNetRevenue: revenue.rawNetRevenue,
+      successfulPayments: revenue.successfulPayments,
+      refundedAmount: revenue.refundedAmount
+    } : {},
     summary: {
       ...revenue,
       ...orders,
@@ -187,6 +300,7 @@ export async function getOverview(query = {}) {
     },
     kpis: {
       netRevenue: kpi(revenue.netRevenue, prevRevenue.netRevenue),
+      successfulPayments: kpi(revenue.successfulPayments, prevRevenue.successfulPayments),
       depositRevenue: kpi(revenue.depositRevenue, prevRevenue.depositRevenue),
       rentalRevenue: kpi(revenue.rentalRevenue, prevRevenue.rentalRevenue),
       penaltyRevenue: kpi(revenue.penaltyRevenue, prevRevenue.penaltyRevenue),
@@ -203,26 +317,61 @@ export async function getOverview(query = {}) {
 export async function getRevenueTrend(query = {}) {
   const range = resolveDateRange(query);
   const dateField = paymentDateField();
-  const rows = await Payment.aggregate([
-    { $match: basePaymentMatch(range, query) },
-    ...paymentFilterLookups(query),
-    { $group: { _id: periodExpression(dateField, range.groupBy), ...amountBuckets() } },
-    { $project: { _id: 0, period: "$_id", depositRevenue: 1, rentalRevenue: 1, penaltyRevenue: 1, refundedAmount: 1, grossRevenue: 1, netRevenue: netRevenueExpr() } },
-    { $sort: { period: 1 } }
+  const [paymentRows, refundRows] = await Promise.all([
+    Payment.aggregate([
+      { $match: buildSuccessfulPaymentMatch(range, query) },
+      ...paymentFilterLookups(query),
+      { $group: { _id: periodExpression(dateField, range.groupBy), ...amountBuckets() } },
+      { $project: { _id: 0, period: "$_id", depositRevenue: 1, rentalRevenue: 1, penaltyRevenue: 1, grossRevenue: 1, transactionCount: 1 } },
+      { $sort: { period: 1 } }
+    ]),
+    DepositRefund.aggregate([
+      { $match: buildCompletedRefundMatch(range, query) },
+      ...refundFilterLookups(query),
+      { $group: { _id: periodExpression("$completedAt", range.groupBy), refundedAmount: { $sum: "$amount" }, refundCount: { $sum: 1 } } },
+      { $project: { _id: 0, period: "$_id", refundedAmount: 1, refundCount: 1 } },
+      { $sort: { period: 1 } }
+    ])
   ]);
-  const data = fillMissingTimePeriods(rows, range, ["depositRevenue", "rentalRevenue", "penaltyRevenue", "refundedAmount", "grossRevenue", "netRevenue"]);
+  const byPeriod = new Map();
+  for (const row of paymentRows) byPeriod.set(row.period, normalizeMoneySummary(row));
+  for (const row of refundRows) {
+    const current = byPeriod.get(row.period) || normalizeMoneySummary();
+    byPeriod.set(row.period, mergeMoneySummary(current, row));
+  }
+  const rows = [...byPeriod.entries()].map(([period, row]) => ({ period, ...row })).sort((a, b) => a.period.localeCompare(b.period));
+  const data = fillMissingTimePeriods(rows, range, ["depositRevenue", "rentalRevenue", "penaltyRevenue", "successfulPayments", "refundedAmount", "grossRevenue", "rawNetRevenue", "netRevenue", "transactionCount", "successfulPaymentCount", "refundCount"])
+    .map((row) => ({ period: row.period, ...normalizeMoneySummary(row) }));
+  const totals = data.reduce((sum, row) => ({
+    depositRevenue: sum.depositRevenue + row.depositRevenue,
+    rentalRevenue: sum.rentalRevenue + row.rentalRevenue,
+    penaltyRevenue: sum.penaltyRevenue + row.penaltyRevenue,
+    grossRevenue: sum.grossRevenue + row.grossRevenue,
+    transactionCount: sum.transactionCount + row.transactionCount,
+    refundedAmount: sum.refundedAmount + row.refundedAmount,
+    refundCount: sum.refundCount + row.refundCount
+  }), { depositRevenue: 0, rentalRevenue: 0, penaltyRevenue: 0, grossRevenue: 0, transactionCount: 0, refundedAmount: 0, refundCount: 0 });
+  const summary = mergeMoneySummary(totals, totals);
+  const anomalyPeriods = data.filter((row) => row.rawNetRevenue < 0).map((row) => ({
+    period: row.period,
+    successfulPayments: row.successfulPayments,
+    refundedAmount: row.refundedAmount,
+    rawNetRevenue: row.rawNetRevenue
+  }));
+  const periodWarnings = anomalyPeriods.map((row) => ({
+    code: "PERIOD_REFUNDS_EXCEED_SUCCESSFUL_PAYMENTS",
+    period: row.period,
+    message: `Tiền hoàn kỳ ${row.period} lớn hơn thanh toán thành công của riêng kỳ này. Giá trị gốc được giữ trong metadata.`,
+    ...row
+  }));
   return {
     filters: { from: range.fromText, to: range.toText, groupBy: range.groupBy },
-    summary: normalizeMoneySummary(data.reduce((sum, row) => ({
-      depositRevenue: sum.depositRevenue + row.depositRevenue,
-      rentalRevenue: sum.rentalRevenue + row.rentalRevenue,
-      penaltyRevenue: sum.penaltyRevenue + row.penaltyRevenue,
-      refundedAmount: sum.refundedAmount + row.refundedAmount,
-      grossRevenue: sum.grossRevenue + row.grossRevenue,
-      netRevenue: sum.netRevenue + row.netRevenue
-    }), normalizeMoneySummary())),
+    summary,
+    warnings: [...summary.warnings, ...periodWarnings],
+    metadata: { anomalyPeriods },
     series: [
       { key: "netRevenue", label: "Doanh thu thực nhận", data: data.map((row) => ({ period: row.period, value: row.netRevenue })) },
+      { key: "successfulPayments", label: "Tổng thanh toán thành công", data: data.map((row) => ({ period: row.period, value: row.successfulPayments })) },
       { key: "depositRevenue", label: "Tiền cọc", data: data.map((row) => ({ period: row.period, value: row.depositRevenue })) },
       { key: "rentalRevenue", label: "Tiền thuê/toàn bộ", data: data.map((row) => ({ period: row.period, value: row.rentalRevenue })) },
       { key: "penaltyRevenue", label: "Khoản phạt", data: data.map((row) => ({ period: row.period, value: row.penaltyRevenue })) },
@@ -237,9 +386,9 @@ export async function getRevenueBreakdown(query = {}) {
   const summary = await revenueSummary(range, query);
   const positiveTotal = summary.depositRevenue + summary.rentalRevenue + summary.penaltyRevenue;
   const breakdown = [
-    { key: "deposit", label: "Tiền cọc", amount: summary.depositRevenue },
-    { key: "rental", label: "Tiền thuê/toàn bộ", amount: summary.rentalRevenue },
-    { key: "penalty", label: "Khoản phạt", amount: summary.penaltyRevenue }
+    { key: "deposit", label: "Tiền cọc đã thu", amount: summary.depositRevenue },
+    { key: "rental", label: "Thanh toán đơn thuê", amount: summary.rentalRevenue },
+    { key: "penalty", label: "Tiền phạt đã thu", amount: summary.penaltyRevenue }
   ].map((item) => ({ ...item, percentage: positiveTotal ? Number(((item.amount / positiveTotal) * 100).toFixed(1)) : 0 }));
   return { filters: { from: range.fromText, to: range.toText, groupBy: range.groupBy }, summary, breakdown };
 }
@@ -247,9 +396,9 @@ export async function getRevenueBreakdown(query = {}) {
 export async function getPaymentMethods(query = {}) {
   const range = resolveDateRange(query);
   const rows = await Payment.aggregate([
-    { $match: basePaymentMatch(range, query) },
+    { $match: buildSuccessfulPaymentMatch(range, query) },
     ...paymentFilterLookups(query),
-    { $group: { _id: "$method", amount: { $sum: { $cond: [{ $in: ["$paymentType", REFUND_TYPES] }, { $multiply: ["$amount", -1] }, "$amount"] } }, transactionCount: { $sum: 1 } } },
+    { $group: { _id: "$method", amount: { $sum: "$amount" }, transactionCount: { $sum: 1 } } },
     { $sort: { amount: -1 } }
   ]);
   const total = rows.reduce((sum, row) => sum + Number(row.amount || 0), 0);
@@ -266,23 +415,20 @@ function paymentMethodLabel(method) {
 
 export async function getOrderStatistics(query = {}) {
   const range = resolveDateRange(query);
-  const period = periodExpression("$createdAt", range.groupBy);
-  const rows = await RentalOrder.aggregate([
-    { $match: { createdAt: { $gte: range.from, $lte: range.to } } },
-    { $group: { _id: { period, status: "$status" }, count: { $sum: 1 } } },
-    { $sort: { "_id.period": 1 } }
+  const eventDates = lifecycleDateExpressions();
+  const eventRows = async (dateExpression, match = {}) => RentalOrder.aggregate([
+    { $set: { reportEventAt: dateExpression } },
+    { $match: { ...match, reportEventAt: { $gte: range.from, $lte: range.to } } },
+    { $group: { _id: periodExpression("$reportEventAt", range.groupBy), count: { $sum: 1 } } },
+    { $sort: { _id: 1 } }
   ]);
-  const merged = new Map();
-  for (const row of rows) {
-    const item = merged.get(row._id.period) || { period: row._id.period, total: 0, confirmed: 0, completed: 0, canceled: 0 };
-    const status = normalizeOrderStatus(row._id.status);
-    item.total += row.count;
-    if (["confirmed", "deposit_paid", "ready_to_pickup", "renting", "overdue", "returned"].includes(status)) item.confirmed += row.count;
-    if (status === "completed") item.completed += row.count;
-    if (["canceled", "expired"].includes(status)) item.canceled += row.count;
-    merged.set(row._id.period, item);
-  }
-  const data = fillMissingTimePeriods([...merged.values()], range, ["total", "confirmed", "completed", "canceled"]);
+  const [createdRows, pickedUpRows, returnedRows, completedRows] = await Promise.all([
+    eventRows(eventDates.created),
+    eventRows(eventDates.pickedUp),
+    eventRows(eventDates.returned),
+    eventRows(eventDates.completed)
+  ]);
+  const data = mergeLifecycleEventRows({ createdRows, pickedUpRows, returnedRows, completedRows }, range);
   const statusRows = await RentalOrder.aggregate([
     { $match: { createdAt: { $gte: range.from, $lte: range.to } } },
     { $group: { _id: "$status", count: { $sum: 1 } } }
@@ -297,31 +443,63 @@ export async function getOrderStatistics(query = {}) {
     filters: { from: range.fromText, to: range.toText, groupBy: range.groupBy },
     summary,
     series: [
-      { key: "total", label: "Đơn mới", data: data.map((row) => ({ period: row.period, value: row.total })) },
-      { key: "confirmed", label: "Đã xác nhận", data: data.map((row) => ({ period: row.period, value: row.confirmed })) },
-      { key: "completed", label: "Hoàn tất", data: data.map((row) => ({ period: row.period, value: row.completed })) },
-      { key: "canceled", label: "Đã hủy/từ chối", data: data.map((row) => ({ period: row.period, value: row.canceled })) }
+      { key: "created", label: "Đơn được tạo", data: data.map((row) => ({ period: row.period, value: row.created })) },
+      { key: "pickedUp", label: "Khách đã nhận đồ", data: data.map((row) => ({ period: row.period, value: row.pickedUp })) },
+      { key: "returned", label: "Đã trả đồ", data: data.map((row) => ({ period: row.period, value: row.returned })) },
+      { key: "completed", label: "Hoàn tất", data: data.map((row) => ({ period: row.period, value: row.completed })) }
     ],
     data,
     breakdown: [...statusMap.entries()].map(([key, count]) => ({ key, label: orderStatusLabel(key), count }))
   };
 }
 
-export async function getTopCostumes(query = {}) {
-  const range = resolveDateRange(query);
+export function lifecycleDateExpressions() {
+  return {
+    created: "$createdAt",
+    pickedUp: { $ifNull: ["$rentalStartedAt", { $ifNull: ["$actualRentalStartAt", { $ifNull: ["$pickedUpAt", "$schedule.customerReceivedAt"] }] }] },
+    returned: { $ifNull: ["$returnedAt", { $ifNull: ["$actualReturnedToStoreAt", { $ifNull: ["$schedule.shopReceivedBackAt", "$actualReturnDate"] }] }] },
+    completed: "$completedAt"
+  };
+}
+
+export function mergeLifecycleEventRows({ createdRows = [], pickedUpRows = [], returnedRows = [], completedRows = [] } = {}, range) {
+  const merged = new Map();
+  const mergeEvents = (rows, key) => rows.forEach((row) => {
+    const item = merged.get(row._id) || { period: row._id, created: 0, pickedUp: 0, returned: 0, completed: 0 };
+    item[key] += Number(row.count || 0);
+    merged.set(row._id, item);
+  });
+  mergeEvents(createdRows, "created");
+  mergeEvents(pickedUpRows, "pickedUp");
+  mergeEvents(returnedRows, "returned");
+  mergeEvents(completedRows, "completed");
+  return fillMissingTimePeriods([...merged.values()], range, ["created", "pickedUp", "returned", "completed"]);
+}
+
+export function buildTopCompletedCostumesPipeline(range, query = {}) {
   const limit = Number(query.limit) === 10 ? 10 : 5;
   const sortField = query.sort === "revenue_desc" ? "revenue" : "rentedCount";
-  const rows = await RentalOrderItem.aggregate([
+  const costumeMatch = {};
+  if (query.costumeId) costumeMatch["costume._id"] = objectId(query.costumeId);
+  if (query.brandId) costumeMatch["costume.brandId"] = objectId(query.brandId);
+  if (query.categoryId) costumeMatch["costume.categoryId"] = objectId(query.categoryId);
+  return [
     { $lookup: { from: "rentalorders", localField: "orderId", foreignField: "_id", as: "order" } },
     { $unwind: "$order" },
-    { $match: { "order.rentalDate": { $lte: range.to }, "order.returnDate": { $gte: range.from }, "order.status": { $nin: INVALID_ORDER_STATUSES } } },
+    { $match: { "order.status": "completed", "order.completedAt": { $gte: range.from, $lte: range.to } } },
     { $lookup: { from: "costumes", localField: "costumeId", foreignField: "_id", as: "costume" } },
     { $unwind: { path: "$costume", preserveNullAndEmptyArrays: true } },
+    ...(Object.keys(costumeMatch).length ? [{ $match: costumeMatch }] : []),
     { $group: { _id: "$costumeId", rentedCount: { $sum: "$quantity" }, revenue: { $sum: "$subtotal" }, rentedDays: { $sum: { $max: [1, { $ceil: { $divide: [{ $subtract: ["$order.returnDate", "$order.rentalDate"] }, 86400000] } }] } }, costume: { $first: "$costume" } } },
     { $sort: { [sortField]: -1 } },
     { $limit: limit },
     { $project: { _id: 0, costumeId: "$_id", name: "$costume.name", brandName: { $ifNull: ["$costume.brandName", ""] }, image: { $ifNull: [{ $arrayElemAt: ["$costume.imageAssets.url", 0] }, { $ifNull: ["$costume.image", { $ifNull: [{ $arrayElemAt: ["$costume.images", 0] }, ""] }] }] }, rentedCount: 1, revenue: 1, rentedDays: 1 } }
-  ]);
+  ];
+}
+
+export async function getTopCostumes(query = {}) {
+  const range = resolveDateRange(query);
+  const rows = await RentalOrderItem.aggregate(buildTopCompletedCostumesPipeline(range, query));
   return { filters: { from: range.fromText, to: range.toText, groupBy: range.groupBy }, summary: { total: rows.length }, items: rows };
 }
 
@@ -369,8 +547,8 @@ export async function getCustomerStatistics(query = {}) {
   ]);
   const data = fillMissingTimePeriods(newRows, range, ["newCustomers", "returningCustomers"]);
   const topCustomers = await Payment.aggregate([
-    { $match: basePaymentMatch(range, { ...query, paymentType: "all" }) },
-    { $group: { _id: "$customerId", paidAmount: { $sum: { $cond: [{ $in: ["$paymentType", REFUND_TYPES] }, { $multiply: ["$amount", -1] }, "$amount"] } }, lastPaidAt: { $max: paymentDateField() }, orderIds: { $addToSet: "$orderId" } } },
+    { $match: buildSuccessfulPaymentMatch(range, { ...query, paymentType: "all" }) },
+    { $group: { _id: "$customerId", paidAmount: { $sum: "$amount" }, lastPaidAt: { $max: paymentDateField() }, orderIds: { $addToSet: "$orderId" } } },
     { $lookup: { from: "users", localField: "_id", foreignField: "_id", as: "customer" } },
     { $unwind: { path: "$customer", preserveNullAndEmptyArrays: true } },
     { $sort: { paidAmount: -1 } },
@@ -437,7 +615,7 @@ export async function getRevenueTransactions(query = {}) {
   const limit = Math.min(100, Math.max(1, Number(query.limit) || 20));
   const sort = { newest: { paidAt: -1, createdAt: -1 }, oldest: { paidAt: 1, createdAt: 1 }, amount_desc: { amount: -1 }, amount_asc: { amount: 1 } }[query.sort] || { paidAt: -1, createdAt: -1 };
   const pipeline = [
-    { $match: basePaymentMatch(range, query) },
+    { $match: buildSuccessfulPaymentMatch(range, query) },
     ...paymentFilterLookups(query),
     { $lookup: { from: "users", localField: "customerId", foreignField: "_id", as: "customer" } },
     { $unwind: { path: "$customer", preserveNullAndEmptyArrays: true } },
@@ -491,8 +669,9 @@ export async function exportRevenueTransactionsCsv(query = {}) {
   const overview = await getOverview(query);
   const rows = [
     ["Khoảng thời gian", `${overview.filters.from} - ${overview.filters.to}`],
-    ["Tổng doanh thu", overview.summary.netRevenue],
-    ["Tổng hoàn tiền", overview.summary.refundedAmount],
+    ["Tổng thanh toán thành công", overview.summary.successfulPayments],
+    ["Số tiền đã hoàn", overview.summary.refundedAmount],
+    ["Doanh thu thực nhận", overview.summary.netRevenue],
     [],
     ["Mã thanh toán", "Mã đơn", "Khách hàng", "Loại thanh toán", "Phương thức", "Kênh", "Số tiền", "Trạng thái", "Ngày thanh toán"],
     ...data.items.map((item) => [item.paymentReference, item.orderCode, item.customerName, item.paymentType, item.method, item.channel, item.amount, item.status, item.paidAt])

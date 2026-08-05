@@ -1,4 +1,5 @@
 import { apiClient } from "./apiClient.js";
+import { PAYMENT_TIMEOUT_MS, UPLOAD_TIMEOUT_MS } from "./api.js";
 
 function unwrap(response) {
   return {
@@ -15,6 +16,7 @@ export async function getPaymentQuote(params, config = {}) {
 export async function createPayment(payload, idempotencyKey, config = {}) {
   const response = await apiClient.post("/payments", { ...payload, idempotencyKey }, {
     ...config,
+    timeout: config.timeout || PAYMENT_TIMEOUT_MS,
     headers: { ...(config.headers || {}), "Idempotency-Key": idempotencyKey }
   });
   const result = unwrap(response);
@@ -24,8 +26,10 @@ export async function createPayment(payload, idempotencyKey, config = {}) {
 export async function getPaymentMethods(config = {}) { return unwrap(await apiClient.get("/payments/methods", config)).data; }
 export async function getPaymentStatus(id, config = {}) { return unwrap(await apiClient.get(`/payments/${id}/status`, config)).data; }
 export async function cancelPayment(id, config = {}) { return unwrap(await apiClient.patch(`/payments/${id}/cancel`, {}, config)).data; }
-export async function reportManualTransfer(id, proofUrl = "", config = {}) {
-  return unwrap(await apiClient.patch(`/payments/${id}/report-transfer`, { proofUrl }, config)).data;
+export async function reportManualTransfer(id, proofFile, config = {}) {
+  const body = new FormData();
+  body.append("proof", proofFile);
+  return unwrap(await apiClient.patch(`/payments/${id}/report-transfer`, body, { ...config, timeout: config.timeout || UPLOAD_TIMEOUT_MS })).data;
 }
 export async function changeOrderPaymentPreference(orderId, method) { return unwrap(await apiClient.patch(`/payments/orders/${orderId}/preference`, { method })).data; }
 

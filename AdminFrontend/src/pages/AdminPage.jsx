@@ -12,12 +12,13 @@ import * as costumeApi from "../services/adminCostumeService.js";
 import { createBrand, deleteBrand, getAdminBrands, toggleBrandStatus, updateBrand } from "../services/brandService.js";
 import { createCategory, deleteCategory, getAdminCategories, toggleCategoryStatus, updateCategory } from "../services/categoryService.js";
 import { createBanner, getAdminBanners, removeBanner, setPrimaryBanner, toggleBannerStatus, updateBanner } from "../services/bannerService.js";
-import { createVoucher, getAdminVouchers, mockVouchers, removeVoucher, toggleVoucherStatus, updateVoucher } from "../services/voucherService.js";
+import { createVoucher, getAdminVouchers, removeVoucher, toggleVoucherStatus, updateVoucher } from "../services/voucherService.js";
 import { confirmPayment, getAdminPaymentDetail, getAdminPayments as fetchAdminPayments, rejectPayment } from "../services/paymentService.js";
 import { createOccasion, createStyle, deleteOccasion, deleteStyle, getAdminOccasions, getAdminStyles, toggleOccasionStatus, toggleStyleStatus, updateOccasion, updateStyle } from "../services/filterOptionService.js";
 import { createReturnInspection, rejectRentalOrder } from "../services/rentalOrderService.js";
 import { uploadImages } from "../services/uploadService.js";
 import { costumeName, formatDate, formatDateTime, getStatusLabel, money, orderTotal, resolveImageUrl } from "../utils/format.js";
+import { normalizeCostumeEditorPayload } from "../utils/costumeEditor.js";
 import { costumeStatusOptions as sharedCostumeStatusOptions } from "../utils/status.js";
 import { adminTabs } from "./adminTabs.js";
 import {
@@ -41,12 +42,15 @@ import {
 
 
 import React, {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
   useState
 } from "react";
 import { createPortal } from "react-dom";
+import { useAdminAuth } from "../context/AdminAuthContext.jsx";
+import { ADMIN_PERMISSIONS as P } from "../constants/adminPermissions.js";
 
 const asArray = (value) => (Array.isArray(value) ? value : []);
 const itemId = (item) => item?.id || item?._id || item?.code || "";
@@ -100,7 +104,8 @@ const fallbackStyleOptions = [
   { value: "elegant", label: "Thanh lịch", slug: "elegant", name: "Thanh lịch", icon: "elegant", status: "active" }
 ];
 
-export function AdminPage({ activeTab, notify }) {
+export function AdminPage({ activeTab, notify, costumeEditor = null }) {
+  const { can } = useAdminAuth();
   const [summary, setSummary] = useState(null);
   const [orders, setOrders] = useState([]);
   const [costumes, setCostumes] = useState([]);
@@ -110,29 +115,53 @@ export function AdminPage({ activeTab, notify }) {
   const [brands, setBrands] = useState([]);
   const [occasions, setOccasions] = useState(fallbackOccasionOptions);
   const [styles, setStyles] = useState(fallbackStyleOptions);
-  const [vouchers, setVouchers] = useState(mockVouchers);
+  const [vouchers, setVouchers] = useState([]);
+  const [voucherPagination, setVoucherPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 1 });
   const [banners, setBanners] = useState([]);
   const [selectedOrderId, setSelectedOrderId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const load = async (keepOrderId = selectedOrderId) => {
-    setLoading(true);
-    setError("");
+  const loadRequestRef = useRef(0);
+  const dataRef = useRef(null);
+  dataRef.current = { summary, orders, costumes, customers, payments, categories, brands, occasions, styles, vouchers, voucherPagination, banners, selectedOrderId };
+
+  const load = useCallback(async (keepOrderId = dataRef.current.selectedOrderId, { silent = false, voucherParams = {} } = {}) => {
+    const requestId = ++loadRequestRef.current;
+    if (!silent) {
+      setLoading(true);
+      setError("");
+    }
     try {
-      const [sum, ord, cos, cus, pay, cats, brandList, occasionList, styleList, voucherList, bannerList] = await Promise.all([
-        getAdminDashboard(),
-        getAdminOrders(),
-        costumeApi.getList(),
-        getAdminCustomers(),
-        getAdminPayments(),
-        getAdminCategories(),
-        getAdminBrands(),
-        getAdminOccasions().catch(() => fallbackOccasionOptions),
-        getAdminStyles().catch(() => fallbackStyleOptions),
-        getAdminVouchers().catch(() => mockVouchers),
-        getAdminBanners().catch(() => [])
-      ]);
+      const jobs = {};
+      if ([adminTabs.dashboard, adminTabs.orders, adminTabs.inspections].includes(activeTab)) jobs.orders = getAdminOrders();
+      if ([adminTabs.dashboard, adminTabs.costumes, adminTabs.vouchers].includes(activeTab)) jobs.costumes = costumeApi.getList();
+      if (activeTab === adminTabs.dashboard) jobs.summary = getAdminDashboard();
+      if ([adminTabs.customers, adminTabs.vouchers].includes(activeTab)) jobs.customers = getAdminCustomers();
+      if (activeTab === adminTabs.payments) jobs.payments = getAdminPayments();
+      if ([adminTabs.costumes, adminTabs.categories, adminTabs.vouchers].includes(activeTab)) jobs.categories = getAdminCategories();
+      if ([adminTabs.costumes, adminTabs.brands].includes(activeTab)) jobs.brands = getAdminBrands();
+      if ([adminTabs.costumes, adminTabs.occasions, adminTabs.categories, adminTabs.vouchers].includes(activeTab)) jobs.occasions = getAdminOccasions().catch(() => fallbackOccasionOptions);
+      if ([adminTabs.costumes, adminTabs.styles, adminTabs.categories].includes(activeTab)) jobs.styles = getAdminStyles().catch(() => fallbackStyleOptions);
+      if (activeTab === adminTabs.vouchers) jobs.vouchers = getAdminVouchers({ page: 1, limit: 20, ...voucherParams });
+      if (activeTab === adminTabs.banners) jobs.banners = getAdminBanners().catch(() => []);
+      const keys = Object.keys(jobs);
+      const values = await Promise.all(Object.values(jobs));
+      const loaded = Object.fromEntries(keys.map((key, index) => [key, values[index]]));
+      if (requestId !== loadRequestRef.current) return;
+      const current = dataRef.current;
+      const sum = loaded.summary ?? current.summary;
+      const ord = loaded.orders ?? current.orders;
+      const cos = loaded.costumes ?? current.costumes;
+      const cus = loaded.customers ?? current.customers;
+      const pay = loaded.payments ?? current.payments;
+      const cats = loaded.categories ?? current.categories;
+      const brandList = loaded.brands ?? current.brands;
+      const occasionList = loaded.occasions ?? current.occasions;
+      const styleList = loaded.styles ?? current.styles;
+      const voucherList = loaded.vouchers ?? { items: current.vouchers, pagination: current.voucherPagination };
+      const bannerList = loaded.banners ?? current.banners;
+      const voucherItems = asArray(voucherList?.items ?? voucherList);
       const safeOrders = asArray(ord);
       setSummary(sum);
       setOrders(safeOrders);
@@ -143,40 +172,51 @@ export function AdminPage({ activeTab, notify }) {
       setBrands(asArray(brandList));
       setOccasions(asArray(occasionList).length ? asArray(occasionList) : fallbackOccasionOptions);
       setStyles(asArray(styleList).length ? asArray(styleList) : fallbackStyleOptions);
-      setVouchers(asArray(voucherList));
+      setVouchers(voucherItems);
+      setVoucherPagination(voucherList?.pagination || current.voucherPagination);
       setBanners(asArray(bannerList));
-      const nextId = keepOrderId && findById(safeOrders, keepOrderId) ? keepOrderId : (!selectedOrderId ? itemId(safeOrders[0]) : selectedOrderId);
+      const nextId = keepOrderId && findById(safeOrders, keepOrderId) ? keepOrderId : (!current.selectedOrderId ? itemId(safeOrders[0]) : current.selectedOrderId);
       setSelectedOrderId(nextId || null);
       return safeOrders;
     } catch (err) {
-      setError(err.message);
-      notify(err.message, "error");
+      if (requestId !== loadRequestRef.current) return;
+      if (!silent) setError(err.message);
+      notify?.(err.message, "error");
     } finally {
-      setLoading(false);
+      if (requestId === loadRequestRef.current && !silent) setLoading(false);
     }
-  };
+  }, [activeTab, notify]);
 
   useEffect(() => {
     load();
-  }, []);
+    return () => { loadRequestRef.current += 1; };
+  }, [activeTab, load]);
 
   useEffect(() => {
     let timer;
-    const refresh = () => { clearTimeout(timer); timer = setTimeout(() => load(selectedOrderId), 180); };
+    const refresh = () => {
+      clearTimeout(timer);
+      if (activeTab === adminTabs.vouchers) return;
+      timer = setTimeout(() => load(selectedOrderId), 180);
+    };
     window.addEventListener("ara:order-updated", refresh);
     window.addEventListener("ara:payment-updated", refresh);
     return () => { clearTimeout(timer); window.removeEventListener("ara:order-updated", refresh); window.removeEventListener("ara:payment-updated", refresh); };
-  }, [selectedOrderId]);
+  }, [activeTab, load, selectedOrderId]);
 
   useEffect(() => {
-    const base = (import.meta.env.VITE_API_URL || "http://localhost:4000/api").replace(/\/api\/?$/, "");
+    const base = (import.meta.env.VITE_API_URL || "").replace(/\/api\/?$/, "");
     const socket = io(base, { auth: { token: localStorage.getItem("ara_admin_token") }, transports: ["websocket", "polling"] });
     let timer;
-    const refresh = () => { clearTimeout(timer); timer = setTimeout(() => load(selectedOrderId), 120); };
+    const refresh = () => {
+      clearTimeout(timer);
+      if (activeTab === adminTabs.vouchers) return;
+      timer = setTimeout(() => load(selectedOrderId), 120);
+    };
     socket.on("order:updated", refresh);
     socket.on("payment:updated", refresh);
     return () => { clearTimeout(timer); socket.disconnect(); };
-  }, [selectedOrderId]);
+  }, [activeTab, load, selectedOrderId]);
 
   const selectedOrder = useMemo(() => findById(orders, selectedOrderId), [orders, selectedOrderId]);
 
@@ -193,23 +233,21 @@ export function AdminPage({ activeTab, notify }) {
 
   const chrome = (children) => (
     <section className="admin-page">
-      {loading && <LoadingState />}
-      {error && <ErrorState message={error} onRetry={load} />}
-      {children}
+      {loading ? <LoadingState /> : error ? <ErrorState message={error} onRetry={() => load(selectedOrderId)} /> : children}
     </section>
   );
 
   if (activeTab === adminTabs.dashboard) return chrome(<Dashboard summary={summary} stats={dashboardStats} orders={orders} costumes={costumes} />);
-  if (activeTab === adminTabs.costumes) return chrome(<AdminCostumes costumes={costumes} categories={categories} brands={brands} occasions={occasions} styles={styles} notify={notify} reload={load} />);
+  if (activeTab === adminTabs.costumes) return chrome(<AdminCostumes costumes={costumes} categories={categories} brands={brands} occasions={occasions} styles={styles} notify={notify} reload={() => load(selectedOrderId, { silent: true })} canManageCatalog={can(P.CATALOG_MANAGE)} canOperateInventory={can(P.INVENTORY_OPERATE)} editor={costumeEditor} />);
   if (activeTab === adminTabs.brands) return chrome(<TaxonomyManager title="Quản lý thương hiệu" noun="thương hiệu" items={brands} notify={notify} reload={load} createItem={createBrand} updateItem={updateBrand} deleteItem={deleteBrand} toggleItem={toggleBrandStatus} />);
   if (activeTab === adminTabs.categories) return chrome(<TaxonomyManager title="Quản lý danh mục" noun="danh mục" items={categories} notify={notify} reload={load} createItem={createCategory} updateItem={updateCategory} deleteItem={deleteCategory} toggleItem={toggleCategoryStatus} showIcon defaultOptions={{ occasions, styles }} />);
   if (activeTab === adminTabs.occasions) return chrome(<TaxonomyManager title="Quản lý dịp mặc" noun="dịp mặc" items={occasions} notify={notify} reload={load} createItem={createOccasion} updateItem={updateOccasion} deleteItem={deleteOccasion} toggleItem={toggleOccasionStatus} showIcon />);
   if (activeTab === adminTabs.styles) return chrome(<TaxonomyManager title="Quản lý phong cách" noun="phong cách" items={styles} notify={notify} reload={load} createItem={createStyle} updateItem={updateStyle} deleteItem={deleteStyle} toggleItem={toggleStyleStatus} showIcon />);
   if (activeTab === adminTabs.orders) return chrome(<AdminOrders orders={orders} selected={selectedOrder} selectedOrderId={selectedOrderId} setSelectedOrderId={setSelectedOrderId} notify={notify} reload={load} />);
   if (activeTab === adminTabs.inspections) return chrome(<AdminOrders orders={orders.filter((order) => ["renting", "returned", "overdue"].includes(order.status))} selected={selectedOrder} selectedOrderId={selectedOrderId} setSelectedOrderId={setSelectedOrderId} notify={notify} reload={load} inspectionOnly />);
-  if (activeTab === adminTabs.payments) return chrome(<PaymentManager rows={payments} notify={notify} reload={load} />);
+  if (activeTab === adminTabs.payments) return chrome(<PaymentManager rows={payments} notify={notify} reload={load} canConfirm={can(P.PAYMENTS_CONFIRM_BANK_TRANSFER)} />);
   if (activeTab === adminTabs.customers) return chrome(<SimpleResource title="Quản lý khách hàng" rows={customers} columns={["name", "email", "phone", "status"]} labels={["Tên", "Email", "Số điện thoại", "Trạng thái"]} />);
-  if (activeTab === adminTabs.vouchers) return chrome(<VoucherManager items={vouchers} notify={notify} reload={load} />);
+  if (activeTab === adminTabs.vouchers) return chrome(<VoucherManager items={vouchers} pagination={voucherPagination} categories={categories} occasions={occasions} costumes={costumes} customers={customers} notify={notify} reload={(options) => load(selectedOrderId, options)} />);
   if (activeTab === adminTabs.banners) return chrome(<BannerManager items={banners} notify={notify} reload={load} />);
   return chrome(<Reports stats={dashboardStats} orders={orders} costumes={costumes} summary={summary} />);
 }
@@ -420,7 +458,10 @@ function AdminCostumes({
   occasions,
   styles,
   notify,
-  reload
+  reload,
+  canManageCatalog,
+  canOperateInventory,
+  editor
 }) {
   const navigate = useNavigate();
 
@@ -448,6 +489,36 @@ function AdminCostumes({
 
   const [modal, setModal] =
     useState(null);
+
+  useEffect(() => {
+    if (editor?.mode === "create") {
+      setModal((current) => current?.routeEditor ? current : {
+        mode: "create",
+        routeEditor: true
+      });
+      return;
+    }
+
+    if (editor?.mode === "edit" && editor.id && costumes.length) {
+      const item = findById(costumes, editor.id);
+      if (item) {
+        setModal((current) => current?.routeEditor && itemId(current.item) === editor.id ? current : {
+          mode: "edit",
+          item,
+          routeEditor: true
+        });
+      }
+    }
+  }, [costumes, editor?.id, editor?.mode]);
+
+  const closeCostumeEditor = () => {
+    setModal(null);
+    if (editor?.mode === "edit" && editor.id) {
+      navigate(`/costumes/${editor.id}`);
+      return;
+    }
+    if (editor?.mode === "create") navigate("/costumes");
+  };
 
   const brandOptions = useMemo(
     () =>
@@ -524,7 +595,7 @@ function AdminCostumes({
           item.skuCode,
           item.occasionName,
           item.styleName,
-          getStatusLabel(item.operationalStatus || item.status),
+          getStatusLabel(item.operationalStatus || item.status, "costume"),
           item.currentDisplayStatus
         ]
           .filter(Boolean)
@@ -744,96 +815,7 @@ function AdminCostumes({
   ].filter(Boolean);
 
   const save = async (payload, editingId) => {
-    const imageAssets = asArray(payload.imageAssets)
-      .map((asset, index) => {
-        if (typeof asset === "string") {
-          return {
-            url: asset,
-            publicId: "",
-            alt: "",
-            sortOrder: index
-          };
-        }
-
-        return {
-          url: asset?.url || "",
-          publicId: asset?.publicId || "",
-          alt: asset?.alt || "",
-          sortOrder: index
-        };
-      })
-      .filter((asset) => asset.url);
-
-    const images = imageAssets.length
-      ? imageAssets.map((asset) => asset.url)
-      : asArray(payload.images)
-        .map((item) =>
-          typeof item === "string"
-            ? item
-            : item?.url
-        )
-        .filter(Boolean);
-
-    const primaryImage =
-      payload.image &&
-        images.includes(payload.image)
-        ? payload.image
-        : images[0] || "";
-
-    const primaryAsset =
-      imageAssets.find(
-        (asset) => asset.url === primaryImage
-      ) || null;
-
-    const normalized = {
-      name: payload.name,
-      description: payload.description,
-      brandSlug: payload.brandSlug,
-      categoryId: payload.categoryId,
-      size: payload.size,
-      color: payload.color,
-      occasionIds: payload.occasionIds,
-      styleIds: payload.styleIds,
-      material: payload.material,
-
-      // Gửi toàn bộ danh sách ảnh
-      images,
-      imageAssets,
-
-      // Ảnh đại diện
-      image: primaryImage,
-      imageUrl: primaryImage,
-      imagePublicId:
-        primaryAsset?.publicId ||
-        payload.imagePublicId ||
-        "",
-
-      originalPrice: Number(
-        payload.originalPrice || 0
-      ),
-
-      rentalPricePerDay: Number(
-        payload.rentalPricePerDay || 0
-      ),
-
-      memberPrice: Number(
-        payload.memberPrice || 0
-      ),
-
-      depositAmount: Number(
-        payload.depositAmount || 0
-      ),
-
-      quantity: Number(
-        payload.quantity || 0
-      ),
-
-      skuCode: payload.skuCode,
-      operationalStatus: payload.operationalStatus,
-      cleaningDurationMinutes: Number(payload.cleaningDurationMinutes || 180),
-      accessories: payload.accessories,
-      conditionNote: payload.conditionNote
-    };
+    const normalized = normalizeCostumeEditorPayload(payload);
 
     try {
       const response = editingId
@@ -853,6 +835,14 @@ function AdminCostumes({
       );
 
       setModal(null);
+      if (editor?.mode === "edit" && editingId) {
+        navigate(`/costumes/${editingId}`);
+        return;
+      }
+      if (editor?.mode === "create") {
+        navigate("/costumes");
+        return;
+      }
       await reload();
     } catch (error) {
       notify(
@@ -910,19 +900,15 @@ function AdminCostumes({
       <PageHeader
         title="Quản lý trang phục"
         subtitle="Theo dõi kho, giá thuê, trạng thái và thông tin từng thiết kế."
-        action={
+        action={canManageCatalog ? (
           <AdminButton
             variant="primary"
-            onClick={() =>
-              setModal({
-                mode: "create"
-              })
-            }
+            onClick={() => setModal({ mode: "create" })}
           >
             <Plus size={16} />
             Thêm trang phục
           </AdminButton>
-        }
+        ) : null}
       />
 
       <div className="admin-stat-grid costume-stat-grid">
@@ -1178,9 +1164,9 @@ function AdminCostumes({
         <div className="costume-table-shell">
           <AdminTable
             tableClassName="costume-table costume-table-compact"
+            mobileCards
             rows={filtered}
             columns={[
-              "image",
               "name",
               "classification",
               "pricing",
@@ -1188,7 +1174,6 @@ function AdminCostumes({
               "status"
             ]}
             labels={[
-              "Ảnh",
               "Trang phục",
               "Phân loại",
               "Giá & cọc",
@@ -1196,13 +1181,12 @@ function AdminCostumes({
               "Trạng thái"
             ]}
             colWidths={[
-              "68px",
               "",
-              "180px",
-              "160px",
-              "78px",
               "150px",
-              "76px"
+              "140px",
+              "90px",
+              "172px",
+              "84px"
             ]}
             columnClasses={{
               name: "clamp-cell",
@@ -1214,40 +1198,24 @@ function AdminCostumes({
               status: "status-cell"
             }}
             format={{
-              image: (_, row) => (
-                <img
-                  className="admin-thumb costume-admin-thumb"
-                  src={resolveImageUrl(
-                    row.image ||
-                    row.images?.[0]
-                  )}
-                  alt={row.name}
-                  onError={(event) => {
-                    event.currentTarget.src =
-                      "/placeholder.png";
-                  }}
-                />
-              ),
-
               name: (value, row) => (
-                <span className="costume-name-cell">
-                  <strong>
-                    {value ||
-                      "Chưa đặt tên"}
-                  </strong>
-
-                  <small>
-                    {[
-                      row.skuCode &&
-                      `SKU: ${row.skuCode}`,
-                      row.size &&
-                      `Size ${row.size}`,
-                      row.color
-                    ]
-                      .filter(Boolean)
-                      .join(" · ") ||
-                      "Chưa có thông tin phụ"}
-                  </small>
+                <span className="costume-product-cell">
+                  <img
+                    className="admin-thumb costume-admin-thumb"
+                    src={resolveImageUrl(row.image || row.images?.[0])}
+                    alt=""
+                    onError={(event) => {
+                      event.currentTarget.src = "/placeholder.png";
+                    }}
+                  />
+                  <span className="costume-name-cell">
+                    <strong>{value || "Chưa đặt tên"}</strong>
+                    <small>{[
+                      row.skuCode && `SKU: ${row.skuCode}`,
+                      row.size && `Size: ${row.size}`,
+                      row.color && `Màu: ${row.color}`
+                    ].filter(Boolean).join(" · ") || "Chưa có thông tin phụ"}</small>
+                  </span>
                 </span>
               ),
 
@@ -1280,7 +1248,7 @@ function AdminCostumes({
                   </strong>
 
                   <small>
-                    Cọc{" "}
+                    Tiền cọc ·{" "}
                     {money(
                       row.depositAmount
                     )}
@@ -1289,18 +1257,23 @@ function AdminCostumes({
               ),
 
               quantity: (value) => (
-                <span className="costume-stock-value">
-                  {Number(value || 0)}
+                <span className="costume-stock-cell">
+                  <strong className="costume-stock-value">{Number(value || 0)}</strong>
+                  <small>sản phẩm</small>
                 </span>
               ),
 
               status: (_, row) => (
                 <span className="costume-status-stack">
-                  <AdminSelect
-                    value={row.operationalStatus || (row.status === "available" ? "active" : row.status)}
-                    options={costumeStatusOptions}
-                    onChange={(value) => changeStatus(row, value)}
-                  />
+                  <span className="costume-status-row">
+                    {canOperateInventory ? (
+                      <AdminSelect
+                        value={row.operationalStatus || (row.status === "available" ? "active" : row.status)}
+                        options={costumeStatusOptions}
+                        onChange={(value) => changeStatus(row, value)}
+                      />
+                    ) : <strong>{getStatusLabel(row.operationalStatus || row.status, "costume")}</strong>}
+                  </span>
                   <AdminStatusBadge type="costume" value={row.currentDisplayStatus || "available"} />
                   {row.currentStatusUntil && <small>Đến {formatDateTime(row.currentStatusUntil)}</small>}
                 </span>
@@ -1321,17 +1294,9 @@ function AdminCostumes({
                   Xem
                 </AdminButton>
 
-                <AdminButton
-                  onClick={() =>
-                    setModal({
-                      mode: "edit",
-                      item: row
-                    })
-                  }
-                >
-                  <Pencil size={14} />
-                  Sửa
-                </AdminButton>
+                {canManageCatalog && <AdminButton onClick={() => setModal({ mode: "edit", item: row })}>
+                  <Pencil size={14} /> Sửa
+                </AdminButton>}
 
                 {false && (<>
                 <AdminButton
@@ -1345,7 +1310,8 @@ function AdminCostumes({
                     if (
                       window.confirm(
                         `Đổi trạng thái trang phục sang "${getStatusLabel(
-                          next
+                          next,
+                          "costume"
                         )}"?`
                       )
                     ) {
@@ -1379,7 +1345,7 @@ function AdminCostumes({
 
                 </>)}
 
-                <AdminButton
+                {canManageCatalog && <AdminButton
                   variant="danger"
                   onClick={() =>
                     remove(row)
@@ -1387,7 +1353,7 @@ function AdminCostumes({
                 >
                   <Trash2 size={14} />
                   Xóa
-                </AdminButton>
+                </AdminButton>}
               </AdminActionMenu>
             )}
           />
@@ -1418,9 +1384,7 @@ function AdminCostumes({
             occasions={occasions}
             styles={styles}
             notify={notify}
-            onClose={() =>
-              setModal(null)
-            }
+            onClose={closeCostumeEditor}
             onSave={save}
           />
         )}
@@ -1703,7 +1667,7 @@ function LegacyModalSelect({
   );
 }
 
-function CostumeFormModal({
+export function CostumeFormModal({
   title,
   initial,
   categories = [],
@@ -1714,6 +1678,7 @@ function CostumeFormModal({
   onClose,
   onSave
 }) {
+  const formId = "admin-costume-editor-form";
   const categoryOptions = asArray(categories);
   const brandOptions = asArray(brands);
 
@@ -1803,6 +1768,7 @@ function CostumeFormModal({
   }));
 
   const [uploading, setUploading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const manuallyEditedClassification = useRef({ occasionIds: false, styleIds: false });
 
   const occasionSelectOptions =
@@ -1843,6 +1809,7 @@ function CostumeFormModal({
 
   const submit = async (event) => {
     event.preventDefault();
+    if (saving || uploading) return;
 
     if (!form.name || !form.brandSlug || !form.categoryId) {
       notify(
@@ -1863,10 +1830,15 @@ function CostumeFormModal({
       return;
     }
 
-    await onSave(
-      form,
-      initial ? itemId(initial) : null
-    );
+    setSaving(true);
+    try {
+      await onSave(
+        form,
+        initial ? itemId(initial) : null
+      );
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -1874,8 +1846,33 @@ function CostumeFormModal({
       title={title}
       onClose={onClose}
       className="costume-form-modal"
+      footer={
+        <>
+          <AdminButton
+            type="button"
+            onClick={onClose}
+            disabled={saving}
+          >
+            Hủy
+          </AdminButton>
+
+          <AdminButton
+            type="submit"
+            form={formId}
+            variant="primary"
+            disabled={uploading || saving}
+          >
+            {saving
+              ? "Đang lưu..."
+              : initial
+                ? "Lưu thay đổi"
+                : "Tạo trang phục"}
+          </AdminButton>
+        </>
+      }
     >
       <form
+        id={formId}
         className="admin-form"
         onSubmit={submit}
       >
@@ -2111,22 +2108,6 @@ function CostumeFormModal({
           </label>
         </fieldset>
 
-        <div className="modal-actions">
-          <AdminButton
-            type="button"
-            onClick={onClose}
-          >
-            Hủy
-          </AdminButton>
-
-          <AdminButton
-            type="submit"
-            variant="primary"
-            disabled={uploading}
-          >
-            Lưu
-          </AdminButton>
-        </div>
       </form>
     </AdminModal>
   );
@@ -2145,7 +2126,7 @@ function CostumeDetailModal({ item, onClose }) {
     ["Tiền cọc", money(item.depositAmount)],
     ["Số lượng", item.quantity],
     ["SKU", item.skuCode],
-    ["Trạng thái vận hành", getStatusLabel(item.operationalStatus || item.status)],
+    ["Trạng thái vận hành", getStatusLabel(item.operationalStatus || item.status, "costume")],
     ["Trạng thái lịch", item.currentDisplayStatus],
     ["Trạng thái đến", item.currentStatusUntil ? formatDateTime(item.currentStatusUntil) : "-"],
     ["Có thể nhận lịch từ", item.nextAvailableAt ? formatDateTime(item.nextAvailableAt) : "-"]
@@ -2270,63 +2251,245 @@ function TaxonomyForm({ title, initial, showIcon, defaultOptions, onClose, onSav
   );
 }
 
-function VoucherManager({ items, notify, reload }) {
+const voucherEligibilityLabels = {
+  all: "Tất cả khách hàng",
+  first_order: "Khách mới – đơn đầu tiên",
+  returning_customer: "Khách đã từng thuê",
+  specific_customers: "Khách hàng cụ thể"
+};
+
+function voucherDiscount(value) {
+  return value.discountType === "percent" ? `${value.discountValue}%` : money(value.discountValue);
+}
+
+function VoucherManager({ items, pagination, categories, occasions, costumes, customers, notify, reload }) {
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebouncedValue(search, 600);
+  const [statusFilter, setStatusFilter] = useState("");
+  const [eligibilityFilter, setEligibilityFilter] = useState("");
   const [modal, setModal] = useState(null);
-  const filtered = items.filter((item) => [item.code, item.name, getStatusLabel(item.status)].join(" ").toLowerCase().includes(debouncedSearch.toLowerCase()));
+  const [busyId, setBusyId] = useState("");
+  const [paginationLocked, setPaginationLocked] = useState(false);
+  const reloadRef = useRef(reload);
+  reloadRef.current = reload;
+  const paginationResetRef = useRef(false);
+  const pendingFilterResetRef = useRef(false);
+  const pageSize = Number(pagination?.limit) || 20;
+  const currentPage = Number(pagination?.page) || 1;
+  const query = () => ({
+    page: currentPage,
+    limit: pageSize,
+    ...(debouncedSearch ? { search: debouncedSearch } : {}),
+    ...(statusFilter ? { status: statusFilter } : {}),
+    ...(eligibilityFilter ? { eligibilityType: eligibilityFilter } : {})
+  });
+  const queryRef = useRef(query);
+  queryRef.current = query;
+  const requestPage = (page) => {
+    if (paginationResetRef.current) return;
+    return reloadRef.current({ silent: true, voucherParams: { ...queryRef.current(), page } });
+  };
+  const startFilterReset = () => {
+    paginationResetRef.current = true;
+    setPaginationLocked(true);
+    Promise.resolve()
+      .then(() => reloadRef.current({ silent: true, voucherParams: { ...queryRef.current(), page: 1 } }))
+      .finally(() => {
+        paginationResetRef.current = false;
+        if (pendingFilterResetRef.current) {
+          pendingFilterResetRef.current = false;
+          startFilterReset();
+          return;
+        }
+        setPaginationLocked(false);
+      });
+  };
+  const resetPage = () => {
+    if (paginationResetRef.current) {
+      pendingFilterResetRef.current = true;
+      return;
+    }
+    startFilterReset();
+  };
+  const previousVoucherFiltersRef = useRef({ debouncedSearch, statusFilter, eligibilityFilter });
+  useEffect(() => {
+    const previous = previousVoucherFiltersRef.current;
+    if (previous.debouncedSearch === debouncedSearch && previous.statusFilter === statusFilter && previous.eligibilityFilter === eligibilityFilter) return;
+    previousVoucherFiltersRef.current = { debouncedSearch, statusFilter, eligibilityFilter };
+    resetPage();
+  }, [debouncedSearch, statusFilter, eligibilityFilter]);
+  const filtered = items;
+  const reloadCurrent = () => reloadRef.current({ silent: true, voucherParams: query() });
   const save = async (payload, editingId) => {
-    if (payload.discountType === "percent" && (Number(payload.discountValue) < 1 || Number(payload.discountValue) > 100)) return notify("Giảm phần trăm phải từ 1 đến 100.", "error");
-    if (payload.endDate && payload.startDate && payload.endDate <= payload.startDate) return notify("Ngày kết thúc phải sau ngày bắt đầu.", "error");
-    const response = editingId ? await updateVoucher(editingId, payload) : await createVoucher(payload);
-    notify(response.message);
-    setModal(null);
-    reload();
+    if (busyId) return;
+    try {
+      if (payload.discountType === "percent" && (Number(payload.discountValue) < 1 || Number(payload.discountValue) > 100)) return notify("Giảm phần trăm phải từ 1 đến 100.", "error");
+      if (payload.endAt && payload.startAt && new Date(payload.endAt) <= new Date(payload.startAt)) return notify("Ngày kết thúc phải sau ngày bắt đầu.", "error");
+      setBusyId(editingId || "new");
+      const response = editingId ? await updateVoucher(editingId, payload) : await createVoucher(payload);
+      notify(response.message);
+      setModal(null);
+      await reloadCurrent();
+    } catch (error) {
+      notify(error.message || "Không thể lưu voucher.", "error");
+    } finally {
+      setBusyId("");
+    }
   };
   const remove = async (item) => {
-    if (!confirmAction(`Xóa voucher "${item.code}"?`)) return;
-    const response = await removeVoucher(itemId(item));
-    notify(response.message);
-    reload();
+    if (!confirmAction(`Vô hiệu hóa voucher "${item.code}"? Voucher sẽ không còn được sử dụng.`)) return;
+    setBusyId(itemId(item));
+    try {
+      const response = await removeVoucher(itemId(item));
+      notify(response.message);
+      await reloadCurrent();
+    } catch (error) {
+      notify(error.message || "Không thể vô hiệu hóa voucher.", "error");
+    } finally {
+      setBusyId("");
+    }
+  };
+  const toggle = async (item) => {
+    const next = item.status === "active" ? "tắt" : "bật";
+    if (!confirmAction(`Bạn có chắc muốn ${next} voucher "${item.code}"?`)) return;
+    setBusyId(itemId(item));
+    try {
+      const response = await toggleVoucherStatus(itemId(item));
+      notify(response.message);
+      await reloadCurrent();
+    } catch (error) {
+      notify(error.message || "Không thể cập nhật trạng thái voucher.", "error");
+    } finally {
+      setBusyId("");
+    }
   };
   return (
     <>
       <PageHeader title="Quản lý voucher" subtitle="Tạo, chỉnh sửa, bật tắt và kiểm soát hiệu lực voucher." action={<AdminButton variant="primary" onClick={() => setModal({})}><Plus size={16} /> Thêm voucher</AdminButton>} />
       <div className="admin-card">
-        <div className="admin-toolbar admin-toolbar--search-only">
+        <div className="admin-toolbar voucher-toolbar">
           <input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Tìm mã voucher, tên voucher..."
           />
+          <AdminSelect value={statusFilter} onChange={setStatusFilter} options={[["", "Mọi trạng thái"], ["upcoming", "Sắp diễn ra"], ["active", "Đang hoạt động"], ["inactive", "Tạm tắt"], ["expired", "Đã hết hạn"], ["exhausted", "Đã hết lượt"]]} />
+          <AdminSelect value={eligibilityFilter} onChange={setEligibilityFilter} options={[["", "Mọi đối tượng"], ...Object.entries(voucherEligibilityLabels)]} />
         </div>
-        <AdminTable rows={filtered} columns={["code", "name", "discountType", "discountValue", "usage", "status"]} labels={["Code", "Tên", "Loại giảm", "Giá trị", "Đã dùng/Giới hạn", "Trạng thái"]} format={{ usage: (_, row) => `${row.usedCount || 0}/${row.usageLimit || "∞"}`, status: (v) => <StatusBadge value={v} /> }} actions={(row) => <><AdminButton onClick={() => setModal({ item: row })}><Pencil size={14} /> Sửa</AdminButton><AdminButton onClick={async () => { const res = await toggleVoucherStatus(itemId(row)); notify(res.message); reload(); }}>{row.status === "active" ? "Tắt" : "Bật"}</AdminButton><AdminButton variant="danger" onClick={() => remove(row)}><Trash2 size={14} /> Xóa</AdminButton></>} />
+        {filtered.length === 0 ? (
+          <div className="voucher-empty-state" role="status">
+            <div className="voucher-empty-icon"><Plus size={22} aria-hidden="true" /></div>
+            <strong>{items.length ? "Không có voucher khớp bộ lọc" : "Chưa có voucher nào"}</strong>
+            <p>{items.length ? "Thử đổi từ khóa hoặc bộ lọc để xem lại danh sách." : "Tạo voucher đầu tiên để khách có thể xem và áp dụng ở trang Ưu đãi."}</p>
+            {!items.length && <AdminButton variant="primary" onClick={() => setModal({})}><Plus size={15} /> Tạo voucher đầu tiên</AdminButton>}
+          </div>
+        ) : (
+            <AdminTable
+              rows={filtered}
+            columns={["code", "name", "discount", "eligibility", "minimum", "usage", "perCustomer", "validity", "businessStatus"]}
+            labels={["Mã", "Tên", "Mức giảm", "Đối tượng", "Đơn tối thiểu", "Đã dùng/Tổng", "Mỗi khách", "Hiệu lực", "Trạng thái"]}
+              tableClassName="voucher-table"
+              page={currentPage}
+              pageSize={pageSize}
+              total={pagination?.total || 0}
+              totalPages={pagination?.totalPages || 1}
+              onPageChange={requestPage}
+              paginationDisabled={paginationLocked}
+            colWidths={["104px", "150px", "104px", "150px", "126px", "126px", "92px", "164px", "124px", "64px"]}
+            format={{
+              discount: (_, row) => voucherDiscount(row),
+              eligibility: (_, row) => voucherEligibilityLabels[row.eligibilityType] || voucherEligibilityLabels.all,
+              minimum: (_, row) => money(row.minimumOrderAmount || 0),
+              usage: (_, row) => `${row.usageCount || 0}/${row.totalUsageLimit == null ? "Không giới hạn" : row.totalUsageLimit}`,
+              perCustomer: (_, row) => `${row.usageLimitPerCustomer || 1} lần`,
+              validity: (_, row) => `${formatDate(row.startAt)} – ${formatDate(row.endAt)}`,
+              businessStatus: (_, row) => <StatusBadge type="voucher" value={row.businessStatus} />
+            }}
+            actions={(row) => (
+              <AdminActionMenu>
+                <button type="button" onClick={() => setModal({ item: row })}><Pencil size={15} /> Sửa</button>
+                <button type="button" disabled={busyId === itemId(row)} onClick={() => toggle(row)}>
+                  {row.status === "active" ? "Tắt voucher" : "Bật voucher"}
+                </button>
+                <button type="button" className="danger" disabled={busyId === itemId(row)} onClick={() => remove(row)}>
+                  <Trash2 size={15} /> Vô hiệu hóa
+                </button>
+              </AdminActionMenu>
+            )}
+          />
+        )}
       </div>
-      {modal && <VoucherForm initial={modal.item} onClose={() => setModal(null)} onSave={save} />}
+      {modal && <VoucherForm initial={modal.item} categories={categories} occasions={occasions} costumes={costumes} customers={customers} notify={notify} onClose={() => setModal(null)} onSave={save} />}
     </>
   );
 }
 
-function VoucherForm({ initial, onClose, onSave }) {
-  const [form, setForm] = useState({ code: initial?.code || "", name: initial?.name || "", description: initial?.description || "", discountType: initial?.discountType || "percent", discountValue: initial?.discountValue ?? "", minOrderValue: initial?.minOrderValue ?? "", maxDiscount: initial?.maxDiscount ?? "", usageLimit: initial?.usageLimit ?? "", startDate: String(initial?.startDate || "").slice(0, 10), endDate: String(initial?.endDate || "").slice(0, 10), status: initial?.status || "active" });
-  const update = (field, value) => setForm((current) => ({ ...current, [field]: value }));
+function VoucherForm({ initial, categories, occasions, costumes, customers, notify, onClose, onSave }) {
+  const [form, setForm] = useState({
+    code: initial?.code || "", name: initial?.name || "", description: initial?.description || "",
+    discountType: initial?.discountType || "percent", discountValue: initial?.discountValue ?? "",
+    minimumOrderAmount: initial?.minimumOrderAmount ?? "", maximumDiscountAmount: initial?.maximumDiscountAmount ?? "",
+    totalUsageLimit: initial?.totalUsageLimit ?? "", usageLimitPerCustomer: initial?.usageLimitPerCustomer ?? 1,
+    eligibilityType: initial?.eligibilityType || "all", eligibleCustomerIds: initial?.eligibleCustomerIds?.map(String) || [],
+    applicableScope: initial?.applicableScope || "all", applicableCategoryIds: initial?.applicableCategoryIds?.map(String) || [],
+    applicableOccasionIds: initial?.applicableOccasionIds?.map(String) || [], applicableProductIds: initial?.applicableProductIds?.map(String) || [],
+    startDate: String(initial?.startAt || "").slice(0, 10), endDate: String(initial?.endAt || "").slice(0, 10),
+    status: initial?.status || "active", isPublic: initial?.isPublic !== false
+  });
+  const update = (field, value) => setForm((current) => ({
+    ...current,
+    [field]: value,
+    ...(field === "eligibilityType" && value === "first_order" ? { usageLimitPerCustomer: 1 } : {})
+  }));
   const nextDate = form.startDate ? (() => { const date = new Date(`${form.startDate}T00:00:00Z`); date.setUTCDate(date.getUTCDate() + 1); return date.toISOString().slice(0, 10); })() : undefined;
+  const submit = (event) => {
+    event.preventDefault();
+    if (!initial && (!form.startDate || !form.endDate)) {
+      notify?.("Vui lòng chọn ngày bắt đầu và ngày kết thúc.", "error");
+      return;
+    }
+    const payload = {
+      ...form,
+      totalUsageLimit: form.totalUsageLimit === "" ? null : Number(form.totalUsageLimit),
+      maximumDiscountAmount: form.maximumDiscountAmount === "" ? null : Number(form.maximumDiscountAmount),
+      minimumOrderAmount: Number(form.minimumOrderAmount || 0),
+      usageLimitPerCustomer: Number(form.usageLimitPerCustomer || 1),
+      usageCount: undefined
+    };
+    if (!initial || (form.startDate && form.startDate !== String(initial.startAt || "").slice(0, 10))) {
+      payload.startAt = form.startDate ? `${form.startDate}T00:00:00+07:00` : "";
+    }
+    if (!initial || (form.endDate && form.endDate !== String(initial.endAt || "").slice(0, 10))) {
+      payload.endAt = form.endDate ? `${form.endDate}T23:59:59.999+07:00` : "";
+    }
+    onSave(payload, initial ? itemId(initial) : null);
+  };
+  const options = (values, label) => asArray(values).map((item) => ({ value: itemId(item), label: item[label] || item.name || item.code })).filter((item) => item.value);
   return (
-    <AdminModal title={initial ? "Sửa voucher" : "Thêm voucher"} onClose={onClose}>
-      <form className="admin-form" onSubmit={(event) => { event.preventDefault(); onSave(form, initial ? itemId(initial) : null); }}>
+    <AdminModal title={initial ? "Sửa voucher" : "Thêm voucher"} onClose={onClose} className="voucher-form-modal">
+      <form className="admin-form voucher-form" onSubmit={submit}>
         <div className="form-grid">
           <label>Mã voucher<input required value={form.code} onChange={(e) => update("code", e.target.value.toUpperCase())} /></label>
           <label>Tên voucher<input required value={form.name} onChange={(e) => update("name", e.target.value)} /></label>
           <ModalSelect label="Loại giảm" value={form.discountType} onChange={(value) => update("discountType", value)} options={[["percent", "Phần trăm"], ["fixed", "Số tiền"]]} />
-          {form.discountType === "percent" ? <PlainNumberInput label="Giá trị giảm" value={form.discountValue} min={1} max={100} suffix="%" onChange={(value) => update("discountValue", value)} /> : <MoneyThousandsInput label="Giá trị giảm" value={form.discountValue} onChange={(value) => update("discountValue", value)} />}
-          <MoneyThousandsInput label="Đơn tối thiểu" value={form.minOrderValue} onChange={(value) => update("minOrderValue", value)} />
-          <MoneyThousandsInput label="Giảm tối đa" value={form.maxDiscount} onChange={(value) => update("maxDiscount", value)} />
-          <PlainNumberInput label="Số lượt dùng" value={form.usageLimit} min={0} onChange={(value) => update("usageLimit", value)} />
+          {form.discountType === "percent" ? <PlainNumberInput required label="Giá trị giảm" value={form.discountValue} min={1} max={100} suffix="%" onChange={(value) => update("discountValue", value)} /> : <MoneyThousandsInput required label="Giá trị giảm" value={form.discountValue} onChange={(value) => update("discountValue", value)} />}
+          <MoneyThousandsInput label="Đơn tối thiểu" value={form.minimumOrderAmount} onChange={(value) => update("minimumOrderAmount", value)} />
+          {form.discountType === "percent" && <MoneyThousandsInput label="Giảm tối đa" value={form.maximumDiscountAmount} onChange={(value) => update("maximumDiscountAmount", value)} />}
+          <PlainNumberInput label="Tổng lượt sử dụng tối đa" value={form.totalUsageLimit} min={1} placeholder="Không giới hạn" onChange={(value) => update("totalUsageLimit", value)} />
+          <PlainNumberInput label="Giới hạn mỗi khách" value={form.usageLimitPerCustomer} min={1} readOnly={form.eligibilityType === "first_order"} onChange={(value) => update("usageLimitPerCustomer", value)} />
+          <PlainNumberInput label="Số lượt đã dùng (hệ thống)" value={initial?.usageCount || 0} readOnly />
           <ModalDatePicker label="Ngày bắt đầu" value={form.startDate} onChange={(value) => update("startDate", value)} />
           <ModalDatePicker label="Ngày kết thúc" value={form.endDate} minDate={nextDate} onChange={(value) => update("endDate", value)} />
-          <ModalSelect label="Trạng thái" value={form.status} onChange={(value) => update("status", value)} options={[["active", "Đang hiển thị"], ["inactive", "Đã ẩn"], ["expired", "Hết hiệu lực"]]} />
+          <ModalSelect label="Trạng thái" value={form.status} onChange={(value) => update("status", value)} options={[["active", "Đang bật"], ["inactive", "Tạm tắt"]]} />
+          <ModalSelect label="Điều kiện khách hàng" value={form.eligibilityType} onChange={(value) => update("eligibilityType", value)} options={Object.entries(voucherEligibilityLabels)} />
+          <ModalSelect label="Phạm vi áp dụng" value={form.applicableScope} onChange={(value) => update("applicableScope", value)} options={[["all", "Toàn bộ trang phục"], ["category", "Danh mục"], ["occasion", "Dịp"], ["product", "Trang phục cụ thể"]]} />
+          {form.eligibilityType === "specific_customers" && <ModalMultiSelect label="Khách hàng được áp dụng" value={form.eligibleCustomerIds} options={options(customers, "name")} onChange={(value) => update("eligibleCustomerIds", value)} />}
+          {form.applicableScope === "category" && <ModalMultiSelect label="Danh mục áp dụng" value={form.applicableCategoryIds} options={options(categories, "name")} onChange={(value) => update("applicableCategoryIds", value)} />}
+          {form.applicableScope === "occasion" && <ModalMultiSelect label="Dịp áp dụng" value={form.applicableOccasionIds} options={options(occasions, "name")} onChange={(value) => update("applicableOccasionIds", value)} />}
+          {form.applicableScope === "product" && <ModalMultiSelect label="Trang phục áp dụng" value={form.applicableProductIds} options={options(costumes, "name")} onChange={(value) => update("applicableProductIds", value)} />}
         </div>
-        <label>Mô tả<textarea value={form.description} onChange={(e) => update("description", e.target.value)} /></label>
+        <label className="voucher-description-field">Mô tả<textarea value={form.description} onChange={(e) => update("description", e.target.value)} /></label>
+        <label className="voucher-public-field"><input type="checkbox" checked={form.isPublic} onChange={(event) => update("isPublic", event.target.checked)} /><span>Công khai voucher trên trang ưu đãi cho khách</span></label>
         <div className="modal-actions"><AdminButton type="button" onClick={onClose}>Hủy</AdminButton><AdminButton type="submit" variant="primary">Lưu</AdminButton></div>
       </form>
     </AdminModal>
@@ -2636,7 +2799,8 @@ const paymentTypeLabels = {
   refund: "Hoàn cọc"
 };
 
-function PaymentManager({ rows, notify, reload }) {
+function PaymentManager({ rows, notify, reload, canConfirm }) {
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const orderFilter = searchParams.get("orderId") || "";
   const [search, setSearch] = useState("");
@@ -2644,10 +2808,14 @@ function PaymentManager({ rows, notify, reload }) {
   const [typeFilter, setTypeFilter] = useState("");
   const [methodFilter, setMethodFilter] = useState("");
   const debouncedSearch = useDebouncedValue(search, 600);
-  const [selectedId, setSelectedId] = useState(searchParams.get("paymentId") || null);
+  const legacyPaymentId = searchParams.get("paymentId") || "";
   const [liveRows, setLiveRows] = useState(asArray(rows));
 
   useEffect(() => setLiveRows(asArray(rows)), [rows]);
+
+  useEffect(() => {
+    if (legacyPaymentId) navigate(`/payments/${legacyPaymentId}`, { replace: true });
+  }, [legacyPaymentId, navigate]);
 
   useEffect(() => {
     let active = true;
@@ -2667,6 +2835,7 @@ function PaymentManager({ rows, notify, reload }) {
   }, []);
 
   const filtered = liveRows.filter((row) => {
+    if (row.paymentType === "refund") return false;
     const matchesOrder = !orderFilter || itemId(row.orderId || row.order) === orderFilter;
     const matchesSearch = Object.values(row || {}).join(" ").toLowerCase().includes(debouncedSearch.toLowerCase());
     const matchesStatus = !statusFilter || row.status === statusFilter;
@@ -2682,7 +2851,7 @@ function PaymentManager({ rows, notify, reload }) {
         <div className="admin-toolbar admin-payment-filters">
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={"T\u00ecm theo m\u00e3, kh\u00e1ch h\u00e0ng, tr\u1ea1ng th\u00e1i..."} />
           <AdminSelect value={statusFilter} onChange={setStatusFilter} options={[["", "Tất cả trạng thái"], ["pending", "Đang chờ thanh toán"], ["awaiting_confirmation", "Chờ cửa hàng xác nhận"], ["success", "Thành công"], ["failed", "Thất bại"], ["canceled", "Đã hủy"], ["expired", "Hết hạn"], ["refunded", "Đã hoàn tiền"]]} />
-          <AdminSelect value={typeFilter} onChange={setTypeFilter} options={[["", "Tất cả loại thanh toán"], ["deposit", "Tiền cọc"], ["full", "Thanh toán toàn bộ"], ["rental_balance", "Thanh toán phần còn lại"], ["penalty", "Phí phát sinh"], ["refund", "Hoàn cọc"]]} />
+          <AdminSelect value={typeFilter} onChange={setTypeFilter} options={[["", "Tất cả loại thanh toán"], ["deposit", "Tiền cọc"], ["full", "Thanh toán toàn bộ"], ["rental_balance", "Thanh toán phần còn lại"], ["penalty", "Phí phát sinh"]]} />
           <AdminSelect value={methodFilter} onChange={setMethodFilter} options={[["", "Tất cả phương thức"], ["cash", "Tiền mặt khi nhận đồ"], ["bank_transfer", "Chuyển khoản cửa hàng xác nhận"], ["payos", "QR ngân hàng (payOS)"]]} />
         </div>
         <AdminTable
@@ -2697,17 +2866,18 @@ function PaymentManager({ rows, notify, reload }) {
             paymentType: (value) => paymentTypeLabels[value] || value,
             method: (value) => value === "payos" ? "QR ngân hàng" : value === "cash" ? "Tiền mặt" : value === "bank_transfer" ? "Chuyển khoản ngân hàng" : value,
             provider: (value) => value === "payos" ? "payOS" : value,
-            status: (value) => <span className={"badge " + value}>{getStatusLabel(value)}</span>
+            status: (value) => <StatusBadge type="payment" value={value} />
           }}
-          actions={(row) => <AdminButton onClick={() => setSelectedId(itemId(row))}><Eye size={14} /> Xem</AdminButton>}
+          actions={(row) => <AdminButton onClick={() => navigate(`/payments/${itemId(row)}`)}><Eye size={14} /> Xem</AdminButton>}
+          tableClassName="payment-table"
+          colWidths={["175px", "100px", "110px", "160px", "90px", "180px", "170px", "150px", "110px"]}
         />
       </div>
-      {selectedId && <PaymentDetailModal id={selectedId} fallback={liveRows.find((row) => itemId(row) === selectedId)} notify={notify} onChanged={reload} onClose={() => setSelectedId(null)} />}
     </>
   );
 }
 
-function PaymentDetailModal({ id, fallback, notify, onChanged, onClose }) {
+function PaymentDetailModal({ id, fallback, notify, onChanged, onClose, canConfirm = true }) {
   const [payment, setPayment] = useState(fallback || null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -2736,24 +2906,28 @@ function PaymentDetailModal({ id, fallback, notify, onChanged, onClose }) {
   const refundDestination = payment?.refundDestination;
 
   return (
-    <AdminModal title={"Chi ti\u1ebft thanh to\u00e1n"} onClose={onClose}>
+    <AdminModal title={"Chi ti\u1ebft thanh to\u00e1n"} onClose={onClose} className="payment-detail-modal">
       {loading && <LoadingState />}
       {error && <div className="admin-state error">{error}</div>}
       {payment && (
         <div className="payment-detail">
-          <div className="detail-list">
+          <section className="payment-review-summary">
+            <div><small>GIAO DỊCH KHÁCH HÀNG</small><h2>{money(payment.amount)}</h2><p>{paymentTypeLabels[payment.paymentType] || payment.paymentType} · {order.orderCode || `ARA-${String(itemId(order)).slice(-6).toUpperCase()}`}</p></div>
+            <StatusBadge type={isRefund ? "refund" : "payment"} value={payment.status} />
+          </section>
+          <div className="detail-list payment-transaction-details">
             <DetailRow label={isRefund ? "Mã hoàn cọc" : "Mã thanh toán"} value={isRefund ? (payment.refundCode || payment.paymentReference) : (payment.paymentReference || itemId(payment))} />
             <DetailRow label={"M\u00e3 \u0111\u01a1n thu\u00ea"} value={order.orderCode || `ARA-${String(itemId(order)).slice(-6).toUpperCase()}`} />
             <DetailRow label={"Kh\u00e1ch h\u00e0ng"} value={customer.name || customer.email || customer.phone} />
             <DetailRow label={"S\u1ed1 ti\u1ec1n"} value={money(payment.amount)} />
             <DetailRow label={"Ph\u01b0\u01a1ng th\u1ee9c thanh to\u00e1n"} value={({ cash: "Tiền mặt", bank_transfer: "Chuyển khoản ngân hàng", momo: "MoMo", vnpay: "VNPay", payos: "PayOS", bank_gateway: "Cổng ngân hàng" })[payment.method] || payment.method} />
-            <DetailRow label="Minh chứng chuyển khoản" value={payment.proofUrl ? <a href={payment.proofUrl} target="_blank" rel="noreferrer">Xem minh chứng</a> : "Chưa tải lên"} />
+            <DetailRow label="Minh chứng chuyển khoản" value={payment.proofAccessUrl ? <a className="payment-proof-link" href={payment.proofAccessUrl} target="_blank" rel="noreferrer">Mở ảnh minh chứng</a> : payment.method === "bank_transfer" ? "Khách chưa gửi minh chứng" : "Không áp dụng"} />
             {!isRefund && <DetailRow label="Nhà cung cấp" value={payment.provider === "payos" ? "payOS" : payment.provider} />}
             {!isRefund && <DetailRow label="Mã đơn provider" value={payment.providerOrderCode || payment.providerOrderId} />}
             {!isRefund && <DetailRow label="Mã giao dịch provider" value={payment.providerTransactionId} />}
             <DetailRow label={"Lo\u1ea1i thanh to\u00e1n"} value={paymentTypeLabels[payment.paymentType] || payment.paymentType} />
             <DetailRow label={"M\u00e3 tham chi\u1ebfu"} value={payment.paymentReference} />
-            <DetailRow label={"Tr\u1ea1ng th\u00e1i"} value={payment.status} status />
+            <DetailRow label={"Tr\u1ea1ng th\u00e1i"} value={payment.status} statusType={isRefund ? "refund" : "payment"} />
             <DetailRow label={"Ng\u00e0y thanh to\u00e1n"} value={formatDateTime(payment.paidAt)} />
             <DetailRow label={"Ng\u00e0y t\u1ea1o"} value={formatDateTime(payment.createdAt)} />
           </div>
@@ -2765,10 +2939,10 @@ function PaymentDetailModal({ id, fallback, notify, onChanged, onClose }) {
               {!refundDestination && <p className="admin-refund-missing">Chưa thể hoàn tiền. Khách cần thêm tài khoản ngân hàng hoặc ảnh VietQR nhận hoàn cọc.</p>}
             </section>
           )}
-          <div className="detail-list">
+          <div className="detail-list payment-order-totals">
             <DetailRow label={"Ng\u00e0y thu\u00ea"} value={formatDate(order.rentalDate)} />
             <DetailRow label={"Ng\u00e0y tr\u1ea3"} value={formatDate(order.returnDate)} />
-            <DetailRow label={"Tr\u1ea1ng th\u00e1i \u0111\u01a1n"} value={order.status} status />
+            <DetailRow label={"Tr\u1ea1ng th\u00e1i \u0111\u01a1n"} value={order.status} statusType="order" />
             <DetailRow label={"Ti\u1ec1n thu\u00ea"} value={money(order.totalRentalPrice)} />
             <DetailRow label={"Ti\u1ec1n c\u1ecdc"} value={money(order.totalDepositAmount)} />
             <DetailRow label={"Ph\u00ed ph\u1ea1t"} value={money(penaltyFee)} />
@@ -2794,7 +2968,7 @@ function PaymentDetailModal({ id, fallback, notify, onChanged, onClose }) {
             )}
           </div>
           <div className="modal-actions">
-            {payment.status === "awaiting_confirmation" && (
+            {canConfirm && payment.status === "awaiting_confirmation" && (
               <>
                 <AdminButton
                   variant="primary"
@@ -2874,8 +3048,8 @@ function PaymentDetailModal({ id, fallback, notify, onChanged, onClose }) {
   );
 }
 
-function DetailRow({ label, value, status = false }) {
-  return <div className="detail-row"><span>{label}</span><strong>{status ? getStatusLabel(value) : display(value)}</strong></div>;
+function DetailRow({ label, value, statusType = "" }) {
+  return <div className="detail-row"><span>{label}</span><strong>{statusType ? getStatusLabel(value, statusType) : display(value)}</strong></div>;
 }
 
 function Reports({ stats, orders, costumes, summary }) {
@@ -2906,19 +3080,22 @@ function isMoneyColumn(column) {
   return /price|amount|fee|deposit|revenue|total|value/i.test(column);
 }
 
-function AdminTable({ title, rows = [], columns, labels, format = {}, actions, colWidths = [], columnClasses = {}, tableClassName = "" }) {
+function AdminTable({ title, rows = [], columns, labels, format = {}, actions, colWidths = [], columnClasses = {}, tableClassName = "", mobileCards = false, page: externalPage, pageSize: externalPageSize = 10, total: externalTotal, totalPages: externalTotalPages, onPageChange, paginationDisabled = false }) {
   const safeRows = asArray(rows);
-  const [page, setPage] = useState(1);
-  const pageSize = 10;
-  const totalPages = Math.max(1, Math.ceil(safeRows.length / pageSize));
-  const pagedRows = safeRows.slice((page - 1) * pageSize, page * pageSize);
+  const isServerPaginated = externalTotalPages !== undefined;
+  const [internalPage, setInternalPage] = useState(1);
+  const page = isServerPaginated ? Number(externalPage) || 1 : internalPage;
+  const pageSize = Number(externalPageSize) || 10;
+  const totalPages = isServerPaginated ? Math.max(1, Number(externalTotalPages) || 1) : Math.max(1, Math.ceil(safeRows.length / pageSize));
+  const pagedRows = isServerPaginated ? safeRows : safeRows.slice((page - 1) * pageSize, page * pageSize);
+  const wrapperClasses = tableClassName.split(/\s+/).filter(Boolean).map((token) => `${token}-wrap`).join(" ");
 
   useEffect(() => {
-    if (page > totalPages) setPage(totalPages);
-  }, [page, totalPages]);
+    if (!isServerPaginated && internalPage > totalPages) setInternalPage(totalPages);
+  }, [internalPage, isServerPaginated, totalPages]);
 
   return (
-    <div className="admin-table-wrap">
+    <div className={`admin-table-wrap ${mobileCards ? "admin-table-mobile-cards" : ""} ${wrapperClasses}`.trim()}>
       {title && <h2>{title}</h2>}
       {safeRows.length === 0 ? <EmptyState /> : (
         <>
@@ -2935,28 +3112,28 @@ function AdminTable({ title, rows = [], columns, labels, format = {}, actions, c
             <thead><tr>{labels.map((label) => <th key={label}>{label}</th>)}{actions && <th className="action-cell">Thao tác</th>}</tr></thead>
             <tbody>{pagedRows.map((row, index) => (
               <tr key={itemId(row) || index}>
-                {columns.map((col) => {
+                {columns.map((col, columnIndex) => {
                   const value = format[col] ? format[col](row[col], row) : col === "status" ? <StatusBadge value={row[col]} /> : row[col];
                   const className = ["admin-cell", isMoneyColumn(col) ? "money-cell" : "", columnClasses[col] || ""].filter(Boolean).join(" ");
-                  return <td key={col} className={className}><span className="cell-content">{value}</span></td>;
+                  return <td key={col} className={className} data-label={mobileCards ? labels[columnIndex] : undefined}><span className="cell-content">{value}</span></td>;
                 })}
-                {actions && <td className="action-cell"><div className="action-group row-actions">{actions(row)}</div></td>}
+                {actions && <td className="action-cell" data-label={mobileCards ? "Thao tác" : undefined}><div className="action-group row-actions">{actions(row)}</div></td>}
               </tr>
             ))}</tbody>
           </table>
-          {totalPages > 1 && <Pagination page={page} totalPages={totalPages} setPage={setPage} />}
+          {totalPages > 1 && <Pagination page={page} totalPages={totalPages} setPage={onPageChange || setInternalPage} disabled={paginationDisabled} />}
         </>
       )}
     </div>
   );
 }
 
-function Pagination({ page, totalPages, setPage }) {
+function Pagination({ page, totalPages, setPage, disabled = false }) {
   return (
     <div className="pagination">
-      <button disabled={page <= 1} onClick={() => setPage((current) => current - 1)}>Trước</button>
+      <button disabled={disabled || page <= 1} onClick={() => setPage(page - 1)}>Trước</button>
       <span>{page}/{totalPages}</span>
-      <button disabled={page >= totalPages} onClick={() => setPage((current) => current + 1)}>Sau</button>
+      <button disabled={disabled || page >= totalPages} onClick={() => setPage(page + 1)}>Sau</button>
     </div>
   );
 }

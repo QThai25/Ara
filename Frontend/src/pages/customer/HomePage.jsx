@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { BenefitSection } from "../../components/customer/BenefitSection.jsx";
-import { HeroSection } from "../../components/customer/HeroSection.jsx";
+import { HeroSection, HeroSectionSkeleton } from "../../components/customer/HeroSection.jsx";
 import { OccasionSection } from "../../components/customer/OccasionSection.jsx";
 import { ProductSection } from "../../components/customer/ProductSection.jsx";
 import { StyleSection } from "../../components/customer/StyleSection.jsx";
@@ -12,10 +12,21 @@ import { isWishlisted, toggleWishlist } from "../../services/wishlistService.js"
 export function HomePage({ setView, user, notify }) {
   const { products, loading, error } = useProducts("");
   const [banners, setBanners] = useState([]);
+  const [bannersLoading, setBannersLoading] = useState(true);
   const [, setWishlistVersion] = useState(0);
 
   useEffect(() => {
-    getActiveBanners("hero").then((items) => setBanners(items));
+    let mounted = true;
+
+    getActiveBanners("hero").then((items) => {
+      if (!mounted) return;
+      setBanners(items);
+      setBannersLoading(false);
+    });
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   const openProduct = (product) => {
@@ -36,8 +47,8 @@ export function HomePage({ setView, user, notify }) {
 
   return (
     <>
-      <HeroSection products={products} banners={banners} setView={setView} />
-      <BenefitSection />
+      {bannersLoading ? <HeroSectionSkeleton /> : <HeroSection products={products} banners={banners} setView={setView} />}
+      <BenefitSection user={user} notify={notify} />
       <OccasionSection />
       <StyleSection />
       <ProductSection products={products} loading={loading} error={error} onOpen={openProduct} onWishlist={toggle} isWishlisted={(id) => isWishlisted(id, user?.id || user?._id)} />

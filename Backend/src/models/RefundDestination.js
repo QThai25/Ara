@@ -4,9 +4,14 @@ const schema = new mongoose.Schema({
   type: { type: String, enum: ["bank_account", "vietqr_image"], required: true },
   label: { type: String, required: true, trim: true, maxlength: 80 },
   bankCode: { type: String, default: "", trim: true }, bankName: { type: String, default: "", trim: true },
+  bankBin: { type: String, default: "", trim: true },
   encryptedAccountNumber: { type: String, default: "", select: false },
   accountNumberLast4: { type: String, default: "", trim: true },
   accountHolderName: { type: String, default: "", trim: true },
+  method: { type: String, enum: ["bank_account"], default: "bank_account" },
+  inputMethod: { type: String, enum: ["manual", "uploaded_vietqr"], default: "manual" },
+  verificationStatus: { type: String, enum: ["unverified", "verified", "verification_failed"], default: "unverified" },
+  verifiedAt: { type: Date, default: null }, confirmedAt: { type: Date, default: null },
   qrAsset: { publicId: { type: String, default: "" }, secureUrl: { type: String, default: "" }, mimeType: { type: String, default: "" } },
   isDefault: { type: Boolean, default: false }, isEnabled: { type: Boolean, default: true }
 }, { timestamps: true });

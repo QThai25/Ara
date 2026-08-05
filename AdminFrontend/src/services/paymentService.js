@@ -1,4 +1,5 @@
 import { apiClient } from "./apiClient.js";
+import { PAYMENT_TIMEOUT_MS } from "./api.js";
 
 const unwrap = (response) => response?.data ?? response ?? null;
 
@@ -29,6 +30,7 @@ export async function getAdminPaymentQuote(params) {
 
 export async function createAdminPayment(payload, idempotencyKey) {
   return unwrap(await apiClient.post("/payments", payload, {
+    timeout: PAYMENT_TIMEOUT_MS,
     headers: { "Idempotency-Key": idempotencyKey }
   }));
 }

@@ -1,3 +1,4 @@
+
 import mongoose from "mongoose";
 
 const categorySchema = new mongoose.Schema(
@@ -6,12 +7,12 @@ const categorySchema = new mongoose.Schema(
     slug: { type: String, unique: true, trim: true, lowercase: true },
     description: { type: String, default: "" },
     icon: { type: String, default: "" },
-    defaultStyleId: { type: mongoose.Schema.Types.ObjectId, ref: "Style", default: null },
     defaultStyleIds: [{ type: mongoose.Schema.Types.ObjectId, ref: "Style" }],
+    defaultStyleId: { type: mongoose.Schema.Types.ObjectId, ref: "Style", default: null },
     defaultStyleName: { type: String, default: "", trim: true },
     defaultStyleSlug: { type: String, default: "", trim: true, lowercase: true },
-    defaultOccasionId: { type: mongoose.Schema.Types.ObjectId, ref: "Occasion", default: null },
     defaultOccasionIds: [{ type: mongoose.Schema.Types.ObjectId, ref: "Occasion" }],
+    defaultOccasionId: { type: mongoose.Schema.Types.ObjectId, ref: "Occasion", default: null },
     defaultOccasionName: { type: String, default: "", trim: true },
     defaultOccasionSlug: { type: String, default: "", trim: true, lowercase: true },
     classificationDefaultsInitialized: { type: Boolean, default: false },

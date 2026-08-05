@@ -18,22 +18,24 @@ export function PaymentResultPage() {
     }
     let stopped = false;
     let timer;
+    const controller = new AbortController();
     const poll = async () => {
       try {
-        const config = { headers: { "X-Guest-Order-Token": guestSession.token } };
+        const config = { signal: controller.signal, headers: { "X-Guest-Order-Token": guestSession.token } };
         const result = await getPaymentStatus(pending.paymentId, config);
         if (stopped) return;
         setState({ ...result, error: "" });
         if (!terminal.includes(result.status)) timer = setTimeout(poll, 3000);
       } catch (error) {
+        if (controller.signal.aborted) return;
         if (!stopped) {
-          if ([401, 403].includes(error?.response?.status)) removeGuestOrderSession(pending.orderCode);
+          if ([401, 403].includes(error?.status)) removeGuestOrderSession(pending.orderCode);
           setState({ status: "failed", error: error.message || "Không thể kiểm tra giao dịch." });
         }
       }
     };
     poll();
-    return () => { stopped = true; clearTimeout(timer); };
+    return () => { stopped = true; controller.abort(); clearTimeout(timer); };
   }, [pending, guestSession?.token]);
   const success = state.status === "success";
   const waiting = ["pending", "awaiting_confirmation"].includes(state.status);

@@ -14,6 +14,11 @@ const integer = (name, fallback, { min = 0, max = Number.MAX_SAFE_INTEGER } = {}
   if (!Number.isInteger(parsed) || parsed < min || parsed > max) throw new Error(`Bien moi truong ${name} khong hop le.`);
   return parsed;
 };
+const sameSite = (name, fallback) => {
+  const parsed = value(name, fallback).toLowerCase();
+  if (!["strict", "lax", "none"].includes(parsed)) throw new Error(`Bien moi truong ${name} khong hop le.`);
+  return parsed;
+};
 
 const nodeEnv = value("NODE_ENV", "development");
 const port = Number(value("PORT", "4000"));
@@ -31,12 +36,13 @@ export const env = Object.freeze({
   mongoSocketTimeoutMs: integer("MONGODB_SOCKET_TIMEOUT_MS", 45000, { min: 5000, max: 300000 }),
   mongoMaxIdleTimeMs: integer("MONGODB_MAX_IDLE_TIME_MS", 60000, { min: 10000, max: 600000 }),
   shutdownTimeoutMs: integer("SHUTDOWN_TIMEOUT_MS", 10000, { min: 1000, max: 60000 }),
-  corsOrigins: origins(value("CORS_ORIGINS", value("CLIENT_URLS", value("CLIENT_URL", "http://localhost:5173,http://localhost:5174")))),
+  corsOrigins: origins(value("CORS_ORIGINS", value("CLIENT_URLS", value("CLIENT_URL", "http://localhost:5173,http://localhost:5174,https://tsw6wlqc-5173.asse.devtunnels.ms")))),
+  trustedDeviceCookieSameSite: sameSite("TRUSTED_DEVICE_COOKIE_SAME_SITE", nodeEnv === "production" ? "none" : "lax"),
   payosEnabled: boolean("PAYOS_ENABLED", false)
 });
 
 if (env.isProduction) {
-  const required = ["MONGODB_URI", "JWT_SECRET", "GUEST_ORDER_TOKEN_SECRET"];
+  const required = ["MONGODB_URI", "JWT_SECRET", "GUEST_ORDER_TOKEN_SECRET", "PASSWORD_RECOVERY_TOKEN_SECRET"];
   required.push("CLOUDINARY_CLOUD_NAME", "CLOUDINARY_API_KEY", "CLOUDINARY_API_SECRET");
   if (env.payosEnabled) required.push("PAYOS_CLIENT_ID", "PAYOS_API_KEY", "PAYOS_CHECKSUM_KEY", "PAYOS_RETURN_URL", "PAYOS_CANCEL_URL", "PAYOS_WEBHOOK_URL");
   const missing = [...new Set(required)].filter((name) => !value(name));
@@ -44,4 +50,5 @@ if (env.isProduction) {
   if (!env.corsOrigins.length) throw new Error("CORS_ORIGINS khong duoc de trong trong production.");
   if (env.corsOrigins.some((origin) => origin === "*" || origin.includes("localhost"))) throw new Error("CORS_ORIGINS production khong duoc dung wildcard hoac localhost.");
   if (env.mongoMinPoolSize > env.mongoMaxPoolSize) throw new Error("MONGODB_MIN_POOL_SIZE khong duoc lon hon MONGODB_MAX_POOL_SIZE.");
+  if (env.trustedDeviceCookieSameSite !== "none") throw new Error("TRUSTED_DEVICE_COOKIE_SAME_SITE production phai la none cho Vercel va backend khac site.");
 }

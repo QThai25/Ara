@@ -1,34 +1,34 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { Banknote, Boxes, CreditCard, PackageCheck, ReceiptText, Shirt, Users, WalletCards } from "lucide-react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { Banknote, Boxes, CreditCard, PackageCheck, ReceiptText, RotateCcw, Shirt, Users, WalletCards } from "lucide-react";
 import { AdminPageHeader } from "../components/common/AdminUI.jsx";
 import { ReportFilterBar } from "../components/reports/ReportFilterBar.jsx";
-import { BarMoneyChart, DonutBreakdownChart, OrderTrendChart, ReportChartCard, ReportSkeleton, RevenueTrendChart } from "../components/reports/ReportCharts.jsx";
+import { BarMoneyChart, DonutBreakdownChart, OrderTrendChart, ReportChartCard, ReportSkeleton, RevenueFlowChart, RevenueTrendChart } from "../components/reports/ReportCharts.jsx";
 import { ReportKpiCard } from "../components/reports/ReportKpiCard.jsx";
 import { RevenueTransactionTable, SimpleReportTable } from "../components/reports/ReportDataTable.jsx";
 import { REPORT_TABS } from "../constants/report.constants.js";
 import { buildReportQuery, parseReportQuery, presetRange } from "../utils/reportFilters.js";
+import { getRevenueFlow } from "../utils/dashboardReportData.js";
 import { formatReportCurrency, formatReportDate } from "../utils/reportFormat.js";
 import * as reportService from "../services/adminReportService.js";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
+import { useReportFilters } from "../hooks/useReportFilters.js";
 
 export function AdminReportPage({ notify }) {
-  const [searchParams, setSearchParams] = useSearchParams();
-  const [filters, setFilters] = useState(() => parseReportQuery(searchParams));
+  const { filters, setFilters } = useReportFilters({ includeTab: true, includePage: true });
   const [state, setState] = useState({ loading: true, exporting: false, error: "", data: {} });
+  const requestRef = useRef(0);
 
   useEffect(() => {
-    setSearchParams(buildReportQuery(filters, { includeTab: true, includePage: true }), { replace: true });
-  }, [filters, setSearchParams]);
-
-  useEffect(() => {
+    const requestId = ++requestRef.current;
     const controller = new AbortController();
     const params = buildReportQuery(filters, { includePage: true });
     const loaders = tabLoaders(filters.tab, params, controller.signal);
-    setState((current) => ({ ...current, loading: true, error: "" }));
+    setState((current) => ({ ...current, loading: true, error: "", data: {} }));
     Promise.all(loaders).then((results) => {
+      if (requestRef.current !== requestId) return;
       setState((current) => ({ ...current, loading: false, data: Object.assign({}, ...results) }));
     }).catch((error) => {
-      if (controller.signal.aborted) return;
+      if (controller.signal.aborted || requestRef.current !== requestId) return;
       setState((current) => ({ ...current, loading: false, error: error.message }));
       notify?.(error.message, "error");
     });
@@ -66,7 +66,7 @@ export function AdminReportPage({ notify }) {
       </div>
       <ReportFilterBar filters={filters} onChange={setFilters} onReset={reset} advanced onExport={filters.tab === "revenue" ? exportCsv : null} exporting={state.exporting} />
       {state.error && <div className="admin-state error">{state.error}</div>}
-      {renderTab(filters, state, setFilters)}
+      {!state.error && renderTab(filters, state, setFilters)}
     </div>
   );
 }
@@ -75,7 +75,6 @@ function tabLoaders(tab, params, signal) {
   if (tab === "revenue") return [
     reportService.getReportOverview(params, { signal }).then((overview) => ({ overview })),
     reportService.getRevenueTrend(params, { signal }).then((trend) => ({ trend })),
-    reportService.getRevenueBreakdown(params, { signal }).then((breakdown) => ({ breakdown })),
     reportService.getPaymentMethods(params, { signal }).then((methods) => ({ methods })),
     reportService.getRevenueTransactions(params, { signal }).then((transactions) => ({ transactions }))
   ];
@@ -106,6 +105,7 @@ function renderTab(filters, state, setFilters) {
   const kpis = data.overview?.kpis || {};
   return (
     <>
+      {!!data.overview?.warnings?.length && <div className="admin-state" role="status">{data.overview.warnings[0].message}</div>}
       <section className="report-kpi-grid compact">
         <ReportKpiCard icon={<Banknote />} label="Doanh thu thực nhận" metric={kpis.netRevenue} money />
         <ReportKpiCard icon={<PackageCheck />} label="Tổng đơn thuê" metric={kpis.totalOrders} />
@@ -123,17 +123,21 @@ function renderTab(filters, state, setFilters) {
 function RevenueTab({ filters, state, setFilters }) {
   const data = state.data;
   const kpis = data.overview?.kpis || {};
+  const revenueFlow = getRevenueFlow(data.overview?.summary);
   return (
     <>
+      {!!data.overview?.warnings?.length && <div className="admin-state" role="status">{data.overview.warnings[0].message}</div>}
       <section className="report-kpi-grid compact">
-        <ReportKpiCard icon={<Banknote />} label="Thực nhận" metric={kpis.netRevenue} money />
-        <ReportKpiCard icon={<WalletCards />} label="Tiền cọc" metric={kpis.depositRevenue} money />
-        <ReportKpiCard icon={<CreditCard />} label="Tiền thuê" metric={kpis.rentalRevenue} money />
-        <ReportKpiCard icon={<ReceiptText />} label="Phí phạt" metric={kpis.penaltyRevenue} money />
+        <ReportKpiCard icon={<WalletCards />} label="Tổng thanh toán thành công" metric={Number(kpis.successfulPayments?.currentValue || 0) > 0 ? kpis.successfulPayments : revenueFlow.collectedAmount} money />
+        <ReportKpiCard icon={<RotateCcw />} label="Số tiền đã hoàn" metric={kpis.refundedAmount} money />
+        <ReportKpiCard icon={<Banknote />} label="Doanh thu thực nhận" metric={kpis.netRevenue} money />
+        <ReportKpiCard icon={<CreditCard />} label="Thanh toán đơn thuê" metric={kpis.rentalRevenue} money />
       </section>
       <section className="report-grid-2">
         <ReportChartCard title="Xu hướng doanh thu">{state.loading ? <ReportSkeleton /> : <RevenueTrendChart data={data.trend?.data || []} />}</ReportChartCard>
-        <ReportChartCard title="Cơ cấu doanh thu">{state.loading ? <ReportSkeleton /> : <DonutBreakdownChart data={data.breakdown?.breakdown || []} center={<><strong>{formatReportCurrency(data.overview?.summary?.netRevenue || 0)}</strong><span>thực nhận</span></>} />}</ReportChartCard>
+        <ReportChartCard title="Cách tính tiền thực nhận" description="Đi từ tổng tiền đã thu, trừ khoản đã hoàn cho khách, để ra số tiền cửa hàng thực nhận.">
+          {state.loading ? <ReportSkeleton /> : <RevenueFlowChart {...revenueFlow} />}
+        </ReportChartCard>
         <ReportChartCard title="Theo phương thức thanh toán">{state.loading ? <ReportSkeleton /> : <BarMoneyChart data={data.methods?.breakdown || []} />}</ReportChartCard>
       </section>
       <RevenueTransactionTable rows={data.transactions?.items || []} pagination={data.transactions?.pagination} onPageChange={(page) => setFilters((current) => ({ ...current, page }))} />
@@ -159,19 +163,19 @@ function CostumesTab({ state }) {
   return (
     <>
       <section className="report-grid-2">
-        <ReportChartCard title="Trang phục tạo doanh thu cao">{state.loading ? <ReportSkeleton /> : <BarMoneyChart data={costumes.map((item) => ({ ...item, label: item.name || "Trang phục đã ẩn" }))} dataKey="revenue" />}</ReportChartCard>
+        <ReportChartCard title="Top trang phục thuê đã hoàn tất" description="Chỉ tính tiền thuê từng item thuộc đơn hoàn tất trong khoảng đã chọn.">{state.loading ? <ReportSkeleton /> : <BarMoneyChart data={costumes.map((item) => ({ ...item, label: item.name || "Trang phục đã ẩn" }))} dataKey="revenue" />}</ReportChartCard>
         <ReportChartCard title="Doanh thu theo thương hiệu">{state.loading ? <ReportSkeleton /> : <BarMoneyChart data={state.data.topBrands?.breakdown || []} dataKey="revenue" />}</ReportChartCard>
         <ReportChartCard title="Doanh thu theo danh mục">{state.loading ? <ReportSkeleton /> : <BarMoneyChart data={state.data.categories?.breakdown || []} dataKey="revenue" />}</ReportChartCard>
         <ReportChartCard title="Trang phục cần chú ý">
           <div className="report-alert-list">{(state.data.alerts?.items || []).map((item, index) => <button key={index} onClick={() => navigate(item.href)}><strong>{item.label}</strong><span>{item.costumeName || "Trang phục"}</span></button>)}</div>
         </ReportChartCard>
       </section>
-      <SimpleReportTable rows={costumes} emptyText="Chưa có trang phục được thuê." columns={[
+      <SimpleReportTable rows={costumes} emptyText="Chưa có trang phục thuê đã hoàn tất." columns={[
         { key: "name", label: "Trang phục" },
         { key: "brandName", label: "Thương hiệu" },
-        { key: "rentedCount", label: "Lượt thuê" },
+        { key: "rentedCount", label: "Lượt thuê hoàn tất" },
         { key: "rentedDays", label: "Số ngày thuê" },
-        { key: "revenue", label: "Doanh thu", render: (row) => formatReportCurrency(row.revenue) }
+        { key: "revenue", label: "Doanh thu tiền thuê", render: (row) => formatReportCurrency(row.revenue) }
       ]} />
     </>
   );

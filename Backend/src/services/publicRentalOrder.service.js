@@ -18,6 +18,8 @@ async function serializeGuestOrder(order) {
     rentalDurationHours: order.rentalDurationHours || (order.rentalDays || order.totalHoldDays || 1) * 24,
     baseRentalAmount: order.baseRentalAmount || order.totalRentalPrice, plannedExtraDayFee: order.plannedExtraDayFee || 0,
     cleaningUntil: order.cleaningUntil || null, totalRentalPrice: order.totalRentalPrice, totalDepositAmount: order.totalDepositAmount,
+    hasRefundDestination: Boolean(order.refundDestinationSnapshot?.bankBin && order.refundDestinationSnapshot?.encryptedAccountNumber && order.refundDestinationSnapshot?.accountName),
+    refundDestination: order.refundDestinationSnapshot?.bankBin ? { bankName: order.refundDestinationSnapshot.bankName, maskedAccountNumber: order.refundDestinationSnapshot.maskedAccountNumber, accountName: order.refundDestinationSnapshot.accountName } : null,
     fulfillment: order.fulfillment ? { method: order.fulfillment.method, outbound: { status: order.fulfillment.outbound?.status }, returnTrip: { status: order.fulfillment.returnTrip?.status } } : null,
     customer: { fullName: order.customerInfo?.fullName || "", phone: maskPhone(order.customerInfo?.phone) },
     items: items.map(item => ({ name: item.costumeId?.name || "Trang phục", quantity: item.quantity, image: item.costumeId?.image || item.costumeId?.imageAssets?.[0]?.url || item.costumeId?.images?.[0] || "" }))
@@ -50,7 +52,7 @@ export async function getGuestOrderSession(orderCode, token) {
   const normalizedCode = normalizeOrderCode(orderCode);
   if (payload.orderCode !== normalizedCode) throw new ApiError(403, "Phiên truy cập không thuộc đơn thuê này.");
   const order = await RentalOrder.findOne({ _id: payload.orderId, orderCode: normalizedCode })
-    .select("orderCode status paymentStatus rentalDate returnDate plannedRentalStartAt plannedRentalEndAt rentalDays rentalDurationHours pickupMethod returnMethod mainUseDate extraDays standardPackageDays standardPackageNights totalHoldDays baseRentalAmount plannedExtraDayFee cleaningUntil totalRentalPrice totalDepositAmount customerInfo.fullName customerInfo.phone fulfillment");
+    .select("orderCode status paymentStatus rentalDate returnDate plannedRentalStartAt plannedRentalEndAt rentalDays rentalDurationHours pickupMethod returnMethod mainUseDate extraDays standardPackageDays standardPackageNights totalHoldDays baseRentalAmount plannedExtraDayFee cleaningUntil totalRentalPrice totalDepositAmount customerInfo.fullName customerInfo.phone fulfillment refundDestinationSnapshot");
   if (!order) throw new ApiError(403, "Phiên truy cập không thuộc đơn thuê này.");
   return serializeGuestOrder(order);
 }

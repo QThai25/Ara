@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
   ChevronDown,
+  Gift,
   Heart,
   LogOut,
   Menu,
@@ -348,6 +349,14 @@ export function Header({ user, logout }) {
               </NavLink>
 
               <NavLink
+                className={`${location.pathname.startsWith("/offers") ? "active " : ""}mobile-only`}
+                to="/offers"
+                onClick={closeAllMenus}
+              >
+                Ưu Đãi Của Bạn
+              </NavLink>
+
+              <NavLink
                 className={`${location.pathname.startsWith("/my-payments")
                   ? "active "
                   : ""
@@ -505,6 +514,14 @@ export function Header({ user, logout }) {
                     <span>
                       <strong>Đơn thuê của tôi</strong>
                       <small>Theo dõi lịch thuê</small>
+                    </span>
+                  </NavLink>
+
+                  <NavLink to="/offers" onClick={closeAllMenus} role="menuitem">
+                    <Gift size={17} />
+                    <span>
+                      <strong>Ưu Đãi Của Bạn</strong>
+                      <small>Mã dành riêng cho bạn</small>
                     </span>
                   </NavLink>
 

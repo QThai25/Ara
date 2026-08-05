@@ -24,11 +24,22 @@ import { locationRoutes } from "./location.routes.js";
 import { refundRoutes, adminRefundRoutes } from "./refund.routes.js";
 import { chatRoutes, adminChatRoutes } from "./chat.routes.js";
 import { transportRoutes, adminTransportRoutes } from "./transport.routes.js";
+import { staffRoutes } from "./staff.routes.js";
+import { auditLogRoutes } from "./auditLog.routes.js";
 import { auth } from "../middlewares/auth.middleware.js";
 import { adminOnly } from "../middlewares/admin.middleware.js";
+import { auditAdminMutation, requireAdminPermission } from "../middlewares/adminPermission.middleware.js";
+import { resolveAdminRoutePermission } from "../policies/adminRoute.policy.js";
 
 export const apiRoutes = Router();
-const mountAdmin = (path, router) => apiRoutes.use(path, auth, adminOnly, router);
+const mountAdmin = (path, router) => apiRoutes.use(
+  path,
+  auth,
+  adminOnly,
+  requireAdminPermission((req) => resolveAdminRoutePermission(path, req)),
+  auditAdminMutation(path.replace("/admin/", "").replaceAll("-", "_")),
+  router
+);
 
 apiRoutes.use("/auth", authRoutes);
 apiRoutes.use("/categories", categoryRoutes);
@@ -73,3 +84,5 @@ mountAdmin("/admin/shipping-zones", adminShippingRoutes);
 mountAdmin("/admin/refunds", adminRefundRoutes);
 mountAdmin("/admin/chat", adminChatRoutes);
 mountAdmin("/admin/transport", adminTransportRoutes);
+mountAdmin("/admin/staff", staffRoutes);
+mountAdmin("/admin/audit-logs", auditLogRoutes);

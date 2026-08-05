@@ -5,6 +5,7 @@ import*as c from"../controllers/chat.controller.js";
 export const chatRoutes=Router(),adminChatRoutes=Router();
 chatRoutes.use(optionalAuth);
 chatRoutes.post("/conversations",c.createConversation);
+chatRoutes.post("/conversations/open",c.openConversation);
 chatRoutes.get("/conversations/:id",c.getConversation);
 chatRoutes.get("/conversations/:id/messages",c.messages);
 chatRoutes.post("/conversations/:id/messages",c.sendMessage);

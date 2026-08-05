@@ -1,8 +1,9 @@
 import React from "react";
 import { benefits } from "../../utils/catalogData.js";
+import { paths } from "../../routes/views.js";
 import { IconCard } from "../common/IconCard.jsx";
 
-export function BenefitSection() {
+export function BenefitSection({ user, notify }) {
   return (
     <section className="mei-benefits ara-benefits">
       <div className="ara-benefit-heading">
@@ -15,7 +16,11 @@ export function BenefitSection() {
       </div>
 
       <div className="mei-benefit-inner ara-benefit-grid">
-        {benefits.map((item, index) => (
+        {benefits.map((item, index) => {
+          const requiresRegistration = item.title === "Ưu đãi" && !user;
+          const destination = requiresRegistration ? paths.register : item.to;
+
+          return (
           <div
             className="ara-benefit-item"
             key={item.title}
@@ -28,9 +33,13 @@ export function BenefitSection() {
               icon={item.icon}
               label={item.title}
               description={item.description}
+              to={destination}
+              ariaLabel={requiresRegistration ? "Ưu đãi - đăng ký để nhận ưu đãi" : `${item.title} - mở trang`}
+              onClick={requiresRegistration ? () => notify?.("Vui lòng đăng ký tài khoản để nhận ưu đãi của Ara.", "error") : undefined}
             />
           </div>
-        ))}
+          );
+        })}
       </div>
     </section>
   );

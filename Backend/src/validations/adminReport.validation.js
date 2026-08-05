@@ -2,7 +2,7 @@ import mongoose from "mongoose";
 import { query } from "express-validator";
 import { GROUP_BY_VALUES } from "../utils/reportDateRange.js";
 
-const paymentTypes = ["all", "deposit", "full", "rental_balance", "penalty", "refund"];
+const paymentTypes = ["all", "deposit", "full", "rental_balance", "penalty"];
 const paymentMethods = ["all", "cash", "bank_transfer", "payos"];
 const channels = ["all", "direct", "online"];
 const sorts = ["newest", "oldest", "amount_desc", "amount_asc"];
@@ -16,7 +16,7 @@ export const reportQueryValidation = [
   query("from").optional({ checkFalsy: true }).isISO8601().withMessage("Ngày bắt đầu không hợp lệ."),
   query("to").optional({ checkFalsy: true }).isISO8601().withMessage("Ngày kết thúc không hợp lệ."),
   query("groupBy").optional({ checkFalsy: true }).isIn(GROUP_BY_VALUES).withMessage("Nhóm thời gian không hợp lệ."),
-  query("paymentType").optional({ checkFalsy: true }).isIn(paymentTypes).withMessage("Loại thanh toán không hợp lệ."),
+  query("paymentType").optional({ checkFalsy: true }).customSanitizer((value) => value === "refund" ? "all" : value).isIn(paymentTypes).withMessage("Loại thanh toán không hợp lệ."),
   query("paymentMethod").optional({ checkFalsy: true }).isIn(paymentMethods).withMessage("Phương thức thanh toán không hợp lệ."),
   query("method").optional({ checkFalsy: true }).isIn(paymentMethods).withMessage("Phương thức thanh toán không hợp lệ."),
   query("channel").optional({ checkFalsy: true }).isIn(channels).withMessage("Kênh thanh toán không hợp lệ."),

@@ -13,6 +13,7 @@ export const paymentConfig = {
   paymentExpiryMinutes: positiveMinutes(process.env.PAYMENT_EXPIRY_MINUTES, storeConfig.pendingPaymentMinutes),
   bankTransfer: {
     bankName: env("BANK_NAME", env("PAYMENT_BANK_NAME")), branch: env("BANK_BRANCH"),
+    bankBin: env("BANK_BIN", env("PAYMENT_BANK_BIN")),
     accountNumber: env("BANK_ACCOUNT_NUMBER", env("PAYMENT_BANK_ACCOUNT_NUMBER")),
     accountName: env("BANK_ACCOUNT_NAME", env("PAYMENT_BANK_ACCOUNT_HOLDER")),
     qrUrl: env("BANK_QR_URL", env("PAYMENT_BANK_QR_URL"))

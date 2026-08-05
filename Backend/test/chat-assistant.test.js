@@ -53,3 +53,21 @@ test("customer mascot opens the single chat widget", () => {
   assert.match(floating, /AriBunny[\s\S]*onClick=\{\(\)=>setChatOpen\(true\)\}/);
   assert.match(floating, /AraChatWidget/);
 });
+test("customer chat bootstrap returns the conversation and history in one request", () => {
+  const routes = read("../src/routes/chat.routes.js");
+  const service = read("../src/services/chat.service.js");
+  const widget = read("../../Frontend/src/components/customer/AraChatWidget.jsx");
+  const frontendService = read("../../Frontend/src/services/chatService.js");
+  assert.match(routes, /post\("\/conversations\/open",c\.openConversation\)/);
+  assert.match(service, /if \(!history\.items\.length\)[\s\S]*welcomeMessageInput/);
+  assert.match(widget, /openChatConversation\(/);
+  assert.match(widget, /result\.items\?\.length\?result\.items:\[welcomeMessage\]/);
+  assert.match(frontendService, /\[404,405\][\s\S]*createConversation[\s\S]*getChatMessages/);
+  assert.doesNotMatch(widget, /createConversation\([\s\S]*getChatMessages\(/);
+});
+test("customer chat hides malformed action buttons from current and saved messages", () => {
+  const widget = read("../../Frontend/src/components/customer/AraChatWidget.jsx");
+  const bot = read("../src/services/chatBot.service.js");
+  assert.match(widget, /typeof action==="object"[\s\S]*action\.label[\s\S]*action\.url/);
+  assert.doesNotMatch(bot, /payload:\{products,actions:/);
+});

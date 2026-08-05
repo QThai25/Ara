@@ -97,10 +97,22 @@ function ContactLink({
 export function FloatingContact({ interaction, message, user }) {
   const [chatOpen,setChatOpen]=React.useState(()=>new URLSearchParams(window.location.search).has("chat"));
   const [unread,setUnread]=React.useState(0);
+  const [formFocused, setFormFocused] = React.useState(false);
+  React.useEffect(() => {
+    const isFormControl = (target) => target instanceof Element && Boolean(target.closest("input, textarea, select, [contenteditable='true']"));
+    const onFocusIn = (event) => { if (isFormControl(event.target)) setFormFocused(true); };
+    const onFocusOut = () => window.setTimeout(() => setFormFocused(isFormControl(document.activeElement)), 0);
+    document.addEventListener("focusin", onFocusIn);
+    document.addEventListener("focusout", onFocusOut);
+    return () => {
+      document.removeEventListener("focusin", onFocusIn);
+      document.removeEventListener("focusout", onFocusOut);
+    };
+  }, []);
   return (
     <>
     <aside
-      className="floating-contact"
+      className={`floating-contact ${formFocused ? "is-form-focused" : ""}`}
       aria-label="Liên hệ nhanh"
     >
       <div className="ara-mascot-slot">

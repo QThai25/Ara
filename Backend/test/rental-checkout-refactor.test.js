@@ -16,7 +16,7 @@ test("store payment settings default to 08:00-22:00 and a 30-minute hold", () =>
 
 test("payment methods include configured transfer, cash and optional PayOS", () => {
   const result = getPaymentMethods();
-  assert.deepEqual(result.options.map((item) => item.method), ["bank_transfer", "cash", "payos"]);
+  assert.deepEqual(result.options.map((item) => item.method), ["bank_transfer", "cash", "payos_qr"]);
   assert.equal(result.options.find((item) => item.method === "bank_transfer").recommended, true);
   assert.ok(result.businessHours.serverTime);
 });

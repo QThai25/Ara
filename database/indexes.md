@@ -15,6 +15,8 @@ Chỉ thêm index khi có query tương ứng trong source. Chạy `explain("exe
 | payments | `{ channel:1,status:1,createdAt:-1 }` | Admin direct-payment queue | payment service |
 | notifications | `{recipientId:1,isRead:1,createdAt:-1}` | Unread timeline | notification list/count |
 | users | unique email (partial), unique phoneNormalized | Login/identity | auth service |
+| users | `{role:1,status:1,createdAt:-1}` | Staff list và kiểm tra active role | staff service/migration audit |
+| auditlogs | `{createdAt:-1}` | Timeline audit mới nhất | owner audit-log list |
 
 ## Explain checklist
 
@@ -24,6 +26,9 @@ Chạy trên staging/Atlas Performance Advisor, không chạy scan nặng trên 
 db.costumes.find({operationalStatus:"active"}).sort({createdAt:-1}).limit(24).explain("executionStats")
 db.rentalorderitems.find({orderId:ObjectId("...")}).explain("executionStats")
 db.rentalorders.find({status:{$in:["renting","overdue"]},returnDate:{$lte:new Date()}}).explain("executionStats")
+db.users.find({role:"staff",status:"active"}).sort({createdAt:-1}).limit(20).explain("executionStats")
 ```
 
 Ghi `executionTimeMillis`, `totalDocsExamined`, `totalKeysExamined`, `nReturned`. Mục tiêu: không `COLLSCAN`; docs examined gần nReturned cho query có tính chọn lọc. Dùng `Model.syncIndexes()` chỉ trong maintenance window; production nên tạo index foreground/background theo Atlas UI và quan sát CPU/IO.
+
+Search/filter sâu trên audit log hiện chỉ có index timeline. Chỉ thêm compound index actor/action sau khi đo query thực trên staging; không chạy `syncIndexes()` tự động trong deploy RBAC.

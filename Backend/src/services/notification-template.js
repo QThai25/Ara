@@ -9,8 +9,8 @@ export function orderNotification(event, order, context = {}) {
   const customerUrl = `/my-rentals/${order._id}`;
   const adminUrl = `/orders/${order._id}`;
   const templates = {
-    created_customer: { type: "order_created", title: "Đơn thuê đã được xác nhận", message: `Đơn thuê ${orderCode} đã được ghi nhận và xác nhận tự động.`, actionUrl: customerUrl, priority: "normal" },
-    created_admin: { type: "order_created", title: "Có đơn thuê mới đã được xác nhận", message: `${orderCode} của ${context.customerName || "khách hàng"}, lịch thuê ${dateTime(order.rentalDate)} đến ${dateTime(order.returnDate)}, tổng tiền thuê ${money(order.totalRentalPrice)} đã được hệ thống xác nhận.`, actionUrl: adminUrl, priority: "high" },
+    created_customer: { type: "order_created", title: "ARA đã ghi nhận đơn thuê", message: `Đơn thuê ${orderCode} đã được tạo và đang chờ hoàn tất thanh toán.`, actionUrl: customerUrl, priority: "normal" },
+    created_admin: { type: "order_created", title: "Có đơn thuê mới chờ thanh toán", message: `${orderCode} của ${context.customerName || "khách hàng"}, lịch thuê ${dateTime(order.rentalDate)} đến ${dateTime(order.returnDate)}, tiền thuê ${money(order.totalRentalPrice)} đang chờ khách thanh toán.`, actionUrl: adminUrl, priority: "high" },
     approved: { type: "order_approved", title: "Đơn thuê đã được xác nhận", message: `${orderCode} đã được xác nhận. Vui lòng chọn phương thức thanh toán tiền cọc để cửa hàng chuẩn bị trang phục.`, actionUrl: customerUrl, priority: "high" },
     rejected: { type: "order_rejected", title: "Đơn thuê không được chấp nhận", message: `${orderCode} chưa thể được chấp nhận.${context.reason ? ` Lý do: ${context.reason}` : ""}`, actionUrl: customerUrl, priority: "high" },
     canceled_customer: { type: "order_canceled", title: "Đơn thuê đã được hủy", message: `${orderCode} đã được cửa hàng hủy.${context.reason ? ` Lý do: ${context.reason}` : ""}`, actionUrl: customerUrl, priority: "high" },

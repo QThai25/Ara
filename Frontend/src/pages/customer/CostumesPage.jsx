@@ -8,7 +8,7 @@ import { BrandFilterGrid } from "../../components/customer/BrandFilterGrid.jsx";
 import { FilterSidebar } from "../../components/customer/FilterSidebar.jsx";
 import { useDebouncedValue } from "../../hooks/useDebouncedValue.js";
 import { brandToSlug } from "../../services/brandService.js";
-import { getCategories, getCostumes } from "../../services/costumeService.js";
+import { getCategories, getCostumePage } from "../../services/costumeService.js";
 import { isWishlisted, toggleWishlist } from "../../services/wishlistService.js";
 import { paths, views } from "../../routes/views.js";
 import { canonicalSlug, occasionLabelBySlug, styleLabelBySlug } from "../../utils/catalogData.js";
@@ -23,7 +23,8 @@ const emptyFilters = {
   style: "",
   minPrice: "",
   maxPrice: "",
-  status: "available"
+  status: "available",
+  sort: ""
 };
 
 function filtersFromSearchParams(searchParams) {
@@ -37,46 +38,30 @@ function filtersFromSearchParams(searchParams) {
     size: searchParams.get("size") || "",
     status: searchParams.get("status") || "available",
     minPrice: searchParams.get("minPrice") || "",
-    maxPrice: searchParams.get("maxPrice") || ""
+    maxPrice: searchParams.get("maxPrice") || "",
+    sort: searchParams.get("sort") === "newest" ? "newest" : ""
   };
 }
 
-function buildSearchParams(filters, selectedBrands) {
+const CATALOG_PAGE_SIZE = 24;
+
+function pageFromSearchParams(searchParams) {
+  const parsed = Number.parseInt(searchParams.get("page"), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+}
+
+function buildSearchParams(filters, selectedBrands, page = 1) {
   const params = new URLSearchParams();
   Object.entries(filters).forEach(([key, value]) => {
     if (value && !(key === "status" && value === "available")) params.set(key, value);
   });
   selectedBrands.forEach((brand) => params.append("brand", brand));
+  if (page > 1) params.set("page", String(page));
   return params;
 }
 
 function sameStringArray(first, second) {
   return first.length === second.length && first.every((item, index) => item === second[index]);
-}
-
-function productMatchesBrand(product, selectedBrands = []) {
-  if (!selectedBrands.length) {
-    return true;
-  }
-
-  const normalizedSelectedBrands = selectedBrands
-    .map((value) => brandToSlug(value))
-    .filter(Boolean);
-
-  const productBrandValues = [
-    product?.brandSlug,
-    product?.brandName,
-    product?.brand,
-    product?.brandId,
-    product?.brandId?.slug,
-    product?.brandId?.name
-  ]
-    .map((value) => brandToSlug(value))
-    .filter(Boolean);
-
-  return productBrandValues.some((value) =>
-    normalizedSelectedBrands.includes(value)
-  );
 }
 
 function titleForFilters(filters, selectedBrands, categories) {
@@ -100,9 +85,13 @@ export function CostumesPage({ setView, user, notify }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [reloadKey, setReloadKey] = useState(0);
+  const [pagination, setPagination] = useState({ page: 1, limit: CATALOG_PAGE_SIZE, total: 0, totalPages: 0 });
   const debouncedSearch = useDebouncedValue(filters.search, 600);
+  const currentPage = pageFromSearchParams(searchParams);
   const requestRef = useRef(0);
   const externalQueryRef = useRef(null);
+  const filterSignatureRef = useRef(JSON.stringify({ filters, selectedBrands }));
   const {
     showProductReaction,
     celebrateProduct,
@@ -112,7 +101,7 @@ export function CostumesPage({ setView, user, notify }) {
 
   useEffect(() => {
     const incomingQuery = searchParams.toString();
-    const stateQuery = buildSearchParams(filters, selectedBrands).toString();
+    const stateQuery = buildSearchParams(filters, selectedBrands, currentPage).toString();
     if (incomingQuery === stateQuery) return;
     externalQueryRef.current = incomingQuery;
     const nextFilters = filtersFromSearchParams(searchParams);
@@ -132,33 +121,44 @@ export function CostumesPage({ setView, user, notify }) {
       minPrice: filters.minPrice,
       maxPrice: filters.maxPrice,
       status: filters.status,
-      brand: selectedBrands.join(",")
+      brand: selectedBrands.join(","),
+      page: currentPage,
+      limit: CATALOG_PAGE_SIZE
     };
     const params = new URLSearchParams(Object.entries(backendFilters).filter(([, value]) => value));
     return params.toString() ? `?${params}` : "";
-  }, [filters, debouncedSearch, selectedBrands]);
+  }, [filters, debouncedSearch, selectedBrands, currentPage]);
 
   useEffect(() => {
-    const params = buildSearchParams(filters, selectedBrands);
-    const nextQuery = params.toString();
+    const signature = JSON.stringify({ filters, selectedBrands });
     if (externalQueryRef.current !== null) {
-      if (nextQuery === externalQueryRef.current) externalQueryRef.current = null;
+      const synchronizedQuery = buildSearchParams(filters, selectedBrands, currentPage).toString();
+      filterSignatureRef.current = signature;
+      if (synchronizedQuery === externalQueryRef.current) externalQueryRef.current = null;
       return;
     }
+    const filtersChanged = filterSignatureRef.current !== signature;
+    filterSignatureRef.current = signature;
+    const params = buildSearchParams(filters, selectedBrands, filtersChanged ? 1 : currentPage);
+    const nextQuery = params.toString();
     if (nextQuery !== searchParams.toString()) setSearchParams(params, { replace: true });
-  }, [filters, selectedBrands, searchParams, setSearchParams]);
+  }, [filters, selectedBrands, currentPage, searchParams, setSearchParams]);
 
   useEffect(() => {
     const requestId = requestRef.current + 1;
     requestRef.current = requestId;
     const controller = new AbortController();
     const load = async () => {
-      setLoading((current) => (products.length ? current : true));
+      setLoading(true);
       setError("");
       try {
-        const [items, cats] = await Promise.all([getCostumes(query, { signal: controller.signal }), getCategories()]);
+        const [result, cats] = await Promise.all([
+          getCostumePage(query, { signal: controller.signal }),
+          categories.length ? Promise.resolve(categories) : getCategories()
+        ]);
         if (requestRef.current !== requestId) return;
-        setProducts(items.filter((item) => productMatchesBrand(item, selectedBrands)));
+        setProducts(result.items);
+        setPagination(result.pagination);
         setCategories(cats);
       } catch (err) {
         if (controller.signal.aborted || requestRef.current !== requestId) return;
@@ -169,11 +169,16 @@ export function CostumesPage({ setView, user, notify }) {
     };
     load();
     return () => controller.abort();
-  }, [query, selectedBrands]);
+  }, [query, selectedBrands, reloadKey]);
 
   const filterTitle = titleForFilters(filters, selectedBrands, categories);
-  const hasActiveFilters = searchParams.toString().length > 0;
+  const hasActiveFilters = buildSearchParams({ ...filters, sort: "" }, selectedBrands).toString().length > 0;
   const openProduct = (product) => setView(views.detail, paths.detail(product.id || product._id));
+  const goToPage = (page) => {
+    const target = Math.max(1, Math.min(page, Math.max(1, pagination.totalPages || 1)));
+    setSearchParams(buildSearchParams(filters, selectedBrands, target));
+    document.querySelector(".catalog-two-column")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
   const clearAllFilters = () => {
     setFilters(emptyFilters);
     setSelectedBrands([]);
@@ -208,14 +213,15 @@ export function CostumesPage({ setView, user, notify }) {
             <FilterSidebar filters={filters} setFilters={setFilters} categories={categories} onClear={clearAllFilters} />
           </div>
           <main className="catalog-content">
+            {!loading && !error && <div className="catalog-result-count" role="status"><strong>{pagination.total}</strong> trang phục phù hợp{hasActiveFilters ? " với bộ lọc đang chọn" : ""}</div>}
             <BrandFilterGrid selectedBrands={selectedBrands} setSelectedBrands={(next) => {
               const value = typeof next === "function" ? next(selectedBrands) : next;
               if (!sameStringArray(value, selectedBrands)) setSelectedBrands(value);
             }} />
             {loading && <StateMessage text="Đang tải sản phẩm..." />}
-            {error && <StateMessage text={error} tone="error" />}
+            {error && <StateMessage text={error} tone="error" actionLabel="Thử lại" onAction={() => setReloadKey((key) => key + 1)} />}
             {!loading && !error && products.length === 0 && <StateMessage text="Chưa có trang phục phù hợp với bộ lọc này." />}
-            <div className="mei-product-grid mei-catalog-grid">
+            {!loading && !error && <div className="mei-product-grid mei-catalog-grid">
               {products.map((product, index) => (
                 <ProductCard
                   key={product.id || product._id}
@@ -239,7 +245,14 @@ export function CostumesPage({ setView, user, notify }) {
                   }}
                 />
               ))}
-            </div>
+            </div>}
+            {!loading && !error && pagination.totalPages > 1 && (
+              <nav className="pagination catalog-pagination" aria-label="Phân trang danh sách trang phục">
+                <button type="button" disabled={loading || pagination.page <= 1} onClick={() => goToPage(currentPage - 1)}>Trước</button>
+                <span>Trang {pagination.page} / {pagination.totalPages}</span>
+                <button type="button" disabled={loading || pagination.page >= pagination.totalPages} onClick={() => goToPage(currentPage + 1)}>Sau</button>
+              </nav>
+            )}
           </main>
         </div>
       </section>

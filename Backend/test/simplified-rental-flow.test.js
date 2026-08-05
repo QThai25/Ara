@@ -4,9 +4,9 @@ import { readFile } from "node:fs/promises";
 
 const read = path => readFile(new URL(path, import.meta.url), "utf8");
 
-test("new rentals are auto-confirmed and keep payment preference separate", async () => {
+test("new rentals wait for verified payment and keep payment preference separate", async () => {
   const [service, model] = await Promise.all([read("../src/services/rentalOrder.service.js"), read("../src/models/RentalOrder.js")]);
-  assert.match(service, /status:\s*"confirmed"/);
+  assert.match(service, /status:\s*"pending_payment"/);
   assert.match(service, /approvalMode:\s*"automatic"/);
   assert.match(model, /paymentPreference/);
   assert.match(model, /approvalMode/);
@@ -20,16 +20,18 @@ test("cash is collected only by the atomic pickup action", async () => {
   assert.match(routes, /collect-cash-and-pickup/);
 });
 
-test("customer and admin timelines use five rental-only steps", async () => {
+test("customer and admin timelines expose external carrier transit states", async () => {
   for (const path of ["../../Frontend/src/utils/format.js", "../../AdminFrontend/src/utils/format.js"]) {
     const source = await read(path);
-    assert.match(source, /\["confirmed", "ready_to_pickup", "renting", "returned", "completed"\]/);
+    assert.match(source, /outbound_in_transit/);
+    assert.match(source, /return_in_transit/);
   }
 });
 
-test("payment confirmation never mutates rental progress", async () => {
+test("payment confirmation only promotes pending payment to confirmed", async () => {
   const source = await read("../src/services/payment.service.js");
   assert.doesNotMatch(source, /order\.status\s*=\s*"deposit_paid"/);
+  assert.match(source, /order\.status\s*=\s*"confirmed"/);
   assert.match(source, /order\.paymentStatus\s*=\s*"deposit_paid"/);
   assert.match(source, /order\.paymentStatus\s*=\s*"fully_paid"/);
 });

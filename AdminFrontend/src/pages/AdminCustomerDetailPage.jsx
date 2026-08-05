@@ -8,14 +8,18 @@ import {
   Mail,
   MapPin,
   Phone,
+  KeyRound,
+  ShieldCheck,
   Truck,
   UserRound,
   WalletCards
 } from "lucide-react";
 
 import React, {
+  useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState
 } from "react";
 
@@ -26,18 +30,28 @@ import {
 
 import {
   AdminDetailSection,
+  AdminButton,
   AdminPageHeader,
   AdminStatCard,
   AdminStatusBadge
 } from "../components/common/AdminUI.jsx";
 
 import { StateMessage } from "../components/common/StateMessage.jsx";
-import { getAdminCustomer } from "../services/customerService.js";
+import {
+  getAdminCustomer,
+  getCustomerPasswordResetGrant,
+  grantCustomerPasswordReset,
+  revokeCustomerPasswordReset
+} from "../services/customerService.js";
+import { AdminModal } from "../components/common/AdminControls.jsx";
 
 import {
   costumeName,
+  formatVietnamPhone,
   money
 } from "../utils/format.js";
+import { useAdminAuth } from "../context/AdminAuthContext.jsx";
+import { ADMIN_PERMISSIONS as P } from "../constants/adminPermissions.js";
 
 const EMPTY_TEXT = "Chưa cập nhật";
 
@@ -127,7 +141,31 @@ function formatAddress(address) {
     : EMPTY_TEXT;
 }
 
-export function AdminCustomerDetailPage() {
+const resetGrantLabels = {
+  none: "Chưa mở quyền",
+  active: "Đang có hiệu lực",
+  used: "Đã sử dụng",
+  revoked: "Đã hủy",
+  expired: "Đã hết hạn"
+};
+
+function maskPhone(value) {
+  const phone = formatVietnamPhone(value).replace(/\s/g, "");
+  if (phone.length < 7) return phone || "Chưa cập nhật";
+  return `${phone.slice(0, 4)} *** ${phone.slice(-3)}`;
+}
+
+function dateTimeText(value) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return new Intl.DateTimeFormat("vi-VN", { dateStyle: "short", timeStyle: "short" }).format(date);
+}
+
+export function AdminCustomerDetailPage({ notify }) {
+  const { can } = useAdminAuth();
+  const canViewSensitive = can(P.CUSTOMERS_MANAGE_SENSITIVE);
+  const canResetPassword = can(P.CUSTOMERS_RESET_PASSWORD);
   const { id } = useParams();
   const navigate = useNavigate();
 
@@ -139,6 +177,72 @@ export function AdminCustomerDetailPage() {
 
   const [error, setError] =
     useState("");
+
+  const [resetGrant, setResetGrant] = useState(null);
+  const [resetGrantLoading, setResetGrantLoading] = useState(false);
+  const [resetGrantError, setResetGrantError] = useState("");
+  const [confirmAction, setConfirmAction] = useState("");
+  const [securityBusy, setSecurityBusy] = useState(false);
+  const [clock, setClock] = useState(Date.now());
+  const securityBusyRef = useRef(false);
+  const grantRequestRef = useRef(0);
+
+  const loadResetGrant = useCallback(async () => {
+    if (!canResetPassword) return;
+    const requestId = ++grantRequestRef.current;
+    setResetGrantLoading(true);
+    setResetGrantError("");
+    try {
+      const grant = await getCustomerPasswordResetGrant(id);
+      if (requestId !== grantRequestRef.current) return;
+      setResetGrant(grant);
+    } catch (grantError) {
+      if (requestId !== grantRequestRef.current) return;
+      setResetGrantError(grantError.message || "Không thể tải trạng thái quyền đặt lại mật khẩu.");
+    } finally {
+      if (requestId === grantRequestRef.current) setResetGrantLoading(false);
+    }
+  }, [canResetPassword, id]);
+
+  useEffect(() => {
+    loadResetGrant();
+    return () => { grantRequestRef.current += 1; };
+  }, [loadResetGrant]);
+
+  const remainingSeconds = resetGrant?.status === "active"
+    ? Math.max(0, Math.ceil((new Date(resetGrant.expiresAt).getTime() - clock) / 1000))
+    : 0;
+  const visibleResetStatus = resetGrant?.status === "active" && remainingSeconds === 0 ? "expired" : (resetGrant?.status || "none");
+
+  useEffect(() => {
+    if (visibleResetStatus !== "active") return undefined;
+    const timer = window.setInterval(() => setClock(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [visibleResetStatus]);
+
+  const confirmSecurityAction = async () => {
+    if (!confirmAction || securityBusyRef.current) return;
+    securityBusyRef.current = true;
+    setSecurityBusy(true);
+    setResetGrantError("");
+    try {
+      const data = confirmAction === "grant"
+        ? await grantCustomerPasswordReset(id)
+        : await revokeCustomerPasswordReset(id);
+      setResetGrant(data);
+      setClock(Date.now());
+      setConfirmAction("");
+      notify?.(confirmAction === "grant"
+        ? "Khách có thể tự đặt lại mật khẩu trong 15 phút."
+        : "Đã hủy quyền đặt lại mật khẩu.");
+    } catch (actionError) {
+      setResetGrantError(actionError.message || "Không thể cập nhật quyền đặt lại mật khẩu.");
+      setConfirmAction("");
+    } finally {
+      securityBusyRef.current = false;
+      setSecurityBusy(false);
+    }
+  };
 
   useEffect(() => {
     let alive = true;
@@ -316,11 +420,11 @@ export function AdminCustomerDetailPage() {
                 value={orderCount}
               />
 
-              <AdminStatCard
+              {canViewSensitive && <AdminStatCard
                 icon={<CreditCard />}
                 label="Tổng chi tiêu"
                 value={money(totalSpent)}
-              />
+              />}
 
               <AdminStatCard
                 icon={<CalendarDays />}
@@ -389,17 +493,42 @@ export function AdminCustomerDetailPage() {
                   </div>
                 </AdminDetailSection>
 
+                {canResetPassword && <AdminDetailSection icon={<ShieldCheck />} title="Bảo mật tài khoản">
+                  <div className="admin-customer-security-panel">
+                    <p>Nhân viên chỉ mở quyền khôi phục. Khách tự nhập mật khẩu mới và mật khẩu không hiển thị trong hệ thống quản trị.</p>
+                    {resetGrantLoading && <span className="admin-customer-security-message">Đang tải trạng thái...</span>}
+                    {resetGrantError && <span className="admin-customer-security-message is-error" role="alert">{resetGrantError}</span>}
+                    {!resetGrantLoading && <div className={`admin-customer-reset-status is-${visibleResetStatus}`}>
+                      <div>
+                        <span>Trạng thái</span>
+                        <strong>{resetGrantLabels[visibleResetStatus]}</strong>
+                      </div>
+                      {visibleResetStatus === "active" && <>
+                        <div><span>Thời gian còn lại</span><strong>{Math.floor(remainingSeconds / 60)}:{String(remainingSeconds % 60).padStart(2, "0")}</strong></div>
+                        <div><span>Người mở quyền</span><strong>{resetGrant?.createdBy?.name || "Tài khoản quản trị"}</strong></div>
+                        <div><span>Thời gian mở</span><strong>{dateTimeText(resetGrant?.createdAt)}</strong></div>
+                      </>}
+                    </div>}
+                    {!resetGrantLoading && customer.status === "active" && (
+                      visibleResetStatus === "active"
+                        ? <AdminButton type="button" disabled={securityBusy} onClick={() => setConfirmAction("revoke")}>Hủy quyền đặt lại mật khẩu</AdminButton>
+                        : <AdminButton type="button" variant="primary" disabled={securityBusy} onClick={() => setConfirmAction("grant")}><KeyRound size={16}/> Cho phép đặt lại mật khẩu</AdminButton>
+                    )}
+                    {customer.status !== "active" && <span className="admin-customer-security-message">Tài khoản đang bị khóa nên không thể mở quyền đặt lại mật khẩu.</span>}
+                  </div>
+                </AdminDetailSection>}
+
                 <AdminDetailSection icon={<MapPin />} title="Địa chỉ giao nhận đã lưu">
                   <div className="admin-customer-info-grid">
                     {(customer.addresses || []).length ? customer.addresses.map(address => <Info key={address._id} label={`${address.label}${address.isDefault ? " · Mặc định" : ""}`} value={`${address.receiverName} · ${address.receiverPhone} · ${formatAddress(address)}`} wide/>) : <Info label="Địa chỉ" value="Khách chưa lưu địa chỉ giao nhận" wide/>}
                   </div>
                 </AdminDetailSection>
 
-                <AdminDetailSection icon={<Landmark />} title="Điểm nhận hoàn cọc">
+                {canViewSensitive && <AdminDetailSection icon={<Landmark />} title="Điểm nhận hoàn cọc">
                   <div className="admin-customer-info-grid">
                     {(customer.refundDestinations || []).length ? customer.refundDestinations.map(destination => <Info key={destination._id} label={`${destination.label}${destination.isDefault ? " · Mặc định" : ""}`} value={destination.type === "bank_account" ? `${destination.bankName} · ${destination.accountHolderName} · ${destination.maskedAccountNumber}` : "Ảnh VietQR đã được khách cung cấp"} wide/>) : <Info label="Hoàn cọc" value="Khách chưa thêm điểm nhận hoàn cọc" wide/>}
                   </div>
-                </AdminDetailSection>
+                </AdminDetailSection>}
 
                 <AdminDetailSection
                   icon={<History />}
@@ -524,7 +653,7 @@ export function AdminCustomerDetailPage() {
                 </AdminDetailSection>
               </div>
 
-              <aside className="admin-customer-side-column">
+              {canViewSensitive && <aside className="admin-customer-side-column">
                 <AdminDetailSection
                   icon={<WalletCards />}
                   title="Tổng quan thanh toán"
@@ -615,8 +744,22 @@ export function AdminCustomerDetailPage() {
                     />
                   </div>
                 </AdminDetailSection>
-              </aside>
+              </aside>}
             </div>
+            {confirmAction && <AdminModal
+              title={confirmAction === "grant" ? "Cho phép đặt lại mật khẩu" : "Hủy quyền đặt lại mật khẩu"}
+              onClose={() => !securityBusy && setConfirmAction("")}
+              footer={<>
+                <AdminButton type="button" disabled={securityBusy} onClick={() => setConfirmAction("")}>Quay lại</AdminButton>
+                <AdminButton type="button" variant="primary" disabled={securityBusy} onClick={confirmSecurityAction}>{securityBusy ? "Đang xử lý..." : "Xác nhận"}</AdminButton>
+              </>}
+            >
+              <div className="admin-customer-reset-confirm">
+                <strong>{customer.name || "Khách hàng"}</strong>
+                <span>{maskPhone(customer.phoneNormalized || customer.phone)}</span>
+                <p>{confirmAction === "grant" ? "Khách có thể tự đặt lại mật khẩu trong 15 phút." : "Quyền hiện tại sẽ mất hiệu lực ngay và không thể dùng để đặt lại mật khẩu."}</p>
+              </div>
+            </AdminModal>}
           </>
         )}
     </section>

@@ -16,7 +16,7 @@ import { StateMessage } from "../common/StateMessage.jsx";
 function getPerView() {
   if (typeof window === "undefined") return 4;
 
-  if (window.matchMedia("(max-width: 639px)").matches) {
+  if (window.matchMedia("(max-width: 389px)").matches) {
     return 1;
   }
 
@@ -248,7 +248,7 @@ export function ProductCarousel({
           </div>
         </div>
 
-        <div className="product-carousel-navigation">
+        {canSlide && <div className="product-carousel-navigation">
           {canSlide && (
             <span className="product-carousel-counter">
               {String(currentPage + 1).padStart(2, "0")}
@@ -276,7 +276,7 @@ export function ProductCarousel({
           >
             <ChevronRight size={20} strokeWidth={1.6} />
           </button>
-        </div>
+        </div>}
       </div>
 
       {loading && (
@@ -325,9 +325,9 @@ export function ProductCarousel({
                   }
                 >
                   <div
-                    className="mei-product-grid product-carousel-grid"
+                    className={`mei-product-grid product-carousel-grid ${slide.items.length < perView ? "is-sparse" : ""}`}
                     style={{
-                      gridTemplateColumns: `repeat(${perView}, minmax(0, 1fr))`
+                      "--carousel-columns": Math.max(1, Math.min(perView, slide.items.length))
                     }}
                   >
                     {slide.items.map((product, productIndex) => {

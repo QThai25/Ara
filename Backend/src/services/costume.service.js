@@ -221,12 +221,15 @@ async function buildCostumeFilter(query = {}, includeHidden = false) {
     operationalStatus: { $ne: "hidden" },
     status: { $ne: "hidden" }
   };
-  if (query.search) filter.$and = [{ $or: [{ name: new RegExp(query.search, "i") }, { description: new RegExp(query.search, "i") }, { skuCode: new RegExp(query.search, "i") }] }];
+  if (query.search) {
+    const search = new RegExp(String(query.search).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+    filter.$and = [{ $or: [{ name: search }, { description: search }, { skuCode: search }] }];
+  }
   await applyCategoryFilter(filter, query.category || query.categorySlug || query.categoryId);
   const brandSlugs = parseBrandQuery(query.brand);
   if (brandSlugs.length) filter.brandSlug = { $in: brandSlugs };
   if (query.size) filter.size = query.size;
-  if (query.color) filter.color = new RegExp(query.color, "i");
+  if (query.color) filter.color = new RegExp(String(query.color).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
   if (query.occasion) {
     const variants = querySlugVariants(query.occasion);
     const option = await Occasion.findOne({ slug: { $in: [query.occasion, ...variants] } }).select("_id");
@@ -348,10 +351,61 @@ async function toCustomerCostume(costume) {
   };
 }
 
+export const CUSTOMER_CATALOG_PAGE_SIZE = 24;
+export const CUSTOMER_CATALOG_MAX_PAGE_SIZE = 48;
+
+export function customerCatalogPagination(query = {}) {
+  const parsedPage = Number.parseInt(query.page, 10);
+  const parsedLimit = Number.parseInt(query.limit, 10);
+  const page = Number.isFinite(parsedPage) && parsedPage > 0 ? parsedPage : 1;
+  const requestedLimit = Number.isFinite(parsedLimit) && parsedLimit > 0
+    ? parsedLimit
+    : CUSTOMER_CATALOG_PAGE_SIZE;
+  const limit = Math.min(requestedLimit, CUSTOMER_CATALOG_MAX_PAGE_SIZE);
+  return { page, limit, skip: (page - 1) * limit };
+}
+
+function toCustomerCostumeCard(costume) {
+  const data = costume.toObject ? costume.toObject() : { ...costume };
+  const media = costumeImagePayload(data, data);
+  const operationalStatus = operationalStatusOf(data);
+  const acceptsFutureBookings = operationalStatus === "active";
+  return {
+    ...data,
+    ...media,
+    operationalStatus,
+    inventoryStatus: operationalStatus,
+    bookingStatus: acceptsFutureBookings ? "accepting_bookings" : "not_accepting_bookings",
+    bookingStatusLabel: acceptsFutureBookings
+      ? "Sẵn sàng cho lịch thuê mới"
+      : "Tạm ngưng nhận lịch thuê",
+    acceptsFutureBookings
+  };
+}
+
 export async function listCostumes(query = {}) {
   const filter = await buildCostumeFilter(query, false);
-  const costumes = await Costume.find(filter).populate(costumePopulate).sort({ createdAt: -1 });
-  return Promise.all(costumes.map(toCustomerCostume));
+  const { page, limit, skip } = customerCatalogPagination(query);
+  const [costumes, total] = await Promise.all([
+    Costume.find(filter)
+      .populate(costumePopulate)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit),
+    Costume.countDocuments(filter)
+  ]);
+  const totalPages = Math.ceil(total / limit);
+  return {
+    items: costumes.map(toCustomerCostumeCard),
+    pagination: {
+      page,
+      limit,
+      total,
+      totalPages,
+      hasPreviousPage: page > 1,
+      hasNextPage: page < totalPages
+    }
+  };
 }
 
 export async function listAdminCostumes(query = {}) {

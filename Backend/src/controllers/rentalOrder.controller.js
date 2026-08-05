@@ -1,4 +1,5 @@
 import * as rentalOrderService from "../services/rentalOrder.service.js";
+import * as voucherService from "../services/voucher.service.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { sendSuccess } from "../utils/apiResponse.js";
 import * as policyService from "../services/rentalPolicy.service.js";
@@ -10,6 +11,7 @@ import { Costume } from "../models/Costume.js";
 import { ApiError } from "../utils/ApiError.js";
 import { zonedParts } from "../services/rentalTimeline.service.js";
 import { getBookingGrid } from "../services/costume.service.js";
+import { applyRentalActionPermissions } from "../utils/adminPermissions.js";
 
 const bookingTimes = ["08:00", "09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00", "20:00", "21:00"];
 
@@ -40,37 +42,39 @@ async function findNearestBookable(input, options) {
   } catch {
     // Fall back to the canonical checks below if the batch inventory preview fails.
   }
+  const verifyCandidate = async (date, time) => {
+    try {
+      const quote = await quoteAndCheck({
+        ...input,
+        requestedStartAt: `${date}T${time}:00+07:00`
+      }, options);
+      if (!quote.isBookable) return null;
+      return {
+        requestedStartAt: `${date}T${time}:00+07:00`,
+        plannedRentalStartAt: quote.plannedRentalStartAt,
+        plannedRentalEndAt: quote.plannedRentalEndAt,
+        expectedDeliveryAt: quote.expectedDeliveryAt,
+        collectionAt: quote.collectionAt,
+        outboundTransportMinutes: quote.outboundTransportMinutes,
+        inboundTransportMinutes: quote.inboundTransportMinutes
+      };
+    } catch {
+      return null;
+    }
+  };
+
   for (let dayOffset = 0; dayOffset <= 31; dayOffset += 1) {
     const date = calendarDate(parts, dayOffset);
     const candidateTimes = bookingTimes.filter((time) => (
       (dayOffset !== 0 || time >= requestedClock)
       && (!inventoryCandidates || inventoryCandidates.has(`${date}|${time}`))
     ));
-    if (!candidateTimes.length) continue;
-    const candidates = await Promise.all(candidateTimes.map(async (time) => {
-      try {
-        const quote = await quoteAndCheck({
-          ...input,
-          requestedStartAt: `${date}T${time}:00+07:00`
-        }, options);
-        if (quote.isBookable) {
-          return {
-            requestedStartAt: `${date}T${time}:00+07:00`,
-            plannedRentalStartAt: quote.plannedRentalStartAt,
-            plannedRentalEndAt: quote.plannedRentalEndAt,
-            expectedDeliveryAt: quote.expectedDeliveryAt,
-            collectionAt: quote.collectionAt,
-            outboundTransportMinutes: quote.outboundTransportMinutes,
-            inboundTransportMinutes: quote.inboundTransportMinutes
-          };
-        }
-      } catch {
-        // This customer-visible slot is not valid.
-      }
-      return null;
-    }));
-    const firstBookable = candidates.find(Boolean);
-    if (firstBookable) return firstBookable;
+    for (const time of candidateTimes) {
+      const candidate = await verifyCandidate(date, time);
+      if (candidate) return candidate;
+      // When the batch grid succeeds, a rejected candidate indicates a concurrent
+      // booking. Continue with the next prefiltered slot without fanning out queries.
+    }
   }
   return null;
 }
@@ -137,6 +141,46 @@ export const quoteRental = asyncHandler(async (req, res) => {
   let result;
   try {
     result = await quoteAndCheck(req.body, quoteOptions);
+    if (req.body.voucherCode) {
+      try {
+        const voucherItems = await voucherService.resolveVoucherItems(items, {
+          ...req.body,
+          rentalDays: result.rentalDays
+        });
+        const rentalAmount = voucherItems.reduce((sum, item) => sum + item.subtotal, 0);
+        const voucherResult = await voucherService.validateVoucher({
+          code: req.body.voucherCode,
+          customerId: req.user?._id,
+          customerInfo: req.body.customerInfo,
+          allowCustomerInfoResolution: Boolean(req.user),
+          items: voucherItems,
+          rentalAmount
+        });
+        result.voucher = voucherService.serializePublicVoucher(voucherResult.voucher);
+        result.pricing = {
+          ...result.pricing,
+          discount: voucherResult.discountAmount,
+          eligibleRentalAmount: voucherResult.eligibleRentalAmount,
+          grandTotal: Math.max(0, Number(result.pricing?.grandTotal || 0) - voucherResult.discountAmount)
+        };
+      } catch (error) {
+        if (!(error instanceof ApiError)) throw error;
+        result.voucherError = {
+          statusCode: error.statusCode,
+          code: error.code || "VOUCHER_INVALID",
+          message: error.message,
+          data: error.data
+        };
+      }
+    }
+    if (shipping.feeMode === "external_direct_payment") {
+      result.feeMode = shipping.feeMode;
+      result.feeAmount = shipping.feeAmount;
+      result.chargedByShop = shipping.chargedByShop;
+      result.externalCarrierNotice = shipping.externalCarrierNotice;
+      result.transport = { ...result.transport, deliveryFee: null, collectionFee: null, feeMode: shipping.feeMode, chargedByShop: false };
+      result.pricing = { ...result.pricing, deliveryFee: null, collectionFee: null, transportTotal: null };
+    }
     if (!result.isBookable && includeNearest) {
       result.nearestBookable = await findNearestBookable(req.body, quoteOptions);
     }
@@ -156,7 +200,17 @@ export const listMyOrders = asyncHandler(async (req, res) => sendSuccess(res, me
 export const getOrder = asyncHandler(async (req, res) => sendSuccess(res, messages.detail, await rentalOrderService.getOrderForUser(req.params.id, req.user)));
 export const cancelOrder = asyncHandler(async (req, res) => sendSuccess(res, messages.cancel, await rentalOrderService.cancelOrder(req.params.id, req.user)));
 export const listAdminOrders = asyncHandler(async (req, res) => sendSuccess(res, messages.listAdmin, await rentalOrderService.listAdminOrders(req.query)));
-export const getAdminOrder = asyncHandler(async (req, res) => sendSuccess(res, messages.detail, await rentalOrderService.decorateOrder(req.params.id)));
+export const getAdminOrder = asyncHandler(async (req, res) => {
+  const order = await rentalOrderService.decorateOrder(req.params.id);
+  if (!order) throw new ApiError(404, "Không tìm thấy đơn thuê.");
+  sendSuccess(res, messages.detail, {
+    ...order,
+    ...applyRentalActionPermissions({
+      allowedActions: order.allowedActions,
+      actionBlockReasons: order.actionBlockReasons
+    }, req.user)
+  });
+});
 export const approveOrder = asyncHandler(async (req, res) => sendSuccess(res, messages.approve, await rentalOrderService.approveOrder(req.params.id, req.user._id)));
 export const rejectOrder = asyncHandler(async (req, res) => sendSuccess(res, messages.reject, await rentalOrderService.rejectOrder(req.params.id, req.user._id, req.body.reason)));
 export const readyForPickup = asyncHandler(async (req, res) => sendSuccess(res, messages.ready, await rentalOrderService.transitionOrder(req.params.id, "readyForPickup")));
@@ -180,4 +234,8 @@ export const immediateReturn = asyncHandler(async (req, res) => sendSuccess(res,
 export const publicLookup = asyncHandler(async (req, res) => sendSuccess(res, "Tra cứu đơn thuê thành công.", await lookupPublicRentalOrder(req.body)));
 export const publicSession = asyncHandler(async (req, res) => sendSuccess(res, "Lấy đơn thuê trong phiên khách thành công.", await getGuestOrderSession(req.params.orderCode, req.get("X-Guest-Order-Token"))));
 export const collectCashAndPickup = asyncHandler(async (req, res) => sendSuccess(res, "Đã thu tiền và bàn giao trang phục.", await rentalOrderService.collectCashAndPickup(req.params.id, req.user._id)));
+export const dispatchHomeDelivery = asyncHandler(async (req, res) => sendSuccess(res, "Đã ghi nhận giao đồ cho shipper.", await rentalOrderService.dispatchHomeDelivery(req.params.id, req.body, req.user._id)));
+export const confirmCustomerReceived = asyncHandler(async (req, res) => sendSuccess(res, "Đã ghi nhận khách nhận đồ.", await rentalOrderService.confirmCustomerReceived(req.params.id, req.body, req.user._id)));
+export const markCustomerHandedToShipper = asyncHandler(async (req, res) => sendSuccess(res, "Đã ghi nhận khách giao đồ trả cho shipper.", await rentalOrderService.markCustomerHandedToShipper(req.params.id, req.body, req.user._id)));
+export const confirmReturnReceivedByShop = asyncHandler(async (req, res) => sendSuccess(res, "Đã ghi nhận shop nhận lại đồ.", await rentalOrderService.confirmReturnReceivedByShop(req.params.id, req.body, req.user._id)));
 export const guestBankTransfer = asyncHandler(async (req, res) => sendSuccess(res, "Đã tạo yêu cầu chuyển khoản.", await createGuestBankTransfer(req.body), 201));

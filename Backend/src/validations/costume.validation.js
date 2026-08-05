@@ -1,7 +1,30 @@
-import { body } from "express-validator";
+import { body, query } from "express-validator";
 
 const legacyStatuses = ["available", "washing", "laundry", "repairing", "maintenance", "unavailable", "hidden"];
 const operationalStatuses = ["active", "maintenance", "unavailable", "hidden"];
+
+export const listCostumeValidation = [
+  query("page").optional().isInt({ min: 1, max: 1000000 }).withMessage("Trang dữ liệu không hợp lệ.").toInt(),
+  query("limit").optional().isInt({ min: 1, max: 48 }).withMessage("Số bản ghi mỗi trang không hợp lệ.").toInt(),
+  query("search").optional().isString().trim().isLength({ max: 80 }).withMessage("Từ khóa tìm kiếm không được vượt quá 80 ký tự."),
+  ...["category", "categorySlug", "categoryId", "size", "color", "occasion", "style"].map((field) =>
+    query(field).optional().isString().trim().isLength({ max: 240 }).withMessage(`Bộ lọc ${field} không hợp lệ.`)
+  ),
+  query("brand").optional().custom((value) => {
+    const values = Array.isArray(value) ? value : String(value).split(",");
+    return values.length <= 20 && values.every((item) => typeof item === "string" && item.length <= 120);
+  }).withMessage("Bộ lọc thương hiệu không hợp lệ."),
+  query("operationalStatus").optional().isIn([...operationalStatuses, ...legacyStatuses]).withMessage("Trạng thái trang phục không hợp lệ."),
+  query("status").optional().isIn([...operationalStatuses, ...legacyStatuses]).withMessage("Trạng thái trang phục không hợp lệ."),
+  query("minPrice").optional().isFloat({ min: 0, max: 1000000000 }).withMessage("Giá tối thiểu không hợp lệ.").toFloat(),
+  query("maxPrice").optional().isFloat({ min: 0, max: 1000000000 }).withMessage("Giá tối đa không hợp lệ.").toFloat(),
+  query().custom((value) => {
+    if (value.minPrice != null && value.maxPrice != null && Number(value.minPrice) > Number(value.maxPrice)) {
+      throw new Error("Khoảng giá không hợp lệ.");
+    }
+    return true;
+  })
+];
 
 const optionalTextFields = [
   "brandSlug",

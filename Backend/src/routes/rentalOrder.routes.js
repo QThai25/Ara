@@ -3,7 +3,7 @@ import * as controller from "../controllers/rentalOrder.controller.js";
 import { auth, optionalAuth } from "../middlewares/auth.middleware.js";
 import { adminOnly } from "../middlewares/admin.middleware.js";
 import { validate } from "../middlewares/validate.middleware.js";
-import { createRentalOrderValidation, inspectionValidation, publicLookupValidation, rejectOrderValidation } from "../validations/rentalOrder.validation.js";
+import { createRentalOrderValidation, inspectionValidation, listAdminRentalOrdersValidation, publicLookupValidation, rejectOrderValidation } from "../validations/rentalOrder.validation.js";
 import { publicLookupRateLimit } from "../middlewares/publicLookupRateLimit.middleware.js";
 import * as refundController from "../controllers/refund.controller.js";
 
@@ -25,7 +25,7 @@ rentalOrderRoutes.post("/:id/issues", auth, controller.reportPickupIssue);
 rentalOrderRoutes.get("/:id/issues", auth, controller.listIssues);
 rentalOrderRoutes.post("/:id/apply-credit", auth, controller.applyCredit);
 
-adminRentalOrderRoutes.get("/", auth, adminOnly, controller.listAdminOrders);
+adminRentalOrderRoutes.get("/", auth, adminOnly, listAdminRentalOrdersValidation, validate, controller.listAdminOrders);
 adminRentalOrderRoutes.post("/", auth, adminOnly, createRentalOrderValidation, validate, controller.createAdminRentalOrder);
 adminRentalOrderRoutes.get("/:id", auth, adminOnly, controller.getAdminOrder);
 adminRentalOrderRoutes.patch("/:id/approve", auth, adminOnly, controller.approveOrder);
@@ -47,3 +47,7 @@ adminRentalOrderRoutes.patch("/:id/issues/:issueId", auth, adminOnly, controller
 adminRentalOrderRoutes.post("/:id/settlement", auth, adminOnly, controller.settleDeposit);
 adminRentalOrderRoutes.patch("/:id/immediate-return", auth, adminOnly, controller.immediateReturn);
 adminRentalOrderRoutes.post("/:id/collect-cash-and-pickup", auth, adminOnly, controller.collectCashAndPickup);
+adminRentalOrderRoutes.post("/:id/dispatch-home-delivery", auth, adminOnly, controller.dispatchHomeDelivery);
+adminRentalOrderRoutes.post("/:id/confirm-customer-received", auth, adminOnly, controller.confirmCustomerReceived);
+adminRentalOrderRoutes.post("/:id/customer-return-handover", auth, adminOnly, controller.markCustomerHandedToShipper);
+adminRentalOrderRoutes.post("/:id/confirm-return-received", auth, adminOnly, controller.confirmReturnReceivedByShop);
