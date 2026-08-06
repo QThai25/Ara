@@ -12,7 +12,7 @@ export default defineConfig(({ mode }) => {
     build: {
       target: "es2020",
       sourcemap: false,
-      rollupOptions: { output: { manualChunks: { react: ["react", "react-dom", "react-router-dom"], charts: ["recharts", "chart.js"], realtime: ["axios", "socket.io-client"] } } }
+      rollupOptions: { output: { manualChunks: { react: ["react", "react-dom", "react-router-dom"], realtime: ["axios", "socket.io-client"] } } }
     },
     server: { host: "0.0.0.0", port: 5174 }
   };
