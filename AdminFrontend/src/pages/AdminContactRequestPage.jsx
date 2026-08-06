@@ -338,9 +338,9 @@ export function AdminContactRequestPage({ notify }) {
       title="Yêu cầu tư vấn"
       description="Quản lý hội thoại trực tuyến và phiếu đăng ký tư vấn của khách."
       action={<div className="admin-chat-tabs" role="tablist" aria-label="Khu vực tư vấn">
-        <button type="button" role="tab" aria-selected={tab === "inbox"} className={tab === "inbox" ? "active" : ""} onClick={() => setTab("inbox")}><MessageSquareText size={17} /> Inbox {waitingCount > 0 && <b className="admin-chat-tab-count">{waitingCount}</b>}</button>
-        <button type="button" role="tab" aria-selected={tab === "requests"} className={tab === "requests" ? "active" : ""} onClick={() => setTab("requests")}><ClipboardList size={17} /> Phiếu tư vấn</button>
-        {canManageKnowledge && <button type="button" role="tab" aria-selected={tab === "knowledge"} className={tab === "knowledge" ? "active" : ""} onClick={() => setTab("knowledge")}><BookOpen size={17} /> Kiến thức bot</button>}
+        <button type="button" role="tab" aria-selected={tab === "inbox"} className={tab === "inbox" ? "active" : ""} onClick={() => setTab("inbox")}><MessageSquareText size={17} /><span>Inbox</span>{waitingCount > 0 && <b className="admin-chat-tab-count">{waitingCount}</b>}</button>
+        <button type="button" role="tab" aria-selected={tab === "requests"} className={tab === "requests" ? "active" : ""} onClick={() => setTab("requests")}><ClipboardList size={17} /><span>Phiếu tư vấn</span></button>
+        {canManageKnowledge && <button type="button" role="tab" aria-selected={tab === "knowledge"} className={tab === "knowledge" ? "active" : ""} onClick={() => setTab("knowledge")}><BookOpen size={17} /><span className="admin-chat-tab-label-desktop">Kiến thức bot</span><span className="admin-chat-tab-label-mobile">Kiến thức</span></button>}
       </div>}
     />
 
