@@ -21125,3 +21125,11 @@ a.mei-footer-contact__item:hover .mei-footer-contact__arrow {
     grid-column: auto;
   }
 }
+
+@media (max-width: 768px) {
+  input,
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}
