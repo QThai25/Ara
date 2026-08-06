@@ -156,7 +156,7 @@ export function AdminRentalOrderListPage() {
             { key: "date", label: "Lịch nhận / mặc / trả", render: (order) => <span>{dateText(order.rentalDate)}<small>{dateText(order.mainUseDate)} · {dateText(order.returnDate)}</small></span> },
             { key: "amount", label: "Tiền thuê", className: "money-cell", render: (order) => money(order.totalRentalPrice || 0) },
             { key: "payment", label: "Thanh toán", render: (order) => <AdminStatusBadge type="payment" value={order.paymentStatus || "pending"} /> },
-            { key: "status", label: "Trạng thái / hạn giữ", render: (order) => <div className="admin-order-status-cell"><AdminStatusBadge value={order.status} /><OrderHoldCountdown expiresAt={order.holdExpiresAt} status={order.status} paymentStatus={order.paymentStatus} compact />{order.status === "expired" && <small>Không thể tiếp tục xử lý</small>}</div> },
+            { key: "status", label: "Trạng thái / hạn giữ", render: (order) => <div className="admin-order-status-cell"><AdminStatusBadge type="order" value={order.status} /><OrderHoldCountdown expiresAt={order.holdExpiresAt} status={order.status} paymentStatus={order.paymentStatus} compact />{order.status === "expired" && <small>Không thể tiếp tục xử lý</small>}</div> },
             { key: "createdAt", label: "Ngày tạo", render: (order) => dateText(order.createdAt) },
             { key: "action", label: "Thao tác", className: "action-cell", render: (order) => <button onClick={() => navigate(`/orders/${idOf(order)}`)}><Eye size={15} /> Chi tiết</button> }
           ]}

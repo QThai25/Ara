@@ -98,7 +98,7 @@ export function AdminStaffDetailPage({ notify }) {
               <div><dt>Email đăng nhập</dt><dd>{item.email}</dd></div>
               <div><dt>Số điện thoại</dt><dd>{item.phone}</dd></div>
               <div><dt>Role</dt><dd>Nhân viên</dd></div>
-              <div><dt>Trạng thái</dt><dd><AdminStatusBadge value={item.status} /></dd></div>
+              <div><dt>Trạng thái</dt><dd><AdminStatusBadge type="customer" value={item.status} /></dd></div>
               <div><dt>Lần đăng nhập gần nhất</dt><dd>{dateTime(item.lastLoginAt)}</dd></div>
               <div><dt>Ngày tạo</dt><dd>{dateTime(item.createdAt)}</dd></div>
               <div><dt>Người tạo</dt><dd>{item.createdBy?.name || "Hệ thống/legacy"}</dd></div>
