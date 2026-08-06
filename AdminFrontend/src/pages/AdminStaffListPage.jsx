@@ -45,7 +45,7 @@ export function AdminStaffListPage({ notify }) {
     { key: "name", label: "Nhân viên", render: (item) => <div className="admin-cell-stack"><strong>{item.name}</strong><small>{item.email}</small></div> },
     { key: "phone", label: "Số điện thoại" },
     { key: "role", label: "Role", render: () => <span className="admin-role-badge">Nhân viên</span> },
-    { key: "status", label: "Trạng thái", render: (item) => <AdminStatusBadge value={item.status} /> },
+    { key: "status", label: "Trạng thái", render: (item) => <AdminStatusBadge type="customer" value={item.status} /> },
     { key: "lastLoginAt", label: "Lần đăng nhập gần nhất", render: (item) => dateTime(item.lastLoginAt) },
     { key: "createdAt", label: "Ngày tạo", render: (item) => dateTime(item.createdAt) },
     { key: "createdBy", label: "Người tạo", render: (item) => item.createdBy?.name || "Hệ thống/legacy" },

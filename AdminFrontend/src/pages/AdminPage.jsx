@@ -246,7 +246,7 @@ export function AdminPage({ activeTab, notify, costumeEditor = null }) {
   if (activeTab === adminTabs.orders) return chrome(<AdminOrders orders={orders} selected={selectedOrder} selectedOrderId={selectedOrderId} setSelectedOrderId={setSelectedOrderId} notify={notify} reload={load} />);
   if (activeTab === adminTabs.inspections) return chrome(<AdminOrders orders={orders.filter((order) => ["renting", "returned", "overdue"].includes(order.status))} selected={selectedOrder} selectedOrderId={selectedOrderId} setSelectedOrderId={setSelectedOrderId} notify={notify} reload={load} inspectionOnly />);
   if (activeTab === adminTabs.payments) return chrome(<PaymentManager rows={payments} notify={notify} reload={load} canConfirm={can(P.PAYMENTS_CONFIRM_BANK_TRANSFER)} />);
-  if (activeTab === adminTabs.customers) return chrome(<SimpleResource title="Quản lý khách hàng" rows={customers} columns={["name", "email", "phone", "status"]} labels={["Tên", "Email", "Số điện thoại", "Trạng thái"]} />);
+  if (activeTab === adminTabs.customers) return chrome(<SimpleResource title="Quản lý khách hàng" rows={customers} columns={["name", "email", "phone", "status"]} labels={["Tên", "Email", "Số điện thoại", "Trạng thái"]} statusType="customer" />);
   if (activeTab === adminTabs.vouchers) return chrome(<VoucherManager items={vouchers} pagination={voucherPagination} categories={categories} occasions={occasions} costumes={costumes} customers={customers} notify={notify} reload={(options) => load(selectedOrderId, options)} />);
   if (activeTab === adminTabs.banners) return chrome(<BannerManager items={banners} notify={notify} reload={load} />);
   return chrome(<Reports stats={dashboardStats} orders={orders} costumes={costumes} summary={summary} />);
@@ -299,7 +299,7 @@ function Dashboard({ summary, stats, orders, costumes }) {
         <Metric icon={<Users />} label="Trang phục đang giặt" value={stats.laundry} />
       </div>
       <div className="admin-two-columns">
-        <AdminTable title="Đơn thuê gần đây" rows={orders.slice(0, 6)} columns={["status", "totalRentalPrice", "totalDepositAmount"]} labels={["Trạng thái", "Tiền thuê", "Tiền cọc"]} format={{ totalRentalPrice: money, totalDepositAmount: money }} />
+        <AdminTable title="Đơn thuê gần đây" rows={orders.slice(0, 6)} columns={["status", "totalRentalPrice", "totalDepositAmount"]} labels={["Trạng thái", "Tiền thuê", "Tiền cọc"]} statusType="order" format={{ totalRentalPrice: money, totalDepositAmount: money }} />
         <AdminTable title="Kho trang phục" rows={costumes.slice(0, 6)} columns={["name", "size", "status"]} labels={["Tên", "Size", "Trạng thái"]} format={{ status: (v) => <StatusBadge type="costume" value={v} /> }} />
       </div>
     </>
@@ -2738,7 +2738,7 @@ function AdminOrders({ orders, selected, selectedOrderId, setSelectedOrderId, no
         {pagedOrders.map((order) => (
           <button key={itemId(order)} className={`order-row ${itemId(selected) === itemId(order) ? "selected" : ""}`} onClick={() => setSelectedOrderId(itemId(order))}>
             <div className="order-row-head">
-              <StatusBadge value={order.status} />
+              <StatusBadge type="order" value={order.status} />
               <small>#{String(itemId(order)).slice(-6).toUpperCase()}</small>
             </div>
             <strong>{order.customer?.name || "Khách thuê"}</strong>
@@ -2754,7 +2754,7 @@ function AdminOrders({ orders, selected, selectedOrderId, setSelectedOrderId, no
       <div className="admin-card order-detail">
         {!selected ? <EmptyState text="Chọn đơn để xử lý." /> : (
           <>
-            <div className="section-title"><h2>Chi tiết đơn thuê</h2><StatusBadge value={selected.status} /></div>
+            <div className="section-title"><h2>Chi tiết đơn thuê</h2><StatusBadge type="order" value={selected.status} /></div>
             <p><strong>Khách:</strong> {selected.customer?.name} - {selected.customer?.phone}</p>
             <OrderStepper status={selected.status} />
             <OrderDetail order={selected} readonly />
@@ -2792,7 +2792,7 @@ function AdminOrders({ orders, selected, selectedOrderId, setSelectedOrderId, no
   );
 }
 
-function SimpleResource({ title, rows, columns, labels, format = {} }) {
+function SimpleResource({ title, rows, columns, labels, format = {}, statusType = "generic" }) {
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebouncedValue(search, 600);
   const filtered = asArray(rows).filter((row) => Object.values(row || {}).join(" ").toLowerCase().includes(debouncedSearch.toLowerCase()));
@@ -2807,7 +2807,7 @@ function SimpleResource({ title, rows, columns, labels, format = {} }) {
             placeholder={`Tìm trong ${title.toLowerCase()}...`}
           />
         </div>
-        <AdminTable rows={filtered} columns={columns} labels={labels} format={format} />
+        <AdminTable rows={filtered} columns={columns} labels={labels} statusType={statusType} format={format} />
       </div>
     </>
   );
@@ -3091,7 +3091,7 @@ function Reports({ stats, orders, costumes, summary }) {
         <Metric icon={<PackageCheck />} label="Sản phẩm đang giặt" value={stats.laundry} />
       </div>
       <div className="admin-two-columns">
-        <AdminTable title="Đơn thuê gần đây" rows={orders.slice(0, 8)} columns={["status", "totalRentalPrice", "totalDepositAmount"]} labels={["Trạng thái", "Tiền thuê", "Tiền cọc"]} format={{ totalRentalPrice: money, totalDepositAmount: money }} />
+        <AdminTable title="Đơn thuê gần đây" rows={orders.slice(0, 8)} columns={["status", "totalRentalPrice", "totalDepositAmount"]} labels={["Trạng thái", "Tiền thuê", "Tiền cọc"]} statusType="order" format={{ totalRentalPrice: money, totalDepositAmount: money }} />
         <AdminTable title="Kho trang phục" rows={costumes.slice(0, 8)} columns={["name", "status", "rentalPricePerDay"]} labels={["Tên", "Trạng thái", "Giá thuê"]} format={{ status: (v) => <StatusBadge type="costume" value={v} />, rentalPricePerDay: money }} />
       </div>
     </>
@@ -3106,7 +3106,7 @@ function isMoneyColumn(column) {
   return /price|amount|fee|deposit|revenue|total|value/i.test(column);
 }
 
-function AdminTable({ title, rows = [], columns, labels, format = {}, actions, colWidths = [], columnClasses = {}, tableClassName = "", mobileCards = false, page: externalPage, pageSize: externalPageSize = 10, total: externalTotal, totalPages: externalTotalPages, onPageChange, paginationDisabled = false }) {
+function AdminTable({ title, rows = [], columns, labels, format = {}, statusType = "generic", actions, colWidths = [], columnClasses = {}, tableClassName = "", mobileCards = false, page: externalPage, pageSize: externalPageSize = 10, total: externalTotal, totalPages: externalTotalPages, onPageChange, paginationDisabled = false }) {
   const safeRows = asArray(rows);
   const isServerPaginated = externalTotalPages !== undefined;
   const [internalPage, setInternalPage] = useState(1);
@@ -3139,7 +3139,7 @@ function AdminTable({ title, rows = [], columns, labels, format = {}, actions, c
             <tbody>{pagedRows.map((row, index) => (
               <tr key={itemId(row) || index}>
                 {columns.map((col, columnIndex) => {
-                  const value = format[col] ? format[col](row[col], row) : col === "status" ? <StatusBadge value={row[col]} /> : row[col];
+                  const value = format[col] ? format[col](row[col], row) : col === "status" ? <StatusBadge type={statusType} value={row[col]} /> : row[col];
                   const className = ["admin-cell", isMoneyColumn(col) ? "money-cell" : "", columnClasses[col] || ""].filter(Boolean).join(" ");
                   return <td key={col} className={className} data-label={mobileCards ? labels[columnIndex] : undefined}><span className="cell-content">{value}</span></td>;
                 })}

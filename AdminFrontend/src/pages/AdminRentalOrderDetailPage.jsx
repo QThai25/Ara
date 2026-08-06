@@ -485,7 +485,7 @@ export function AdminRentalOrderDetailPage({ notify }) {
       });
     }
 
-    if (normalizedStatus === "ready_to_pickup" && (order.allowedActions?.collectCashAndPickup || order.allowedActions?.confirmStorePickup || order.allowedActions?.dispatchHomeDelivery)) {
+    if (["ready_for_handover", "ready_to_pickup"].includes(normalizedStatus) && (order.allowedActions?.collectCashAndPickup || order.allowedActions?.confirmStorePickup || order.allowedActions?.dispatchHomeDelivery)) {
       result.push({
         label: order.pickupMethod === "home_delivery" ? "Đã giao đồ cho shipper" : order.paymentPreference === "cash" ? "Xác nhận thu tiền và khách nhận đồ" : "Khách đã nhận đồ",
         tone: "primary",
@@ -623,6 +623,7 @@ export function AdminRentalOrderDetailPage({ notify }) {
               description="Theo dõi trạng thái, thanh toán và quá trình bàn giao trang phục."
               action={
                 <AdminStatusBadge
+                  type="order"
                   value={normalizedStatus}
                 />
               }

@@ -20,7 +20,7 @@ export function OrderDetail({ order, cancel, pay, readonly = false }) {
             #{String(order.id || order._id || "").slice(-6).toUpperCase()} · {formatDate(order.rentalDate)} - {formatDate(order.returnDate)}
           </p>
         </div>
-        <StatusBadge value={order.status} />
+        <StatusBadge type="order" value={order.status} />
       </div>
       <div className="timeline">
         {steps.map((step, index) => <div key={step} className={index <= currentStep ? "done" : ""}><span>{index + 1}</span><small>{orderLabels[step]}</small></div>)}

@@ -242,6 +242,6 @@ export function AdminDetailSection({ icon, title, children, aside }) {
   );
 }
 
-export function AdminStatusBadge({ value, type }) {
+export function AdminStatusBadge({ value, type = "generic" }) {
   return <StatusBadge type={type} value={value} />;
 }

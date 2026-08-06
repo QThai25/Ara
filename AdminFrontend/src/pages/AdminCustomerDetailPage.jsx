@@ -384,6 +384,7 @@ export function AdminCustomerDetailPage({ notify }) {
                   description="Thông tin hồ sơ và lịch sử giao dịch của khách hàng."
                   action={
                     <AdminStatusBadge
+                      type="customer"
                       value={
                         customer.status ||
                         "active"
@@ -461,6 +462,7 @@ export function AdminCustomerDetailPage({ notify }) {
                       label="Trạng thái tài khoản"
                       value={
                         <AdminStatusBadge
+                          type="customer"
                           value={
                             customer.status ||
                             "active"
@@ -627,6 +629,7 @@ export function AdminCustomerDetailPage({ notify }) {
 
                             <div className="admin-customer-order-status">
                               <AdminStatusBadge
+                                type="order"
                                 value={
                                   order.status
                                 }
@@ -735,6 +738,7 @@ export function AdminCustomerDetailPage({ notify }) {
                       label="Trạng thái"
                       value={
                         <AdminStatusBadge
+                          type="customer"
                           value={
                             customer.status ||
                             "active"
