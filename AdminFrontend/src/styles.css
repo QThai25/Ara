@@ -5858,3 +5858,30 @@ html,body,#root,button,input,textarea,select,option,table,th,td,h1,h2,h3,h4,h5,h
   .admin-topbar-v2__right { gap: 6px; }
   .admin-topbar-v2__logout { padding-inline: 9px !important; font-size: 11px; }
 }
+
+@media (max-width: 768px) {
+  .admin-main-content > .admin-chat-page {
+    width: calc(100% + 24px);
+    margin-left: -12px;
+    margin-right: -12px;
+    padding: 12px 0 28px;
+  }
+
+  .admin-main-content > .admin-chat-page > .admin-page-header {
+    padding-inline: 12px;
+  }
+
+  .admin-main-content > .admin-chat-page .admin-chat-shell.list-only {
+    border-right: 0;
+    border-left: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .admin-main-content > .admin-chat-page.is-detail-view {
+    width: calc(100% + 24px);
+    margin-left: -12px;
+    margin-right: -12px;
+    padding: 0;
+  }
+}
