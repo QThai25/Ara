@@ -10,6 +10,14 @@ export const UPLOAD_TIMEOUT_MS = 120_000;
 export const api = axios.create({ baseURL: apiBaseUrl.replace(/\/$/, ""), timeout: REQUEST_TIMEOUT_MS });
 
 api.interceptors.request.use((config) => {
+  const method = (config.method || "get").toLowerCase();
+  if (["post", "put", "patch", "delete"].includes(method) && typeof navigator !== "undefined" && navigator.onLine === false) {
+    const offlineError = new Error("Không có kết nối mạng. Vui lòng kết nối lại để tiếp tục thao tác.");
+    offlineError.code = "OFFLINE";
+    offlineError.isOffline = true;
+    return Promise.reject(offlineError);
+  }
+
   const token = localStorage.getItem("ara_admin_token");
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
