@@ -2924,7 +2924,9 @@ function PaymentDetailModal({ id, fallback, notify, onChanged, onClose, canConfi
   }, [id]);
 
   const order = payment?.orderId || payment?.order || {};
-  const customer = payment?.customerId || payment?.customer || order.customerId || {};
+  const customer = [payment?.customerId, payment?.customer, order.customerId]
+    .find((value) => value && typeof value === "object") || {};
+  const customerName = customer.name || customer.fullName || order.customerInfo?.fullName || "Chưa cập nhật";
   const items = asArray(order.items);
   const penaltyFee = (order.lateFee || 0) + (order.damageFee || 0);
   const totalAmount = orderTotal(order);
@@ -2944,7 +2946,7 @@ function PaymentDetailModal({ id, fallback, notify, onChanged, onClose, canConfi
           <div className="detail-list payment-transaction-details">
             <DetailRow label={isRefund ? "Mã hoàn cọc" : "Mã thanh toán"} value={isRefund ? (payment.refundCode || payment.paymentReference) : (payment.paymentReference || itemId(payment))} />
             <DetailRow label={"M\u00e3 \u0111\u01a1n thu\u00ea"} value={order.orderCode || `ARA-${String(itemId(order)).slice(-6).toUpperCase()}`} />
-            <DetailRow label={"Kh\u00e1ch h\u00e0ng"} value={customer.name || customer.email || customer.phone} />
+            <DetailRow label={"Kh\u00e1ch h\u00e0ng"} value={customerName} />
             <DetailRow label={"S\u1ed1 ti\u1ec1n"} value={money(payment.amount)} />
             <DetailRow label={"Ph\u01b0\u01a1ng th\u1ee9c thanh to\u00e1n"} value={({ cash: "Tiền mặt", bank_transfer: "Chuyển khoản ngân hàng", momo: "MoMo", vnpay: "VNPay", payos: "PayOS", bank_gateway: "Cổng ngân hàng" })[payment.method] || payment.method} />
             <DetailRow label="Minh chứng chuyển khoản" value={payment.proofAccessUrl ? <a className="payment-proof-link" href={payment.proofAccessUrl} target="_blank" rel="noreferrer">Mở ảnh minh chứng</a> : payment.method === "bank_transfer" ? "Khách chưa gửi minh chứng" : "Không áp dụng"} />

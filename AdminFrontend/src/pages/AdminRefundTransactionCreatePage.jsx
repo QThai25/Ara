@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, CheckCircle2, Search } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { ModalSelect } from "../components/common/AdminControls.jsx";
 import { AdminButton, AdminCard, AdminFormField, AdminPageHeader, AdminPageLayout, ErrorState, LoadingState } from "../components/common/AdminUI.jsx";
 import { createRefundTransaction, getRefundTransactionContext, searchRefundTransactions } from "../services/refundTransactionService.js";
 
@@ -73,7 +74,7 @@ export function AdminRefundTransactionCreatePage({ notify }) {
       <AdminCard className="refund-create-card">
         <h2>Đối chiếu giao dịch</h2>
         <AdminFormField label="Nội dung chuyển khoản" required><textarea value={form.receivedTransferContent} onChange={(event) => update("receivedTransferContent", event.target.value)} /></AdminFormField>
-        <AdminFormField label="Lý do hoàn tiền" required><select value={form.reasonCode} onChange={(event) => update("reasonCode", event.target.value)}>{Object.entries(reasons).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></AdminFormField>
+        <ModalSelect label="Lý do hoàn tiền" value={form.reasonCode} onChange={(value) => update("reasonCode", value)} options={Object.entries(reasons)} />
         {form.reasonCode === "other" && <AdminFormField label="Mô tả lý do khác" required><textarea value={form.reasonDescription} onChange={(event) => update("reasonDescription", event.target.value)} /></AdminFormField>}
         <AdminFormField label="Ghi chú nội bộ"><textarea value={form.note} onChange={(event) => update("note", event.target.value)} /></AdminFormField>
       </AdminCard>
