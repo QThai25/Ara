@@ -1,9 +1,9 @@
-import React from "react";
+import React, { lazy, Suspense } from "react";
 import { Navigate, Route, Routes, useParams } from "react-router-dom";
 import { useAdminAuth } from "../context/AdminAuthContext.jsx";
 import { ProtectedAdminRoute } from "./ProtectedAdminRoute.jsx";
+import { LoadingState } from "../components/common/AdminUI.jsx";
 import { AdminLoginPage } from "../pages/AdminLoginPage.jsx";
-import { DashboardPage } from "../pages/DashboardPage.jsx";
 import { AdminCostumeListPage } from "../pages/AdminCostumeListPage.jsx";
 import { AdminCostumeDetailPage } from "../pages/AdminCostumeDetailPage.jsx";
 import { AdminCreateCostumePage } from "../pages/AdminCreateCostumePage.jsx";
@@ -21,7 +21,6 @@ import { AdminCustomerPage } from "../pages/AdminCustomerPage.jsx";
 import { AdminCustomerDetailPage } from "../pages/AdminCustomerDetailPage.jsx";
 import { AdminVoucherPage } from "../pages/AdminVoucherPage.jsx";
 import { AdminBannerPage } from "../pages/AdminBannerPage.jsx";
-import { AdminReportPage } from "../pages/AdminReportPage.jsx";
 import { AdminReturnInspectionPage } from "../pages/AdminReturnInspectionPage.jsx";
 import { AdminReturnInspectionDetailPage } from "../pages/AdminReturnInspectionDetailPage.jsx";
 import { AdminNotificationPage } from "../pages/AdminNotificationPage.jsx";
@@ -36,6 +35,9 @@ import { AdminAuditLogPage } from "../pages/AdminAuditLogPage.jsx";
 import { AdminChangePasswordPage } from "../pages/AdminChangePasswordPage.jsx";
 import { ADMIN_PERMISSIONS as P } from "../constants/adminPermissions.js";
 import { AdminNotFoundPage } from "../pages/AdminNotFoundPage.jsx";
+
+const DashboardPage = lazy(() => import("../pages/DashboardPage.jsx").then(({ DashboardPage: page }) => ({ default: page })));
+const AdminReportPage = lazy(() => import("../pages/AdminReportPage.jsx").then(({ AdminReportPage: page }) => ({ default: page })));
 
 function ProtectedPage({ toast, permission, children }) {
   return <ProtectedAdminRoute toast={toast} requiredPermission={permission}>{children}</ProtectedAdminRoute>;
@@ -54,7 +56,8 @@ function RentalDetailRedirect() {
 
 export function AdminRoutes({ toast, notify }) {
   return (
-    <Routes>
+    <Suspense fallback={<LoadingState message="Đang tải trang quản trị..." />}>
+      <Routes>
       <Route path="/login" element={<AdminLoginPage />} />
       <Route path="/" element={<HomeRedirect />} />
       <Route path="/admin" element={<Navigate to="/" replace />} />
@@ -93,6 +96,7 @@ export function AdminRoutes({ toast, notify }) {
       <Route path="/staff/:id/edit" element={<ProtectedPage toast={toast} permission={P.STAFF_MANAGE}><AdminStaffEditPage notify={notify} /></ProtectedPage>} />
       <Route path="/audit-logs" element={<ProtectedPage toast={toast} permission={P.AUDIT_VIEW}><AdminAuditLogPage /></ProtectedPage>} />
       <Route path="*" element={<ProtectedPage toast={toast}><AdminNotFoundPage /></ProtectedPage>} />
-    </Routes>
+      </Routes>
+    </Suspense>
   );
 }
