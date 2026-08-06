@@ -2,7 +2,7 @@ import React,{useEffect,useRef,useState}from"react";
 import{ArrowLeft,CalendarClock,Plus,ShoppingBag}from"lucide-react";
 import{useNavigate}from"react-router-dom";
 import{AdminPageHeader}from"../components/common/AdminUI.jsx";
-import{ModalCombobox,ModalSelect}from"../components/common/AdminControls.jsx";
+import{ModalCombobox,ModalDatePicker,ModalSelect}from"../components/common/AdminControls.jsx";
 import{AdminAddressLocationFields}from"../components/common/AdminAddressLocationFields.jsx";
 import{useDebouncedValue}from"../hooks/useDebouncedValue.js";
 import{getCostumePage}from"../services/costumeService.js";
@@ -11,6 +11,7 @@ import{createWalkInRentalOrder}from"../services/rentalOrderService.js";
 
 const rows=value=>value?.items||value?.data?.items||value?.data||value||[];
 const STORE_RETURN_METHOD="store_return";
+const timeOptions=Array.from({length:27},(_,index)=>{const minutes=8*60+index*30,hour=Math.floor(minutes/60),minute=minutes%60,value=`${String(hour).padStart(2,"0")}:${String(minute).padStart(2,"0")}`;return [value,value];});
 export function AdminCreateRentalOrderPage({notify}){
  const navigate=useNavigate(),[customers,setCustomers]=useState([]),[costumes,setCostumes]=useState([]),[busy,setBusy]=useState(false);
  const[costumeSearch,setCostumeSearch]=useState(""),[costumeLoading,setCostumeLoading]=useState(false),[costumePagination,setCostumePagination]=useState({page:1,totalPages:1,hasNextPage:false});
@@ -33,7 +34,7 @@ export function AdminCreateRentalOrderPage({notify}){
    <label>Số lượng<input type="number" min="1" max="20" value={form.quantity} onChange={change("quantity")}/></label><ModalSelect label="Thanh toán" value={form.paymentPreference} onChange={value=>setField("paymentPreference",value)} options={[["cash","Tiền mặt tại quầy"],["bank_transfer","Chuyển khoản"],["payos","PayOS"]]}/>
   </div></section>
   <section><header><span><CalendarClock size={18}/></span><div><h2>Timeline thuê 24 giờ</h2><p>Backend kiểm tra chuẩn bị, thuê, vận chuyển và vệ sinh.</p></div></header><div className="admin-walkin-grid">
-   <label>Ngày bắt đầu<input required type="date" value={form.date} onChange={change("date")}/></label><label>Giờ bắt đầu<input required type="time" min="08:00" max="21:00" step="1800" value={form.time} onChange={change("time")}/></label><label>Số ngày thuê<input required type="number" min="1" max="30" value={form.rentalDays} onChange={change("rentalDays")}/><small>{Number(form.rentalDays||1)*24} giờ liên tục</small></label>
+   <ModalDatePicker label="Ngày bắt đầu" value={form.date} onChange={value=>setField("date",value)} placeholder="Chọn ngày bắt đầu"/><ModalSelect label="Giờ bắt đầu" value={form.time} onChange={value=>setField("time",value)} options={timeOptions}/><label>Số ngày thuê<input required type="number" min="1" max="30" value={form.rentalDays} onChange={change("rentalDays")}/><small>{Number(form.rentalDays||1)*24} giờ liên tục</small></label>
    <ModalSelect label="Cách nhận" value={form.pickupMethod} onChange={value=>setField("pickupMethod",value)} options={[["store_pickup","Tự nhận tại cửa hàng"],["home_delivery","Giao tận nơi"]]}/><label>Cách trả<input value="Tự trả tại cửa hàng" readOnly aria-readonly="true"/></label>
   </div>{transport&&<div className="admin-walkin-grid address"><label className="wide">Số nhà, tên đường<input required value={form.addressLine} onChange={change("addressLine")}/></label><AdminAddressLocationFields provinceCode={form.provinceCode} districtCode={form.districtCode} communeCode={form.communeCode} allowedProvinceCodes={["79"]} onChange={setLocation}/></div>}<label className="admin-walkin-note">Ghi chú<textarea rows="4" value={form.note} onChange={change("note")}/></label></section>
   <footer><button type="button" onClick={()=>navigate("/orders")}>Hủy</button><button className="primary" disabled={busy}><Plus size={17}/>{busy?"Đang giữ lịch...":"Tạo đơn và mở chi tiết"}</button></footer>

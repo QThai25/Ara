@@ -2626,7 +2626,9 @@ html, body, #root { width: 100%; max-width: 100%; overflow-x: hidden !important;
   border:1px solid #cba75e;border-radius:999px;background:#cfad68;color:#21150f;font-weight:800;
 }
 .admin-walkin-back{background:#fffaf1}
-.admin-walkin-form{display:grid;gap:22px;max-width:1180px}
+.admin-walkin-form{display:grid;width:100%;min-width:0;gap:22px;max-width:1180px}
+.admin-walkin-form>section,.admin-walkin-grid,.admin-walkin-grid>*{min-width:0}
+.admin-walkin-grid .modal-select-field,.admin-walkin-grid .modal-date-field{min-width:0}
 .admin-walkin-form>section{padding:26px;border:1px solid #e5d1ad;border-radius:22px;background:#fffdf9;box-shadow:0 12px 34px rgba(65,43,25,.05)}
 .admin-walkin-form section>header{display:flex;gap:14px;align-items:flex-start;margin-bottom:22px}
 .admin-walkin-form section>header>span{display:grid;place-items:center;width:42px;height:42px;border-radius:14px;background:#fff1cb;color:#8e6727}
