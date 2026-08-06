@@ -324,7 +324,8 @@ export async function createPayment(user, payload, idempotencyKey, requestMeta =
     throw new ApiError(503, "Thanh toán online đang phát triển và chưa được kích hoạt.");
   }
   const availability = paymentMethodsAvailability();
-  if (payload.channel === "online" && !availability[payload.method]) {
+  const availabilityKey = isPayosMethod(payload.method) ? "payos" : payload.method;
+  if (payload.channel === "online" && !availability[availabilityKey]) {
     throw new ApiError(503, `Phương thức ${payload.method} chưa được cấu hình.`);
   }
   if (payload.paymentType === "refund" && !canProcessRefunds(user)) {
