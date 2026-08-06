@@ -2,15 +2,38 @@ import * as paymentService from "../services/payment.service.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { sendSuccess } from "../utils/apiResponse.js";
 import { ADMIN_PERMISSIONS, hasAdminPermission } from "../utils/adminPermissions.js";
+import { recoverExpiredOrderPayment as recoverExpiredOrderPaymentService } from "../services/latePaymentRecovery.service.js";
+
+function sendPaymentSuccess(res, message, data, statusCode = 200) {
+  return sendSuccess(res, message, data, data?.reused ? 200 : statusCode);
+}
 
 export const createPayment = asyncHandler(
-  async (req, res) =>
-    sendSuccess(
+  async (req, res) => {
+    const paymentBody = req.body;
+    return sendPaymentSuccess(
       res,
       "Khởi tạo thanh toán thành công.",
       await paymentService.createPayment(
         req.paymentActor || req.user,
-        { ...req.body, amount: undefined, provider: undefined, channel: undefined, status: undefined },
+        { ...paymentBody, amount: undefined, provider: undefined, channel: undefined, status: undefined },
+        req.get("Idempotency-Key") || req.body.idempotencyKey,
+        { ipAddress: req.ip }
+      ),
+      201
+    );
+  }
+);
+
+export const replacePayment = asyncHandler(
+  async (req, res) =>
+    sendPaymentSuccess(
+      res,
+      "Đã hủy giao dịch cũ và tạo giao dịch mới.",
+      await paymentService.replacePayment(
+        req.params.id,
+        req.paymentActor || req.user,
+        { method: req.body.method },
         req.get("Idempotency-Key") || req.body.idempotencyKey,
         { ipAddress: req.ip }
       ),
@@ -81,7 +104,8 @@ export const getAdminPayment = asyncHandler(
         req.params.id,
         {
           includeRefundSensitive: hasAdminPermission(req.user, ADMIN_PERMISSIONS.REFUNDS_VIEW_SENSITIVE),
-          includeProof: hasAdminPermission(req.user, ADMIN_PERMISSIONS.PAYMENTS_CONFIRM_BANK_TRANSFER)
+          includeProof: hasAdminPermission(req.user, ADMIN_PERMISSIONS.PAYMENTS_CONFIRM_BANK_TRANSFER),
+          actor: req.user
         }
       )
     )
@@ -111,3 +135,11 @@ export const rejectPayment = asyncHandler(
       )
     )
 );
+
+export const recoverExpiredOrderPayment = asyncHandler(async (req, res) => sendSuccess(
+  res,
+  "Đã ghi nhận khoản chuyển và tạo yêu cầu hoàn tiền.",
+  await recoverExpiredOrderPaymentService(req.params.id, req.user, req.body, {
+    requestId: req.get("X-Request-Id") || req.id || ""
+  })
+));

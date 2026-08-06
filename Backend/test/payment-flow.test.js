@@ -3,8 +3,12 @@ import fs from "node:fs";
 import test from "node:test";
 import {
   calculatePaymentQuoteFromData,
+  canCreateReplacementPayment,
+  canReusePayment,
   calculateSettlement,
   deriveOrderPaymentStatus,
+  isLockedPayment,
+  isReplaceableActivePayment,
   summarizeSuccessfulPayments
 } from "../src/services/paymentQuote.service.js";
 import { assertOrderAccess } from "../src/services/payment.service.js";
@@ -23,6 +27,21 @@ const order = (overrides = {}) => ({
 });
 
 const payment = (paymentType, amount, status = "success") => ({ paymentType, amount, status });
+
+test("payment method switching uses the existing payment lifecycle states", () => {
+  const pendingBank = { active: true, status: "awaiting_confirmation", method: "bank_transfer" };
+  const submittedBank = { ...pendingBank, proofSubmittedAt: new Date() };
+  const successful = { active: false, status: "success", method: "bank_transfer" };
+  const expired = { active: false, status: "expired", method: "bank_transfer" };
+
+  assert.equal(isReplaceableActivePayment(pendingBank), true);
+  assert.equal(isLockedPayment(submittedBank), true);
+  assert.equal(canReusePayment(pendingBank, "bank_transfer"), true);
+  assert.equal(canReusePayment(pendingBank, "payos_qr"), false);
+  assert.equal(canCreateReplacementPayment(pendingBank), true);
+  assert.equal(canCreateReplacementPayment(successful), false);
+  assert.equal(canCreateReplacementPayment(expired), true);
+});
 
 test("deposit quote is rejected before order confirmation", () => {
   const quote = calculatePaymentQuoteFromData(order({ status: "pending" }), "deposit", []);
@@ -238,4 +257,67 @@ test("customer order list sends backend pagination instead of loading 50 orders"
   assert.match(source, /limit: PAGE_SIZE/);
   assert.match(source, /search: debouncedSearch/);
   assert.doesNotMatch(source, /limit: 50/);
+});
+
+test("manual bank transfer uses the order hold while provider payments keep provider expiry", () => {
+  const source = fs.readFileSync(new URL("../src/services/payment.service.js", import.meta.url), "utf8");
+  assert.match(source, /payload\.method === "bank_transfer"\s*\?\s*order\.holdExpiresAt/);
+  assert.match(source, /computeStoreAwareExpiry\(new Date\(\), expiresMinutes, storeConfig\)/);
+  assert.match(source, /isPayosMethod\(payload\.method\) \? "payos"/);
+  assert.match(source, /expiresAt: storeAwareExpiry \|\| new Date/);
+});
+
+test("manual proof review clears deadlines and keeps duplicate active payments blocked", () => {
+  const source = fs.readFileSync(new URL("../src/services/payment.service.js", import.meta.url), "utf8");
+  assert.match(source, /payment\.expiresAt = null/);
+  assert.match(source, /order\.holdExpiresAt = null/);
+  assert.match(source, /order\.paymentExpiresAt = null/);
+  assert.match(source, /status: \{ \$in: ACTIVE_PAYMENT_STATUSES \}/);
+  assert.match(source, /proofSubmittedAt: null/);
+});
+
+test("payment creation exposes safe reuse and explicit method-change conflicts", () => {
+  const source = fs.readFileSync(new URL("../src/services/payment.service.js", import.meta.url), "utf8");
+  const validation = fs.readFileSync(new URL("../src/validations/payment.validation.js", import.meta.url), "utf8");
+  assert.match(source, /PAYMENT_ALREADY_SUBMITTED/);
+  assert.match(source, /PAYMENT_METHOD_CHANGE_CONFIRMATION_REQUIRED/);
+  assert.match(source, /PAYMENT_ALREADY_COMPLETED/);
+  assert.match(source, /replacementPaymentId/);
+  assert.doesNotMatch(source, /confirmMethodChange === true/);
+  assert.doesNotMatch(validation, /replacePaymentId|confirmMethodChange/);
+  assert.match(source, /withPayosCreationLock/);
+  assert.match(source, /status: \{ \$in: ACTIVE_PAYMENT_STATUSES \}/);
+  assert.match(source, /createPaymentReference\(order, payload\.paymentType, idempotencyKey\)/);
+});
+
+test("customer and guest checkout guard method changes locally and serialize final submission", () => {
+  const customer = fs.readFileSync(new URL("../../Frontend/src/pages/customer/MyOrderDetailPage.jsx", import.meta.url), "utf8");
+  const guest = fs.readFileSync(new URL("../../Frontend/src/pages/customer/RentalOrderSuccessPage.jsx", import.meta.url), "utf8");
+  const paymentClient = fs.readFileSync(new URL("../../Frontend/src/services/paymentService.js", import.meta.url), "utf8");
+  assert.match(customer, /paymentSubmitRef\.current/);
+  assert.match(customer, /PAYMENT_METHOD_CHANGE_CONFIRMATION_REQUIRED/);
+  assert.match(customer, /replacePaymentNow/);
+  assert.match(customer, /await replacePayment\(/);
+  assert.doesNotMatch(customer, /submitPayment\(\{\s*confirmMethodChange/);
+  assert.match(guest, /submittingRef\.current/);
+  assert.match(guest, /PAYMENT_METHOD_CHANGE_CONFIRMATION_REQUIRED/);
+  assert.match(guest, /replaceGuestPayment/);
+  assert.match(guest, /await replacePayment\(/);
+  assert.doesNotMatch(guest, /submit\(\{\s*confirmMethodChange/);
+  assert.match(paymentClient, /\/payments\/\$\{id\}\/replace/);
+});
+
+test("payment method replacement has an explicit route and safe confirmation payload", () => {
+  const routes = fs.readFileSync(new URL("../src/routes/payment.routes.js", import.meta.url), "utf8");
+  const validation = fs.readFileSync(new URL("../src/validations/payment.validation.js", import.meta.url), "utf8");
+  const controller = fs.readFileSync(new URL("../src/controllers/payment.controller.js", import.meta.url), "utf8");
+  const service = fs.readFileSync(new URL("../src/services/payment.service.js", import.meta.url), "utf8");
+  assert.match(routes, /paymentRoutes\.post\(\s*"\/:id\/replace"/);
+  assert.match(routes, /replacementPaymentValidation/);
+  assert.match(validation, /export const replacementPaymentValidation/);
+  assert.match(controller, /paymentService\.replacePayment\(/);
+  assert.match(service, /activePayment:\s*\{/);
+  assert.match(service, /requestedMethod/);
+  assert.match(service, /PAYMENT_METHOD_UNCHANGED/);
+  assert.match(service, /PAYMENT_REPLACEMENT_NOT_ALLOWED/);
 });

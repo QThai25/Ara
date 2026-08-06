@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { createGuestOrderAccessToken, verifyGuestOrderAccessToken } from "../src/utils/guestOrderAccessToken.js";
 import { assertOrderAccess, getPaymentMethods } from "../src/services/payment.service.js";
 
@@ -22,4 +23,12 @@ test("guest order token rejects a wrong signature and missing scope", () => {
 
 test("checkout exposes cash, configured bank transfer and optional payOS", () => {
   assert.deepEqual(getPaymentMethods().options.map(item => item.method), ["bank_transfer", "cash", "payos_qr"]);
+});
+
+test("guest payment delegates to the shared payment service and keeps token lifetime separate", async () => {
+  const source = await readFile(new URL("../src/services/publicRentalOrder.service.js", import.meta.url), "utf8");
+  assert.match(source, /createPayment\(/);
+  assert.match(source, /holdExpiresAt/);
+  assert.match(source, /paymentExpiresAt/);
+  assert.match(source, /guestOrderTokenExpiresAt/);
 });

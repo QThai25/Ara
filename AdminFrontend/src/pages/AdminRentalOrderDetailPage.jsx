@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   ClipboardCheck,
   CreditCard,
+  Eye,
   PackageCheck,
   Truck
 } from "lucide-react";
@@ -90,6 +91,13 @@ const STATUS_ALIASES = {
 };
 
 const idOf = (item) => item?.id || item?._id || "";
+
+const costumeOf = (item) => item?.costume || item?.costumeId || {};
+
+const costumeIdOf = (item) => {
+  const costume = costumeOf(item);
+  return idOf(costume) || (typeof item?.costumeId === "string" ? item.costumeId : "");
+};
 
 const shortId = (item) =>
   String(idOf(item)).slice(-6).toUpperCase();
@@ -432,6 +440,15 @@ export function AdminRentalOrderDetailPage({ notify }) {
 
     const result = [];
 
+    const latestPayment = order.latestPaymentId || {};
+    if (order.latePaymentRecoveryEligibility?.eligible === true) {
+      result.push({
+        label: "Tạo yêu cầu hoàn tiền",
+        tone: "warning",
+        onClick: () => navigate(`/refund-transactions/new?orderId=${encodeURIComponent(id)}&paymentId=${encodeURIComponent(latestPayment._id || latestPayment.id || "")}`)
+      });
+    }
+
     if (normalizedStatus === "pending") {
       result.push({
         label: "Duyệt đơn",
@@ -558,7 +575,7 @@ export function AdminRentalOrderDetailPage({ notify }) {
             title: "Mở xử lý hoàn cọc",
             description: "Khoản hoàn cọc đã được tạo từ kết quả kiểm tra trả đồ. Bạn sẽ được chuyển đến trang Hoàn cọc để xử lý theo đúng trạng thái hiện tại.",
             confirmLabel: "Đến trang Hoàn cọc",
-            action: async () => navigate(`/refunds?search=${encodeURIComponent(order.latestRefund?.refundCode || order.orderCode || id)}`)
+            action: async () => navigate(`/deposit-refunds?search=${encodeURIComponent(order.latestRefund?.refundCode || order.orderCode || id)}`)
           })
       });
     }
@@ -572,7 +589,8 @@ export function AdminRentalOrderDetailPage({ notify }) {
     bankTransferUnpaid,
     canInspectReturn,
     canOverrideOrder,
-    canProcessRefund
+    canProcessRefund,
+    navigate
   ]);
 
   const activeStep = ORDER_PROGRESS.findIndex((step) => step.key === (PROGRESS_STATUS[normalizedStatus] || normalizedStatus));
@@ -695,14 +713,26 @@ export function AdminRentalOrderDetailPage({ notify }) {
 
               <div>
                 <strong>
-                  Đơn thuê đã hết thời gian giữ chỗ
+                  {order.latePaymentRecoveryEligibility?.eligible
+                    ? "Đơn đã hết thời gian thanh toán"
+                    : "Đơn đã hết thời gian thanh toán"}
                 </strong>
 
                 <p>
-                  Đơn không được xác nhận trước hạn nên hệ
-                  thống đã giải phóng lịch. Không thể duyệt lại
-                  đơn này; khách hàng cần tạo đơn thuê mới.
+                  {order.latePaymentRecoveryEligibility?.eligible
+                    ? "Lịch trang phục đã được mở lại và đơn này không thể khôi phục. Nếu tài khoản ngân hàng đã thực sự nhận tiền, hãy ghi nhận khoản chuyển và tạo yêu cầu hoàn tiền."
+                    : order.latePaymentRecoveryEligibility?.userMessage ||
+                      "Đơn không được xác nhận trước hạn nên hệ thống đã giải phóng lịch. Khách hàng có thể tạo đơn thuê mới nếu cần."}
                 </p>
+
+                {order.latePaymentRecoveryEligibility?.eligible && (
+                  <div className="admin-recovery-status-chips">
+                    <span>Đã hết thời gian thanh toán</span>
+                    <span>Lịch trang phục đã được giải phóng</span>
+                    <span>Chuyển khoản thủ công</span>
+                    <span>Có thể tạo hoàn tiền</span>
+                  </div>
+                )}
 
                 {order.holdExpiresAt && (
                   <small>
@@ -915,16 +945,22 @@ export function AdminRentalOrderDetailPage({ notify }) {
                 {(order.items || []).length ? (
                   <div className="admin-order-items">
                     {(order.items || []).map(
-                      (item, index) => (
-                        <article
+                      (item, index) => {
+                        const costumeId = costumeIdOf(item);
+                        const costume = costumeOf(item);
+                        return <button
                           key={
                             idOf(item) ||
-                            idOf(item.costume) ||
+                            costumeId ||
                             `${costumeName(
                               item
                             )}-${index}`
                           }
+                          type="button"
                           className="admin-order-item"
+                          disabled={!costumeId}
+                          aria-label={`Xem chi tiết ${costumeName(item)}`}
+                          onClick={() => costumeId && navigate(`/costumes/${costumeId}`)}
                         >
                           <img
                             src={costumeImage(item)}
@@ -940,7 +976,13 @@ export function AdminRentalOrderDetailPage({ notify }) {
                               {costumeName(item)}
                             </strong>
 
+                            {costumeId && <span className="admin-order-item-link"><Eye size={14} /> Xem chi tiết trang phục</span>}
+
                             <div className="admin-order-item-meta">
+                              {costume.skuCode && <span>Mã: {costume.skuCode}</span>}
+                              {costume.size && <span>Size: {costume.size}</span>}
+                              {costume.color && <span>Màu: {costume.color}</span>}
+
                               <span>
                                 Số lượng:{" "}
                                 {item.quantity || 1}
@@ -969,8 +1011,8 @@ export function AdminRentalOrderDetailPage({ notify }) {
                               {money(item.subtotal)}
                             </strong>
                           </div>
-                        </article>
-                      )
+                        </button>;
+                      }
                     )}
                   </div>
                 ) : (

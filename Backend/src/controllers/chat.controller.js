@@ -14,7 +14,16 @@ export const getConversation=asyncHandler(async(req,res)=>sendSuccess(res,"Chi t
 export const messages=asyncHandler(async(req,res)=>sendSuccess(res,"Lịch sử trò chuyện.",await chat.listMessages(req.params.id,req.user,guest(req),req.query)));
 export const sendMessage=asyncHandler(async(req,res)=>{const conversation=await chat.requireConversation(req.params.id,req.user,guest(req));const message=await chat.sendCustomerMessage(req.params.id,req.user,guest(req),req.body);emitChatMessage(conversation,message);const reply=await bot.respondToCustomer(conversation,message,req.user,guest(req));if(reply)emitChatMessage(conversation,reply);sendSuccess(res,"Đã gửi tin nhắn.",{message,botReply:reply},201);});
 export const read=asyncHandler(async(req,res)=>sendSuccess(res,"Đã đọc tin nhắn.",await chat.markRead(req.params.id,req.user,guest(req))));
-export const requestStaff=asyncHandler(async(req,res)=>{const result=await chat.requestStaff(req.params.id,req.user,guest(req),req.body.reason);emitConversationUpdate(result);sendSuccess(res,"Đã chuyển nhân viên.",result);});
+export const requestStaff=asyncHandler(async(req,res)=>{
+  const result=await chat.requestStaff(req.params.id,req.user,guest(req),req.body.reason);
+  if (!result.handoffAccepted) {
+    const message=await chat.saveMessage(result.conversation,{clientMessageId:`support-closed:${Date.now()}`,senderType:"bot",type:"text",content:chat.supportHandoffMessage(result.business)});
+    emitChatMessage(result.conversation,message);
+    return sendSuccess(res,"Ngoài giờ hỗ trợ.",{conversation:result.conversation,botReply:message,handoffAccepted:false,business:result.business});
+  }
+  emitConversationUpdate(result.conversation);
+  sendSuccess(res,"Đã chuyển nhân viên.",{conversation:result.conversation,handoffAccepted:true,business:result.business});
+});
 export const botRespond=asyncHandler(async(req,res)=>{const conversation=await chat.requireConversation(req.body.conversationId,req.user,guest(req));const message=await chat.saveMessage(conversation,{clientMessageId:req.body.clientMessageId,senderType:"customer",senderId:req.user?._id,type:"text",content:req.body.content});const reply=await bot.respondToCustomer(conversation,message,req.user,guest(req));sendSuccess(res,"Bot đã phản hồi.",reply,201);});
 export const productSearch=asyncHandler(async(req,res)=>sendSuccess(res,"Kết quả trang phục.",await bot.searchProductsForChat(req.body.query||"")));
 export const rentalQuote=asyncHandler(async(req,res)=>sendSuccess(res,"Báo giá thuê.",await bot.createBotQuote(req.user,req.body),201));

@@ -1,5 +1,6 @@
 import { RentalOrder } from "../models/RentalOrder.js";
 import { RentalOrderItem } from "../models/RentalOrderItem.js";
+import { LatePaymentRecovery } from "../models/LatePaymentRecovery.js";
 import { ApiError } from "../utils/ApiError.js";
 import { maskPhone, normalizePhone } from "../utils/phone.js";
 import { normalizeOrderCode } from "../utils/orderCode.js";
@@ -9,9 +10,12 @@ import { createGuestOrderAccessToken, verifyGuestOrderAccessToken } from "../uti
 
 async function serializeGuestOrder(order) {
   const items = await RentalOrderItem.find({ orderId: order._id }).select("costumeId quantity").populate({ path: "costumeId", select: "name image images imageAssets" });
+  const recovery = await LatePaymentRecovery.findOne({ orderId: order._id }).sort({ createdAt: -1 }).lean();
   return {
     orderId: String(order._id), orderCode: order.orderCode || `ARA-${String(order._id).slice(-6).toUpperCase()}`,
     status: order.status, paymentStatus: order.paymentStatus, rentalDate: order.rentalDate, returnDate: order.returnDate,
+    holdExpiresAt: order.holdExpiresAt || null, paymentExpiresAt: order.paymentExpiresAt || null, expiredAt: order.expiredAt || null,
+    latePaymentRecovery: recovery ? { status: recovery.status, outcome: recovery.outcome, receivedAt: recovery.receivedAt, refundId: recovery.refundId ? String(recovery.refundId) : null, conflicts: recovery.conflicts || [] } : null,
     mainUseDate: order.mainUseDate || null, extraDays: order.extraDays || 0,
     standardPackage: { days: order.rentalDays || order.totalHoldDays || 1, hours: order.rentalDurationHours || (order.rentalDays || order.totalHoldDays || 1) * 24 },
     rentalDays: order.rentalDays || order.totalHoldDays || 1,
@@ -30,13 +34,13 @@ export async function lookupPublicRentalOrder({ phone, orderCode }) {
   const normalizedCode = normalizeOrderCode(orderCode);
   const phoneNormalized = normalizePhone(phone);
   let order = await RentalOrder.findOne({ orderCode: normalizedCode, "customerInfo.phoneNormalized": phoneNormalized })
-    .select("orderCode status paymentStatus rentalDate returnDate plannedRentalStartAt plannedRentalEndAt rentalDays rentalDurationHours pickupMethod returnMethod mainUseDate extraDays standardPackageDays standardPackageNights totalHoldDays baseRentalAmount plannedExtraDayFee cleaningUntil totalRentalPrice totalDepositAmount customerInfo.fullName customerInfo.phone");
+    .select("orderCode status paymentStatus rentalDate returnDate plannedRentalStartAt plannedRentalEndAt rentalDays rentalDurationHours pickupMethod returnMethod mainUseDate extraDays standardPackageDays standardPackageNights totalHoldDays baseRentalAmount plannedExtraDayFee cleaningUntil totalRentalPrice totalDepositAmount holdExpiresAt paymentExpiresAt expiredAt customerInfo.fullName customerInfo.phone");
   // Đơn legacy từng hiển thị 6 ký tự cuối của Mongo _id. Chỉ fallback
   // trong tập đơn khớp chính xác số điện thoại để không mở lookup hàng loạt.
   if (!order) {
     const legacySuffix = normalizedCode.replace(/^ARA-/, "");
     const candidates = await RentalOrder.find({ "customerInfo.phoneNormalized": phoneNormalized })
-      .select("orderCode status paymentStatus rentalDate returnDate plannedRentalStartAt plannedRentalEndAt rentalDays rentalDurationHours pickupMethod returnMethod mainUseDate extraDays standardPackageDays standardPackageNights totalHoldDays baseRentalAmount plannedExtraDayFee cleaningUntil totalRentalPrice totalDepositAmount customerInfo.fullName customerInfo.phone")
+      .select("orderCode status paymentStatus rentalDate returnDate plannedRentalStartAt plannedRentalEndAt rentalDays rentalDurationHours pickupMethod returnMethod mainUseDate extraDays standardPackageDays standardPackageNights totalHoldDays baseRentalAmount plannedExtraDayFee cleaningUntil totalRentalPrice totalDepositAmount holdExpiresAt paymentExpiresAt expiredAt customerInfo.fullName customerInfo.phone")
       .sort({ createdAt: -1 }).limit(100);
     order = candidates.find(candidate => String(candidate._id).slice(-6).toUpperCase() === legacySuffix) || null;
   }
@@ -52,14 +56,18 @@ export async function getGuestOrderSession(orderCode, token) {
   const normalizedCode = normalizeOrderCode(orderCode);
   if (payload.orderCode !== normalizedCode) throw new ApiError(403, "Phiên truy cập không thuộc đơn thuê này.");
   const order = await RentalOrder.findOne({ _id: payload.orderId, orderCode: normalizedCode })
-    .select("orderCode status paymentStatus rentalDate returnDate plannedRentalStartAt plannedRentalEndAt rentalDays rentalDurationHours pickupMethod returnMethod mainUseDate extraDays standardPackageDays standardPackageNights totalHoldDays baseRentalAmount plannedExtraDayFee cleaningUntil totalRentalPrice totalDepositAmount customerInfo.fullName customerInfo.phone fulfillment refundDestinationSnapshot");
+    .select("orderCode status paymentStatus rentalDate returnDate plannedRentalStartAt plannedRentalEndAt rentalDays rentalDurationHours pickupMethod returnMethod mainUseDate extraDays standardPackageDays standardPackageNights totalHoldDays baseRentalAmount plannedExtraDayFee cleaningUntil totalRentalPrice totalDepositAmount holdExpiresAt paymentExpiresAt expiredAt customerInfo.fullName customerInfo.phone fulfillment refundDestinationSnapshot");
   if (!order) throw new ApiError(403, "Phiên truy cập không thuộc đơn thuê này.");
   return serializeGuestOrder(order);
 }
 
-export async function createGuestBankTransfer({ phone, orderCode }) {
+export async function createGuestBankTransfer({ phone, orderCode, idempotencyKey }) {
   const order = await RentalOrder.findOne({ orderCode: normalizeOrderCode(orderCode), "customerInfo.phoneNormalized": normalizePhone(phone) }).populate("customerId", "role status");
   if (!order) throw new ApiError(404, "Không tìm thấy đơn thuê phù hợp với thông tin đã nhập.");
   if (order.paymentPreference !== "bank_transfer") throw new ApiError(400, "Đơn này chọn thanh toán tiền mặt khi nhận đồ.");
-  return createPayment(order.customerId, { orderId: String(order._id), paymentType: "full", channel: "direct", method: "bank_transfer" }, randomUUID());
+  return createPayment(
+    order.customerId,
+    { orderId: String(order._id), paymentType: "full", channel: "direct", method: "bank_transfer" },
+    idempotencyKey || randomUUID()
+  );
 }

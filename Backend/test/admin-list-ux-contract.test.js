@@ -29,6 +29,30 @@ test("admin payment list sends search filters and consumes pagination metadata",
   assert.doesNotMatch(page, /setInterval/);
 });
 
+test("admin lists use lightweight projections and parallel page queries", async () => {
+  const [orders, payments] = await Promise.all([
+    read("../src/services/rentalOrder.service.js"),
+    read("../src/services/payment.service.js")
+  ]);
+  assert.match(orders, /export function populateOrderList/);
+  assert.match(orders, /paginateAdminOrderList\(RentalOrder\.find/);
+  assert.match(orders, /query\.model\.countDocuments\(filter\)[\s\S]*populateOrderList/);
+  assert.match(payments, /const listPopulate = \[/);
+  assert.match(payments, /\.populate\(populate\)\s*\.lean\(\)/);
+  assert.match(payments, /query\.model\.countDocuments\(filter\)[\s\S]*\.populate\(populate\)/);
+});
+
+test("nearest schedule lookup avoids duplicate frontend requests and serial candidate scans", async () => {
+  const [backend, customer] = await Promise.all([
+    read("../src/controllers/rentalOrder.controller.js"),
+    read("../../Frontend/src/pages/customer/CostumeDetailPage.jsx")
+  ]);
+  assert.match(backend, /const verificationBatchSize = 6/);
+  assert.match(backend, /Promise\.all\(batch\.map/);
+  assert.match(customer, /includeNearest: true/);
+  assert.doesNotMatch(customer, /const prefetchedNearest/);
+});
+
 test("refund report applies order status immediately after the rental order unwind", () => {
   const allStatusPipeline = refundFilterLookups({ status: "all" });
   assert.equal(allStatusPipeline.some((stage) => stage.$lookup?.from === "rentalorders"), false);

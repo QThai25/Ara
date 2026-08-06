@@ -23,6 +23,17 @@ export async function createPayment(payload, idempotencyKey, config = {}) {
   return { ...result.data, message: result.message };
 }
 
+export async function replacePayment(id, payload, config = {}) {
+  const idempotencyKey = payload?.idempotencyKey;
+  const response = await apiClient.post(`/payments/${id}/replace`, { method: payload?.method, idempotencyKey }, {
+    ...config,
+    timeout: config.timeout || PAYMENT_TIMEOUT_MS,
+    headers: { ...(config.headers || {}), "Idempotency-Key": idempotencyKey }
+  });
+  const result = unwrap(response);
+  return { ...result.data, message: result.message };
+}
+
 export async function getPaymentMethods(config = {}) { return unwrap(await apiClient.get("/payments/methods", config)).data; }
 export async function getPaymentStatus(id, config = {}) { return unwrap(await apiClient.get(`/payments/${id}/status`, config)).data; }
 export async function cancelPayment(id, config = {}) { return unwrap(await apiClient.patch(`/payments/${id}/cancel`, {}, config)).data; }

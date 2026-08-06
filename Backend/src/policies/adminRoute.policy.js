@@ -28,9 +28,14 @@ export function resolveAdminRoutePermission(basePath, req) {
       if (pathMatches(req, /\/(?:reject|cancel|complete|deposit|deposit\/return-original-id|extra-days|exchanges|immediate-return)$/)) return P.ORDERS_OVERRIDE;
       return P.ORDERS_OPERATE;
     case "/admin/payments":
+      if (pathMatches(req, /\/recover-expired-order$/)) return P.PAYMENTS_CONFIRM_BANK_TRANSFER;
       return isRead(req) ? P.PAYMENTS_VIEW_STATUS : P.PAYMENTS_CONFIRM_BANK_TRANSFER;
     case "/admin/refunds":
       if (isRead(req)) return P.REFUNDS_VIEW_SENSITIVE;
+      if (pathMatches(req, /\/complete$/)) return P.REFUNDS_COMPLETE;
+      return P.REFUNDS_PROCESS;
+    case "/admin/refund-transactions":
+      if (isRead(req)) return P.REFUNDS_VIEW_STATUS;
       if (pathMatches(req, /\/complete$/)) return P.REFUNDS_COMPLETE;
       return P.REFUNDS_PROCESS;
     case "/admin/notifications":

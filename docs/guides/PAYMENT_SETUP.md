@@ -133,3 +133,44 @@ npm.cmd run build
 - Khi nghi ngờ lộ key, rotate ở provider và cập nhật secret store trước khi bật lại payment.
 
 Xem thêm [Fulfillment và hoàn cọc](../FULFILLMENT_AND_REFUND.md) và [RBAC quản trị](../ADMIN_RBAC.md).
+
+## Store-business payment deadlines and late transfers
+
+Manual bank-transfer holds use the store timezone (`Asia/Ho_Chi_Minh`) and count
+only minutes inside the configured opening interval. The default is 08:00–22:00
+and 30 business minutes. A transfer can be made outside those hours; the
+deadline pauses at closing and resumes at the next opening. The Backend stores
+the resulting UTC `holdExpiresAt` and `payment.expiresAt`, and authenticated and
+guest checkout use the same core calculation. Guest-token expiration is a
+separate access-control lifetime.
+
+After a customer submits proof or reports a transfer, the payment remains in the
+existing manual-review state, its expiry is cleared, and it is not expired by
+the scheduler while ARA reviews it. The customer may see the exact server
+deadline before reporting and the no-countdown review message afterward.
+
+An expired order is retained for Owner review. Owner can use the late-transfer
+recovery action only after verifying the received amount, bank reference,
+receivedAt, transfer content and reason. A transfer received after the displayed
+deadline requires an explicit warning acknowledgement. Recovery always checks
+the complete rental and transport schedule under locks before restoring an
+order; if unavailable, the payment is recorded as received and the existing
+refund/manual-resolution workflow is started. The action is idempotent and does
+not trust a browser return URL as payment proof.
+
+## Payment-method switching
+
+Changing between bank transfer and PayOS is local in the customer and guest
+checkout until the final submit action. The backend applies the same decision
+matrix to both flows: a compatible active payment is reused without extending
+its deadline; a different replaceable payment requires explicit confirmation;
+submitted proof, successful payments and refund-processing states cannot be
+replaced. The old payment is retained as history, and a replacement cancels
+the old provider payment before creating the new one inside the financial
+transaction.
+
+Every create request carries an idempotency key. The active-payment unique
+indexes and the provider-creation lock prevent duplicate active payments and
+duplicate PayOS checkout creation during repeated clicks or retries. A 409
+payment conflict is actionable business state; a 500/timeout must be followed
+by a status refresh before the customer tries again.

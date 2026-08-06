@@ -4,7 +4,7 @@ import { Link, Navigate, useLocation } from "react-router-dom";
 import { formatDate, money, resolveImageUrl } from "../../utils/format.js";
 import { getStatusLabel } from "../../utils/status.js";
 
-const paymentLabels = { unpaid: "Chưa thanh toán", awaiting_confirmation: "Chờ xác nhận chuyển khoản", deposit_paid: "Đã thanh toán tiền cọc", deposited: "Đã thanh toán tiền cọc", paid: "Đã thanh toán toàn bộ", fully_paid: "Đã thanh toán toàn bộ", refunded: "Đã hoàn tiền" };
+const paymentLabels = { unpaid: "Chưa thanh toán", pending: "Đang chờ thanh toán", awaiting_payment: "Đang chờ thanh toán", awaiting_confirmation: "Chờ xác nhận chuyển khoản", awaiting_verification: "Chờ cửa hàng đối soát", deposit_paid: "Đã thanh toán tiền cọc", deposited: "Đã thanh toán tiền cọc", paid: "Đã thanh toán toàn bộ", fully_paid: "Đã thanh toán toàn bộ", expired: "Đã hết hạn", refunded: "Đã hoàn tiền" };
 
 export function PublicRentalOrderDetailPage() {
   const location = useLocation();
@@ -25,6 +25,9 @@ export function PublicRentalOrderDetailPage() {
           <div><span>ARA · ORDER LOOKUP</span><h1>{order.orderCode}</h1><p>Thông tin đơn thuê được hiển thị ở chế độ chỉ xem.</p></div>
           <div className="public-order-status"><small>TRẠNG THÁI ĐƠN</small><strong><PackageCheck size={18} />{getStatusLabel(order.status, "order")}</strong><small>THANH TOÁN</small><strong><CreditCard size={18} />{paymentLabels[order.paymentStatus] || "Chưa thanh toán"}</strong></div>
         </header>
+        {order.paymentExpiresAt && ["unpaid", "pending", "awaiting_payment"].includes(order.paymentStatus) && <div className="public-order-notice">Bạn vẫn có thể chuyển khoản ngay. Đơn được giữ đến {new Date(order.paymentExpiresAt).toLocaleString("vi-VN")}; ARA sẽ kiểm tra giao dịch sau giờ mở cửa.</div>}
+        {order.paymentStatus === "awaiting_verification" && <div className="public-order-notice">ARA đã nhận thông báo chuyển khoản. Đơn đang chờ cửa hàng đối soát và không còn tính thời gian hết hạn thanh toán.</div>}
+        {order.latePaymentRecovery?.outcome === "availability_conflict" && <div className="public-order-notice is-warning">ARA đã ghi nhận khoản chuyển của bạn nhưng lịch thuê ban đầu không còn trống. Cửa hàng sẽ liên hệ để đổi lịch hoặc hoàn tiền.</div>}
         <section className="public-order-facts">
           <article><CalendarDays /><span>Ngày nhận</span><strong>{formatDate(order.rentalDate)}</strong></article>
           {order.mainUseDate && <article><CalendarDays /><span>Ngày mặc chính</span><strong>{formatDate(order.mainUseDate)}</strong></article>}

@@ -24,6 +24,12 @@ export async function rejectPayment(id, reason) {
   return unwrap(await apiClient.patch(`/admin/payments/${id}/reject`, { reason }));
 }
 
+export async function recoverExpiredOrderPayment(id, payload) {
+  return unwrap(await apiClient.post(`/admin/payments/${id}/recover-expired-order`, payload, {
+    headers: { "Idempotency-Key": payload.idempotencyKey }
+  }));
+}
+
 export async function getAdminPaymentQuote(params) {
   return unwrap(await apiClient.get("/payments/quote", { params }));
 }

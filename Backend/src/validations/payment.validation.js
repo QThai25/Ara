@@ -13,7 +13,9 @@ export const listAdminPaymentsValidation = [
   query("channel").optional().isIn(PAYMENT_CHANNELS).withMessage("Kênh thanh toán không hợp lệ."),
   query("method").optional().isIn(["momo", "vnpay", "payos", "payos_qr", "bank_gateway", "bank_transfer", "cash"]).withMessage("Phương thức thanh toán không hợp lệ."),
   query("paymentType").optional().isIn(PAYMENT_TYPES).withMessage("Loại thanh toán không hợp lệ."),
-  query("orderId").optional().isMongoId().withMessage("Đơn thuê không hợp lệ.")
+  query("orderId").optional().isMongoId().withMessage("Đơn thuê không hợp lệ."),
+  query("lateTransferReview").optional().isBoolean().withMessage("Bộ lọc đối soát chuyển muộn không hợp lệ.").toBoolean(),
+  query("unresolvedReceivedMoney").optional().isBoolean().withMessage("Bộ lọc tiền đã nhận chưa xử lý không hợp lệ.").toBoolean()
 ];
 
 export const createPaymentValidation = [
@@ -41,3 +43,25 @@ export const reportTransferValidation = [
   body("proofUrl").optional({ checkFalsy: true }).isURL({ protocols: ["http", "https"], require_protocol: true }).withMessage("Đường dẫn minh chứng không hợp lệ.")
 ];
 export const rejectPaymentValidation = [...paymentIdValidation, body("reason").optional().trim().isLength({ max: 500 }).withMessage("Lý do từ chối không được vượt quá 500 ký tự.")];
+export const latePaymentRecoveryValidation = [
+  ...paymentIdValidation,
+  body("actualReceivedAmount").isInt({ min: 1 }).withMessage("Số tiền thực nhận không hợp lệ.").toInt(),
+  body("receivedAt").isISO8601().withMessage("Thời điểm ngân hàng nhận tiền không hợp lệ.").toDate(),
+  body("transactionReference").isString().trim().isLength({ min: 3, max: 120 }).withMessage("Mã tham chiếu giao dịch không hợp lệ."),
+  body("transferContent").isString().trim().isLength({ min: 3, max: 300 }).withMessage("Nội dung chuyển khoản không hợp lệ."),
+  body("reason").isString().trim().isLength({ min: 5, max: 1000 }).withMessage("Lý do đối soát không hợp lệ."),
+  body("note").optional().isString().trim().isLength({ max: 1000 }).withMessage("Ghi chú không được vượt quá 1000 ký tự."),
+  body("acknowledgedLateTransfer").isBoolean().withMessage("Xác nhận khoản tiền đã nhận không hợp lệ.").toBoolean(),
+  body("idempotencyKey").isUUID().withMessage("idempotencyKey phải là UUID hợp lệ.")
+];
+
+export const replacementPaymentValidation = [
+  ...paymentIdValidation,
+  header("Idempotency-Key").optional().isUUID().withMessage("Idempotency-Key phải là UUID hợp lệ."),
+  body("idempotencyKey").optional().isUUID().withMessage("idempotencyKey phải là UUID hợp lệ."),
+  body("method").isString().trim().isLength({ min: 1, max: 30 }).withMessage("Phương thức thanh toán không hợp lệ."),
+  body().custom((value, { req }) => {
+    if (!req.get("Idempotency-Key") && !value.idempotencyKey) throw new Error("Thiếu idempotencyKey.");
+    return true;
+  })
+];

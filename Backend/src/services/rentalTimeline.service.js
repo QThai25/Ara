@@ -6,11 +6,26 @@ export const ONE_RENTAL_DAY_HOURS = 24;
 export const PICKUP_METHODS = ["store_pickup", "home_delivery"];
 export const RETURN_METHODS = ["store_return", "home_collection"];
 
-const minutesOf = (clock) => {
+const minutesOf = (clock, label = "giờ cửa hàng") => {
   const match = /^(\d{2}):(\d{2})$/.exec(String(clock || ""));
-  if (!match) throw new ApiError(500, `Cấu hình giờ không hợp lệ: ${clock}`);
-  return Number(match[1]) * 60 + Number(match[2]);
+  const hour = Number(match?.[1]);
+  const minute = Number(match?.[2]);
+  if (!match || hour > 23 || minute > 59) throw new ApiError(500, `Cấu hình ${label} không hợp lệ: ${clock}`);
+  return hour * 60 + minute;
 };
+
+function validatedBusinessConfig(config = storeConfig) {
+  const timezone = String(config?.timezone || "").trim();
+  try {
+    new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format();
+  } catch {
+    throw new ApiError(500, `Cấu hình múi giờ cửa hàng không hợp lệ: ${timezone || "trống"}`);
+  }
+  const opening = minutesOf(config?.openingTime, "giờ mở cửa");
+  const closing = minutesOf(config?.closingTime, "giờ đóng cửa");
+  if (opening >= closing) throw new ApiError(500, "Cấu hình giờ mở cửa phải sớm hơn giờ đóng cửa.");
+  return { ...config, timezone, opening, closing };
+}
 
 export function zonedParts(date, timezone = storeConfig.timezone) {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -73,20 +88,24 @@ export function isWithinStoreHours(date, { latestCheckIn = false } = {}) {
   return clock >= opening && clock <= closing;
 }
 
-export function addBusinessMinutes(date, amount) {
+export function addBusinessMinutes(date, amount, config = storeConfig) {
   let cursor = new Date(date);
-  let remaining = Math.max(0, Number(amount) || 0);
+  const business = validatedBusinessConfig(config);
+  let remaining = Number(amount);
+  if (!Number.isFinite(cursor.getTime()) || !Number.isFinite(remaining) || remaining < 0) {
+    throw new ApiError(500, "Thời điểm hoặc số phút kinh doanh không hợp lệ.");
+  }
   while (remaining > 0) {
-    let day = localDayKey(cursor);
-    const openingAt = businessBoundary(day, storeConfig.openingTime);
-    const closingAt = businessBoundary(day, storeConfig.closingTime);
+    let day = localDayKey(cursor, business.timezone);
+    const openingAt = businessBoundary(day, business.openingTime, business.timezone);
+    const closingAt = businessBoundary(day, business.closingTime, business.timezone);
     if (cursor < openingAt) cursor = openingAt;
     if (cursor >= closingAt) {
       day = shiftLocalDay(day, 1);
-      cursor = businessBoundary(day, storeConfig.openingTime);
+      cursor = businessBoundary(day, business.openingTime, business.timezone);
       continue;
     }
-    const available = Math.floor((closingAt - cursor) / 60000);
+    const available = Math.max(0, Math.floor((closingAt - cursor) / 60000));
     const consumed = Math.min(remaining, available);
     cursor = new Date(cursor.getTime() + consumed * 60000);
     remaining -= consumed;
@@ -94,17 +113,28 @@ export function addBusinessMinutes(date, amount) {
   return cursor;
 }
 
-export function subtractBusinessMinutes(date, amount) {
+export function computeStoreAwareExpiry(startAt, durationMinutes, config = storeConfig) {
+  const business = validatedBusinessConfig(config);
+  const duration = Number(durationMinutes);
+  if (!Number.isFinite(duration) || duration <= 0) throw new ApiError(500, "Thời lượng giữ chỗ không hợp lệ.");
+  return addBusinessMinutes(startAt, duration, business);
+}
+
+export function subtractBusinessMinutes(date, amount, config = storeConfig) {
   let cursor = new Date(date);
-  let remaining = Math.max(0, Number(amount) || 0);
+  const business = validatedBusinessConfig(config);
+  let remaining = Number(amount);
+  if (!Number.isFinite(cursor.getTime()) || !Number.isFinite(remaining) || remaining < 0) {
+    throw new ApiError(500, "Thời điểm hoặc số phút kinh doanh không hợp lệ.");
+  }
   while (remaining > 0) {
-    let day = localDayKey(cursor);
-    const openingAt = businessBoundary(day, storeConfig.openingTime);
-    const closingAt = businessBoundary(day, storeConfig.closingTime);
+    let day = localDayKey(cursor, business.timezone);
+    const openingAt = businessBoundary(day, business.openingTime, business.timezone);
+    const closingAt = businessBoundary(day, business.closingTime, business.timezone);
     if (cursor > closingAt) cursor = closingAt;
     if (cursor <= openingAt) {
       day = shiftLocalDay(day, -1);
-      cursor = businessBoundary(day, storeConfig.closingTime);
+      cursor = businessBoundary(day, business.closingTime, business.timezone);
       continue;
     }
     const available = Math.floor((cursor - openingAt) / 60000);

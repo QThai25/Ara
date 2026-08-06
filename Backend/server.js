@@ -6,6 +6,7 @@ import http from "node:http";
 import { initializeSocket } from "./src/realtime/socket.js";
 import { startNotificationScheduler } from "./src/services/notification-scheduler.service.js";
 import { startPayosReconciliationScheduler } from "./src/services/payment.service.js";
+import { startExpirationScheduler } from "./src/services/expiration-scheduler.service.js";
 import mongoose from "mongoose";
 
 await connectMongo();
@@ -13,7 +14,7 @@ await seedDemoData();
 
 const server = http.createServer(app);
 initializeSocket(server, env.corsOrigins);
-const schedulerTimers = [startNotificationScheduler(), startPayosReconciliationScheduler()].filter(Boolean);
+const schedulerTimers = [startNotificationScheduler(), startPayosReconciliationScheduler(), startExpirationScheduler()].filter(Boolean);
 
 server.listen(env.port, env.host, () => {
   console.log(`Ara Backend dang chay tai ${env.host}:${env.port} (${env.nodeEnv})`);

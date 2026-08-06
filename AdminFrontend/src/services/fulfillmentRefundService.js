@@ -6,5 +6,7 @@ export const startRefund = (id) => api.patch(`/admin/refunds/${id}/start`);
 export const completeRefund = (id, body) => api.patch(`/admin/refunds/${id}/complete`, body);
 export const failRefund = (id, body) => api.patch(`/admin/refunds/${id}/fail`, body);
 export const retryRefund = (id) => api.patch(`/admin/refunds/${id}/retry`);
+export const cancelRefund = (id, body) => api.patch(`/admin/refunds/${id}/cancel`, body);
 export const uploadRefundProof = (id, file) => { const body = new FormData(); body.append("image", file); return api.post(`/admin/refunds/${id}/proofs`, body, { timeout: UPLOAD_TIMEOUT_MS }); };
 export const requestRefundInformation = (id) => api.post(`/admin/refunds/${id}/request-information`);
+export const recordRefundContact = (id, body) => api.patch(`/admin/refunds/${id}/contact`, body);

@@ -190,3 +190,13 @@ test("create and approve paths both invoke the backend schedule assertion", asyn
   const calls = source.match(/await assertNoScheduleConflict\(/g) || [];
   assert.ok(calls.length >= 2);
 });
+
+test("expiration scheduler is non-overlapping, bounded and preserves manual review", async () => {
+  const scheduler = await readFile(new URL("../src/services/expiration-scheduler.service.js", import.meta.url), "utf8");
+  const payment = await readFile(new URL("../src/services/payment.service.js", import.meta.url), "utf8");
+  assert.match(scheduler, /if \(expirationRunning\) return/);
+  assert.match(scheduler, /storeConfig\.expirationIntervalMs/);
+  assert.match(scheduler, /expirationTimer\.unref/);
+  assert.match(payment, /status: "awaiting_confirmation", proofSubmittedAt: null/);
+  assert.match(payment, /proofSubmittedAt: null/);
+});

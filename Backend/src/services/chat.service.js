@@ -3,10 +3,14 @@ import mongoose from "mongoose";
 import { ChatConversation } from "../models/ChatConversation.js";
 import { ChatMessage } from "../models/ChatMessage.js";
 import { ApiError } from "../utils/ApiError.js";
+import { storeBusinessStatus } from "../config/store.config.js";
 import { notifyAdmins, createNotificationOnce } from "./notification.service.js";
 
 export const isAdminUser = (user) => ["admin","staff","owner"].includes(user?.role);
 const clean = (value, max = 4000) => String(value || "").replace(/<[^>]*>/g, "").trim().slice(0, max);
+export const supportHandoffMessage = (business) => business.isOpen
+  ? "Mình đã chuyển cuộc trò chuyện cho nhân viên ARA. Bạn chờ một chút nhé."
+  : `Hiện đang ngoài giờ làm việc nên Ari chưa thể liên hệ nhân viên ARA. Giờ mở cửa là ${business.openingTime}–${business.closingTime} (${business.timezone}). Bạn vui lòng quay lại trong khung giờ này nhé.`;
 const welcomeMessageInput = (conversation, context = {}) => ({
   clientMessageId: `welcome:${conversation._id}`,
   senderType: "bot",
@@ -150,13 +154,15 @@ export async function markRead(id, user, guestSessionId) {
 
 export async function requestStaff(id, user, guestSessionId, reason = "") {
   const conversation = await requireConversation(id, user, guestSessionId);
+  const business = storeBusinessStatus();
+  if (!business.isOpen) return { conversation, handoffAccepted: false, business };
   conversation.status = "waiting_admin";
   conversation.botEnabled = false;
   conversation.priority = /hủy|hoàn tiền|khiếu nại|hư hỏng|thanh toán/i.test(reason) ? "high" : conversation.priority;
   await conversation.save();
   await saveMessage(conversation, { clientMessageId: `handoff:${Date.now()}`, senderType: "system", type: "system_event", content: "Khách hàng đang chờ nhân viên ARA hỗ trợ." });
   await notifyAdmins({ type:"system",title:"Hội thoại chờ hỗ trợ",message:reason||"Khách hàng yêu cầu gặp nhân viên.",entityType:"chat_conversation",entityId:conversation._id,actionUrl:`/contact-requests?conversationId=${conversation._id}`,priority:conversation.priority,eventKey:`chat:${conversation._id}:waiting:${conversation.updatedAt.getTime()}` });
-  return conversation;
+  return { conversation, handoffAccepted: true, business };
 }
 
 export async function listAdminConversations(params = {}) {

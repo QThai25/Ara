@@ -15,12 +15,13 @@ export const FINANCIAL_POLICY_CODES = Object.freeze({
 export function getOrderFinancialSnapshot(order, payments = [], refunds = []) {
   const successful = payments.filter((payment) => SUCCESS_PAYMENT_STATUSES.includes(payment?.status));
   const paid = summarizeSuccessfulPayments(order, successful);
-  const completedRefundAmount = refunds
+  const depositRefunds = refunds.filter((refund) => !refund?.source || refund.source === "settlement");
+  const completedRefundAmount = depositRefunds
     .filter((refund) => refund?.status === "completed")
     .reduce((sum, refund) => sum + money(refund.amount), 0);
   // DepositRefund is the canonical refund ledger. Legacy refund Payment rows
   // are only a fallback for orders that have never been reconciled into it.
-  const depositAmountRefunded = refunds.length ? completedRefundAmount : paid.refundedAmount;
+  const depositAmountRefunded = depositRefunds.length ? completedRefundAmount : paid.refundedAmount;
   const rentalAmountRequired = money(order.totalRentalPrice);
   const depositAmountRequired = money(order.totalDepositAmount);
   const additionalFeeRequired = money(order.totalPenalty || money(order.lateFee) + money(order.damageFee));
@@ -38,7 +39,7 @@ export function getOrderFinancialSnapshot(order, payments = [], refunds = []) {
     depositAmountCollected - depositAmountDeducted - depositAmountRefunded
   );
   const hasRelevantPendingPayment = payments.some((payment) => payment?.active !== false && ACTIVE_PAYMENT_STATUSES.includes(payment?.status));
-  const hasRelevantPendingRefund = refunds.some((refund) => ["awaiting_information", "pending", "processing"].includes(refund?.status));
+  const hasRelevantPendingRefund = depositRefunds.some((refund) => ["awaiting_information", "pending", "processing"].includes(refund?.status));
   const activePayments = payments.filter((payment) => payment?.active !== false && ACTIVE_PAYMENT_STATUSES.includes(payment?.status));
   const effectivePaymentStatus = deriveOrderPaymentStatus(order, successful, activePayments);
   const needsFinancialReview = Boolean(order.needsFinancialReview)

@@ -97,7 +97,18 @@ async function destinationInput(body, existing = {}) {
   return result;
 }
 export async function listDestinations(userId) { return (await RefundDestination.find({ userId }).sort({ isDefault: -1, createdAt: -1 })).map(publicDestination); }
-export async function createDestination(userId, body) { const count = await RefundDestination.countDocuments({ userId }); const item = await RefundDestination.create({ userId, ...await destinationInput(body), isDefault: body.isDefault === true || count === 0 }); await ensureDefault(RefundDestination, userId, item); if (item.isDefault) await syncUserDefault(userId, item); return publicDestination(item); }
+export async function createDestination(userId, body) {
+  const count = await RefundDestination.countDocuments({ userId });
+  const shouldBeDefault = body.isDefault === true || count === 0;
+  const item = await RefundDestination.create({ userId, ...await destinationInput(body), isDefault: false });
+  if (shouldBeDefault) {
+    await RefundDestination.updateMany({ userId, _id: { $ne: item._id } }, { $set: { isDefault: false } });
+    item.isDefault = true;
+    await item.save();
+    await syncUserDefault(userId, item);
+  }
+  return publicDestination(item);
+}
 export async function updateDestination(userId, id, body) { const item = await RefundDestination.findOne({ _id: id, userId }).select("+encryptedAccountNumber"); if (!item) throw new ApiError(404, "Không tìm thấy điểm nhận hoàn cọc."); Object.assign(item, await destinationInput(body, item.toObject())); if (body.isDefault === true) item.isDefault = true; await ensureDefault(RefundDestination, userId, item); await item.save(); if (item.isDefault) await syncUserDefault(userId, item); return publicDestination(item); }
 export async function deleteDestination(userId, id) { const item = await RefundDestination.findOneAndDelete({ _id: id, userId }); if (!item) throw new ApiError(404, "Không tìm thấy điểm nhận hoàn cọc."); return { id }; }
 export async function setDestinationDefault(userId, id) { const item = await RefundDestination.findOne({ _id: id, userId, isEnabled: true }).select("+encryptedAccountNumber"); if (!item) throw new ApiError(404, "Điểm nhận không tồn tại hoặc đã tắt."); await RefundDestination.updateMany({ userId }, { $set: { isDefault: false } }); item.isDefault = true; await item.save(); await syncUserDefault(userId, item); return publicDestination(item); }

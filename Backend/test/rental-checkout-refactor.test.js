@@ -32,3 +32,10 @@ test("manual transfer report keeps the order for admin verification", async () =
   assert.match(source, /holdExpiresAt\s*=\s*null/);
   assert.match(source, /payment_transfer_reported/);
 });
+
+test("rental order creation uses the configured store-business deadline", async () => {
+  const source = await readFile(new URL("../src/services/rentalOrder.service.js", import.meta.url), "utf8");
+  assert.match(source, /computeStoreAwareExpiry\(new Date\(\), storeConfig\.pendingPaymentMinutes, storeConfig\)/);
+  assert.match(source, /holdExpiresAt/);
+  assert.match(source, /source: \["online", "walk_in", "admin"\]/);
+});

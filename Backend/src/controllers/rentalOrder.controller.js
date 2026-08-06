@@ -63,18 +63,25 @@ async function findNearestBookable(input, options) {
     }
   };
 
+  const candidates = [];
   for (let dayOffset = 0; dayOffset <= 31; dayOffset += 1) {
     const date = calendarDate(parts, dayOffset);
     const candidateTimes = bookingTimes.filter((time) => (
       (dayOffset !== 0 || time >= requestedClock)
       && (!inventoryCandidates || inventoryCandidates.has(`${date}|${time}`))
     ));
-    for (const time of candidateTimes) {
-      const candidate = await verifyCandidate(date, time);
-      if (candidate) return candidate;
-      // When the batch grid succeeds, a rejected candidate indicates a concurrent
-      // booking. Continue with the next prefiltered slot without fanning out queries.
-    }
+    candidates.push(...candidateTimes.map((time) => ({ date, time })));
+  }
+
+  // Keep candidate order deterministic while checking a small batch in
+  // parallel. The first successful candidate in a batch is still the nearest
+  // one, but the UI no longer waits through dozens of sequential queries.
+  const verificationBatchSize = 6;
+  for (let index = 0; index < candidates.length; index += verificationBatchSize) {
+    const batch = candidates.slice(index, index + verificationBatchSize);
+    const verified = await Promise.all(batch.map(({ date, time }) => verifyCandidate(date, time)));
+    const candidate = verified.find(Boolean);
+    if (candidate) return candidate;
   }
   return null;
 }
@@ -201,7 +208,7 @@ export const getOrder = asyncHandler(async (req, res) => sendSuccess(res, messag
 export const cancelOrder = asyncHandler(async (req, res) => sendSuccess(res, messages.cancel, await rentalOrderService.cancelOrder(req.params.id, req.user)));
 export const listAdminOrders = asyncHandler(async (req, res) => sendSuccess(res, messages.listAdmin, await rentalOrderService.listAdminOrders(req.query)));
 export const getAdminOrder = asyncHandler(async (req, res) => {
-  const order = await rentalOrderService.decorateOrder(req.params.id);
+  const order = await rentalOrderService.decorateOrder(req.params.id, { actor: req.user });
   if (!order) throw new ApiError(404, "Không tìm thấy đơn thuê.");
   sendSuccess(res, messages.detail, {
     ...order,
