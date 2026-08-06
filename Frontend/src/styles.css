@@ -4427,6 +4427,7 @@ button:disabled,
 
 .booking-fulfillment-columns > div {
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 10px;
 }
 
@@ -4452,6 +4453,8 @@ button:disabled,
   display: grid !important;
   grid-template-columns: 1fr !important;
   gap: 9px !important;
+  height: 100% !important;
+  min-height: 0 !important;
 }
 
 .booking-fulfillment-panel .ara-fulfillment-options > label {
@@ -4470,6 +4473,11 @@ button:disabled,
   background: #fffdfa !important;
   box-sizing: border-box !important;
   cursor: pointer;
+}
+
+.booking-fulfillment-columns > div:last-child .ara-fulfillment-options > label:only-child {
+  height: 100% !important;
+  min-height: 0 !important;
 }
 
 .booking-fulfillment-panel .ara-fulfillment-options > label.is-selected {

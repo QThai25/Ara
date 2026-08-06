@@ -672,7 +672,7 @@ export function RentalCartPage(props) {
     invoiceRequested: false,
     invoiceEmail: "",
     paymentPreference: "bank_transfer"
-    ,pickupMethod:cartFulfillment.pickupMethod||"store_pickup",returnMethod:cartFulfillment.returnMethod||"store_return",collectionSameAsDelivery:true,
+    ,pickupMethod:cartFulfillment.pickupMethod||"store_pickup",collectionSameAsDelivery:true,
     deliveryAddressId:cartFulfillment.deliveryAddressId||"",collectionAddressId:cartFulfillment.deliveryAddressId||"",
     addressLine:"",communeCode:"",wardName:"",districtCode:"",districtName:"",provinceCode:"",provinceName:"",
     collectionAddressLine:"",collectionCommuneCode:"",collectionWardName:"",collectionDistrictCode:"",collectionDistrictName:"",collectionProvinceCode:"",collectionProvinceName:"",
@@ -686,7 +686,8 @@ export function RentalCartPage(props) {
       collectionDistrictName: assistedPrefill.collectionAddress.districtName || "",
       collectionProvinceCode: assistedPrefill.collectionAddress.provinceCode || "",
       collectionProvinceName: assistedPrefill.collectionAddress.provinceName || ""
-    } : {})
+    } : {}),
+    returnMethod: "store_return"
   });
   const [shippingQuote,setShippingQuote]=useState({feeMode:"external_direct_payment",feeAmount:null,chargedByShop:false,outboundFee:null,returnFee:null,totalShippingFee:null});
   const [voucherCode, setVoucherCode] = useState(savedCheckoutVoucher);
@@ -786,13 +787,7 @@ export function RentalCartPage(props) {
       return undefined;
     }
     const needsDelivery = guestInfo.pickupMethod === "home_delivery";
-    const needsSeparateCollection = guestInfo.returnMethod === "home_collection"
-      && (!guestInfo.collectionSameAsDelivery || !needsDelivery);
     if (needsDelivery && (!guestInfo.addressLine || !guestInfo.provinceCode || !guestInfo.districtCode || !guestInfo.communeCode)) {
-      setScheduleError("");
-      return undefined;
-    }
-    if (needsSeparateCollection && (!guestInfo.collectionAddressLine || !guestInfo.collectionProvinceCode || !guestInfo.collectionDistrictCode || !guestInfo.collectionCommuneCode)) {
       setScheduleError("");
       return undefined;
     }
@@ -808,22 +803,10 @@ export function RentalCartPage(props) {
             quantity:Number(item.quantity) || 1
           })),
           receiver:{fullName:guestInfo.fullName,phone:guestInfo.phone},
-          deliveryAddress:guestInfo.deliveryAddressId?{addressId:guestInfo.deliveryAddressId}:{address:{addressLine:guestInfo.addressLine,communeCode:guestInfo.communeCode,wardName:guestInfo.wardName,districtCode:guestInfo.districtCode,districtName:guestInfo.districtName,provinceCode:guestInfo.provinceCode,provinceName:guestInfo.provinceName}},
-          collectionSameAsDelivery:guestInfo.collectionSameAsDelivery,
-          collectionAddress:guestInfo.returnMethod==="home_collection"
-            ? guestInfo.collectionSameAsDelivery && guestInfo.pickupMethod==="home_delivery"
-              ? undefined
-              : guestInfo.collectionAddressId
-                ? {addressId:guestInfo.collectionAddressId}
-                : {address:{
-                    addressLine:guestInfo.collectionAddressLine,
-                    communeCode:guestInfo.collectionCommuneCode,
-                    wardName:guestInfo.collectionWardName,
-                    districtCode:guestInfo.collectionDistrictCode,
-                    districtName:guestInfo.collectionDistrictName,
-                    provinceCode:guestInfo.collectionProvinceCode,
-                    provinceName:guestInfo.collectionProvinceName
-                  }}
+          deliveryAddress:guestInfo.pickupMethod==="home_delivery"
+            ? guestInfo.deliveryAddressId
+              ? {addressId:guestInfo.deliveryAddressId}
+              : {address:{addressLine:guestInfo.addressLine,communeCode:guestInfo.communeCode,wardName:guestInfo.wardName,districtCode:guestInfo.districtCode,districtName:guestInfo.districtName,provinceCode:guestInfo.provinceCode,provinceName:guestInfo.provinceName}}
             : undefined
         });
         setScheduleError("");
@@ -1098,11 +1081,10 @@ export function RentalCartPage(props) {
       );
       return;
     }
-    const usesExternalCarrier = guestInfo.pickupMethod === "home_delivery" || guestInfo.returnMethod === "home_collection";
+    const usesExternalCarrier = guestInfo.pickupMethod === "home_delivery";
     const deliveryProvince = String(guestInfo.provinceCode || "").padStart(2, "0");
-    const collectionProvince = String(guestInfo.collectionSameAsDelivery ? guestInfo.provinceCode : guestInfo.collectionProvinceCode || "").padStart(2, "0");
-    if ((guestInfo.pickupMethod === "home_delivery" && deliveryProvince !== "79") || (guestInfo.returnMethod === "home_collection" && collectionProvince !== "79")) {
-      showNotice("Hiện tại shop chỉ hỗ trợ giao và nhận tận nơi trong TP.HCM. Bạn có thể chọn nhận/trả tại shop hoặc sử dụng địa chỉ tại TP.HCM.", "error");
+    if (guestInfo.pickupMethod === "home_delivery" && deliveryProvince !== "79") {
+      showNotice("Hiện tại shop chỉ hỗ trợ giao tận nơi trong TP.HCM. Bạn có thể chọn nhận và trả tại shop hoặc sử dụng địa chỉ tại TP.HCM.", "error");
       return;
     }
     if (usesExternalCarrier && !carrierFeeAccepted) {
@@ -1243,8 +1225,6 @@ export function RentalCartPage(props) {
           returnMethod:guestInfo.returnMethod,
           receiver: { fullName, phone },
           deliveryAddress:guestInfo.pickupMethod==="home_delivery"?(guestInfo.deliveryAddressId?{addressId:guestInfo.deliveryAddressId}:{address:{addressLine:guestInfo.addressLine,communeCode:guestInfo.communeCode,wardName:guestInfo.wardName,districtCode:guestInfo.districtCode,districtName:guestInfo.districtName,provinceCode:guestInfo.provinceCode,provinceName:guestInfo.provinceName}}):undefined,
-          collectionSameAsDelivery:guestInfo.collectionSameAsDelivery,
-          collectionAddress:guestInfo.returnMethod==="home_collection"?(guestInfo.collectionSameAsDelivery&&guestInfo.deliveryAddressId?{addressId:guestInfo.deliveryAddressId}:guestInfo.collectionAddressId?{addressId:guestInfo.collectionAddressId}:{address:{addressLine:guestInfo.collectionSameAsDelivery?guestInfo.addressLine:guestInfo.collectionAddressLine,communeCode:guestInfo.collectionSameAsDelivery?guestInfo.communeCode:guestInfo.collectionCommuneCode,wardName:guestInfo.collectionSameAsDelivery?guestInfo.wardName:guestInfo.collectionWardName,districtCode:guestInfo.collectionSameAsDelivery?guestInfo.districtCode:guestInfo.collectionDistrictCode,districtName:guestInfo.collectionSameAsDelivery?guestInfo.districtName:guestInfo.collectionDistrictName,provinceCode:guestInfo.collectionSameAsDelivery?guestInfo.provinceCode:guestInfo.collectionProvinceCode,provinceName:guestInfo.collectionSameAsDelivery?guestInfo.provinceName:guestInfo.collectionProvinceName}}):undefined
         },
         rentalDate: first.rentalDate,
         rentalDays,
@@ -1604,9 +1584,9 @@ export function RentalCartPage(props) {
                     </div>
                     <div>
                       <span>Cách trả đồ</span>
-                      <strong>{guestInfo.returnMethod === "home_collection" ? "ARA đến nhận lại" : "Tự trả tại cửa hàng"}</strong>
+                      <strong>Tự trả tại cửa hàng</strong>
                     </div>
-                    {(guestInfo.pickupMethod === "home_delivery" || guestInfo.returnMethod === "home_collection") && (
+                    {guestInfo.pickupMethod === "home_delivery" && (
                       <div className="is-wide">
                         <span>Địa chỉ giao nhận đã chọn</span>
                         <strong>{[guestInfo.addressLine, guestInfo.wardName, guestInfo.districtName, guestInfo.provinceName].filter(Boolean).join(", ")}</strong>
@@ -1621,10 +1601,9 @@ export function RentalCartPage(props) {
                   {guestInfo.pickupMethod==="home_delivery"&&<div className="ara-shipping-address"><div className="ara-shipping-address-head"><MapPin size={18}/><span><strong>Địa chỉ giao đồ tại TP.HCM</strong><small>Shop hiện chỉ hỗ trợ giao tận nơi trong TP.HCM.</small></span></div><SavedAddressPicker addresses={savedAddresses.filter((item)=>String(item.provinceCode||"").padStart(2,"0")==="79")} value={guestInfo.deliveryAddressId} onChange={chooseSavedAddress("delivery")}/>{!guestInfo.deliveryAddressId&&<><AddressLocationFields allowedProvinceCodes={["79"]} provinceCode={guestInfo.provinceCode} districtCode={guestInfo.districtCode} communeCode={guestInfo.communeCode} onChange={(next)=>setGuestInfo((current)=>({...current,...next,wardName:next.communeName??current.wardName}))}/><label className="wide"><span>Số nhà, tên đường *</span><input required value={guestInfo.addressLine} onChange={updateGuestInfo("addressLine")}/></label></>}</div>}
                   <strong className="ara-fulfillment-group-title">Cách trả đồ</strong>
                   <div className="ara-fulfillment-options">
-                    {[["store_return","Tự trả tại cửa hàng","Mang đồ về ARA đúng hạn"],["home_collection","Cửa hàng đến nhận lại","ARA sắp xếp người nhận đồ"]].map(([value,title,copy])=><label className={guestInfo.returnMethod===value?"is-selected":""} key={value}><input type="radio" className="ara-visually-hidden-input" name="returnMethod" value={value} checked={guestInfo.returnMethod===value} onChange={updateGuestInfo("returnMethod")}/><span><strong>{title}</strong><small>{copy}</small></span><i/></label>)}
+                    {[["store_return","Tự trả tại cửa hàng","Mang đồ về ARA đúng hạn"]].map(([value,title,copy])=><label className={guestInfo.returnMethod===value?"is-selected":""} key={value}><input type="radio" className="ara-visually-hidden-input" name="returnMethod" value={value} checked={guestInfo.returnMethod===value} onChange={updateGuestInfo("returnMethod")}/><span><strong>{title}</strong><small>{copy}</small></span><i/></label>)}
                   </div>
-                  {guestInfo.returnMethod==="home_collection"&&<div className="ara-shipping-address"><div className="ara-shipping-address-head"><MapPin size={18}/><span><strong>Địa chỉ nhận lại</strong><small>Chọn nơi nhân viên ARA sẽ nhận lại trang phục.</small></span></div>{guestInfo.pickupMethod==="home_delivery"&&<label className="wide ara-address-same"><input type="checkbox" checked={guestInfo.collectionSameAsDelivery} onChange={updateGuestInfo("collectionSameAsDelivery")}/><span>Địa chỉ nhận lại giống địa chỉ giao</span></label>}{(!guestInfo.collectionSameAsDelivery||guestInfo.pickupMethod!=="home_delivery")&&<><SavedAddressPicker addresses={savedAddresses} value={guestInfo.collectionAddressId} onChange={chooseSavedAddress("collection")}/>{!guestInfo.collectionAddressId&&<><AddressLocationFields provinceCode={guestInfo.collectionProvinceCode} districtCode={guestInfo.collectionDistrictCode} communeCode={guestInfo.collectionCommuneCode} onChange={(next)=>setGuestInfo((current)=>({...current,collectionProvinceCode:next.provinceCode??current.collectionProvinceCode,collectionProvinceName:next.provinceName??current.collectionProvinceName,collectionDistrictCode:next.districtCode??current.collectionDistrictCode,collectionDistrictName:next.districtName??current.collectionDistrictName,collectionCommuneCode:next.communeCode??current.collectionCommuneCode,collectionWardName:next.communeName??current.collectionWardName}))}/><label className="wide"><span>Số nhà, tên đường *</span><input required value={guestInfo.collectionAddressLine} onChange={updateGuestInfo("collectionAddressLine")}/></label></>}</>}</div>}
-                  {shippingQuote.error?<p className="form-error">{shippingQuote.error}</p>:(guestInfo.pickupMethod==="home_delivery"||guestInfo.returnMethod==="home_collection")&&<div className="ara-shipping-quote"><div><strong>Phí giao/nhận thanh toán riêng</strong><span>Shop sẽ liên hệ đơn vị vận chuyển. Chi phí thực tế được thanh toán trực tiếp cho shipper và không nằm trong tổng đơn thuê.</span></div><label><input type="checkbox" checked={carrierFeeAccepted} onChange={(event)=>setCarrierFeeAccepted(event.target.checked)}/><span>Tôi hiểu và đồng ý thanh toán phí giao/nhận trực tiếp cho đơn vị vận chuyển.</span></label></div>}
+                  {shippingQuote.error?<p className="form-error">{shippingQuote.error}</p>:(guestInfo.pickupMethod==="home_delivery")&&<div className="ara-shipping-quote"><div><strong>Phí giao hàng thanh toán riêng</strong><span>Shop sẽ liên hệ đơn vị vận chuyển. Chi phí thực tế được thanh toán trực tiếp cho shipper và không nằm trong tổng đơn thuê.</span></div><label><input type="checkbox" checked={carrierFeeAccepted} onChange={(event)=>setCarrierFeeAccepted(event.target.checked)}/><span>Tôi hiểu và đồng ý thanh toán phí giao hàng trực tiếp cho đơn vị vận chuyển.</span></label></div>}
                 </fieldset>
                 <fieldset className="ara-payment-fieldset">
                   <legend className="ara-payment-legend">
@@ -1816,7 +1795,7 @@ export function RentalCartPage(props) {
             <div className="cart-checkout-total">
               <span>Tổng dự kiến</span>
               <strong>{money(checkoutTotal)}</strong>
-              {(guestInfo.pickupMethod==="home_delivery"||guestInfo.returnMethod==="home_collection")&&<small>Phí giao/nhận trả trực tiếp cho shipper, không nằm trong tổng này.</small>}
+              {guestInfo.pickupMethod==="home_delivery"&&<small>Phí giao hàng trả trực tiếp cho shipper, không nằm trong tổng này.</small>}
             </div>
           </div>
 

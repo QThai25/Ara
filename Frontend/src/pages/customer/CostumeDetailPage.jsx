@@ -1178,7 +1178,7 @@ export function CostumeDetailPage({
   const [rentalDays, setRentalDays] = useState(1);
   const [rentalQuote, setRentalQuote] = useState(null);
   const [pickupMethod, setPickupMethod] = useState(initialFulfillment.pickupMethod || "store_pickup");
-  const [returnMethod, setReturnMethod] = useState(initialFulfillment.returnMethod || "store_return");
+  const [returnMethod, setReturnMethod] = useState("store_return");
   const [savedAddresses, setSavedAddresses] = useState([]);
   const [deliveryAddressId, setDeliveryAddressId] = useState(initialFulfillment.deliveryAddressId || "");
   const [deliveryAddress, setDeliveryAddress] = useState({
@@ -1235,9 +1235,9 @@ export function CostumeDetailPage({
 
   useEffect(() => {
     if (!id || !product || available === null || !mainUseDate || !pickupTime) return undefined;
-    const needsAddress = pickupMethod === "home_delivery" || returnMethod === "home_collection";
+    const needsAddress = pickupMethod === "home_delivery";
     if (needsAddress && (!deliveryAddress.addressLine || !deliveryAddress.provinceCode || !deliveryAddress.districtCode || !deliveryAddress.communeCode)) {
-      setFulfillmentError("Vui lòng chọn hoặc nhập địa chỉ giao nhận để hệ thống tính giờ vận chuyển.");
+      setFulfillmentError("Vui lòng chọn hoặc nhập địa chỉ giao đồ để hệ thống tính giờ vận chuyển.");
       return undefined;
     }
     const controller = new AbortController();
@@ -1253,10 +1253,6 @@ export function CostumeDetailPage({
         rentalDays,
         items: [{ costumeId: id, quantity: 1 }],
         deliveryAddress: pickupMethod === "home_delivery" ? addressInput : undefined,
-        collectionSameAsDelivery: true,
-        collectionAddress: returnMethod === "home_collection" && pickupMethod !== "home_delivery"
-          ? addressInput
-          : undefined
       };
       const prefetchedNearest = available === false
         ? quoteRentalOrder(
@@ -2096,7 +2092,7 @@ export function CostumeDetailPage({
             <div>
               <strong>Cách trả đồ</strong>
               <div className="ara-fulfillment-options">
-                {[["store_return","Tự trả tại cửa hàng","Mang đồ về ARA đúng hạn"],["home_collection","ARA đến nhận lại","Nhân viên đến địa chỉ của bạn"]].map(([value,title,copy]) => (
+                {[["store_return","Tự trả tại cửa hàng","Mang đồ về ARA đúng hạn"]].map(([value,title,copy]) => (
                   <label className={returnMethod === value ? "is-selected" : ""} key={value}>
                     <input type="radio" className="ara-visually-hidden-input" name="detailReturnMethod" value={value} checked={returnMethod === value} onChange={() => setReturnMethod(value)}/>
                     <span><strong>{title}</strong><small>{copy}</small></span><i/>
@@ -2155,7 +2151,7 @@ export function CostumeDetailPage({
         {dateError && <p className="booking-form-error">{dateError}</p>}
 
         <div className="booking-fulfillment-after-schedule">
-          {(pickupMethod === "home_delivery" || returnMethod === "home_collection") && (
+          {pickupMethod === "home_delivery" && (
             <div className="booking-delivery-address">
               <div className="booking-delivery-address-title">
                 <MapPin size={18}/>
@@ -2288,8 +2284,8 @@ export function CostumeDetailPage({
                   : available === false
                     ? "Trang phục đã có người đặt trong thời gian này. Vui lòng chọn ngày hoặc giờ khác."
                   : fulfillmentError || (pickupMethod === "home_delivery"
-                    ? `Khung nhận đồ ${pickupTime} đang còn trống. Shop sẽ liên hệ đơn vị vận chuyển; thời gian thuê bắt đầu khi bạn thực nhận đồ. ${returnMethod === "home_collection" ? "Khi trả, thời gian thuê dừng lúc bạn bàn giao đồ cho đơn vị vận chuyển do shop sắp xếp." : "Bạn trả đồ tại cửa hàng đúng lịch."}`
-                    : `Bạn có thể nhận đồ lúc ${pickupTime} tại cửa hàng. ${returnMethod === "home_collection" ? "Khi trả, thời gian thuê dừng lúc bạn bàn giao đồ cho đơn vị vận chuyển do shop sắp xếp." : "Bạn trả đồ tại cửa hàng đúng lịch."}`)}
+                    ? `Khung nhận đồ ${pickupTime} đang còn trống. Shop sẽ liên hệ đơn vị vận chuyển; thời gian thuê bắt đầu khi bạn thực nhận đồ. Bạn trả đồ tại cửa hàng đúng lịch.`
+                    : `Bạn có thể nhận đồ lúc ${pickupTime} tại cửa hàng. Bạn trả đồ tại cửa hàng đúng lịch.`)}
               </small>
             </span>
           </div>
@@ -2342,7 +2338,7 @@ export function CostumeDetailPage({
               <div><dt>Giá thuê</dt><dd>{money(estimatedRentalAmount)}</dd></div>
               <div><dt>Phí ngày thêm</dt><dd>{money(Number(estimatedPricing?.extraDayFee || 0))}</dd></div>
               <div><dt>Tiền cọc</dt><dd>{money(estimatedDeposit)}</dd></div>
-              {(pickupMethod === "home_delivery" || returnMethod === "home_collection") && <div><dt>Phí giao/nhận</dt><dd>Trả trực tiếp cho shipper theo thực tế</dd></div>}
+              {pickupMethod === "home_delivery" && <div><dt>Phí giao/nhận</dt><dd>Trả trực tiếp cho shipper theo thực tế</dd></div>}
             </dl>
           </div>
           <div className="booking-summary-total">
@@ -2353,7 +2349,7 @@ export function CostumeDetailPage({
           <p className="booking-pricing-note">
             Một ngày thuê bằng đúng 24 giờ. Chuẩn bị và vệ sinh có khóa lịch tồn kho nhưng không tính vào tiền thuê.
           </p>
-          {(pickupMethod === "home_delivery" || returnMethod === "home_collection") && <p className="booking-pricing-note">Shop sẽ liên hệ đơn vị vận chuyển. Phí giao/nhận không nằm trong tổng tiền đơn thuê và khách thanh toán trực tiếp cho shipper. Chỉ hỗ trợ trong TP.HCM.</p>}
+          {pickupMethod === "home_delivery" && <p className="booking-pricing-note">Shop sẽ liên hệ đơn vị vận chuyển. Phí giao/nhận không nằm trong tổng tiền đơn thuê và khách thanh toán trực tiếp cho shipper. Chỉ hỗ trợ trong TP.HCM.</p>}
           </section>
 
           <section className="booking-final-actions" aria-label="Hoàn tất đặt thuê">
