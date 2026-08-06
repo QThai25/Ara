@@ -9,9 +9,7 @@ import { isSupportedFulfillmentProvinceCode } from "../utils/fulfillmentProvince
 
 export const METHODS = [
   { code: "store_pickup_store_return", pickupMethod: "store_pickup", returnMethod: "store_return", name: "Tự nhận – tự trả tại cửa hàng", requiresDeliveryAddress: false, requiresCollectionAddress: false },
-  { code: "home_delivery_store_return", pickupMethod: "home_delivery", returnMethod: "store_return", name: "Giao tận nơi – tự trả tại cửa hàng", requiresDeliveryAddress: true, requiresCollectionAddress: false },
-  { code: "store_pickup_home_collection", pickupMethod: "store_pickup", returnMethod: "home_collection", name: "Tự nhận – ARA đến nhận lại", requiresDeliveryAddress: false, requiresCollectionAddress: true },
-  { code: "home_delivery_home_collection", pickupMethod: "home_delivery", returnMethod: "home_collection", name: "Giao tận nơi – nhận lại tận nơi", requiresDeliveryAddress: true, requiresCollectionAddress: true }
+  { code: "home_delivery_store_return", pickupMethod: "home_delivery", returnMethod: "store_return", name: "Giao tận nơi – tự trả tại cửa hàng", requiresDeliveryAddress: true, requiresCollectionAddress: false }
 ];
 const LEGACY_METHODS = { store_pickup: ["store_pickup", "store_return"], delivery_store_return: ["home_delivery", "store_return"], two_way_delivery: ["home_delivery", "home_collection"] };
 const addressSnapshot = (address = {}) => ({
@@ -68,7 +66,7 @@ export async function quote(user, body = {}) {
   const collection = method.requiresCollectionAddress ? await resolveAddress(user, collectionInput) : null;
   for (const resolvedAddress of [delivery?.address, collection?.address].filter(Boolean)) {
     if (!isSupportedFulfillmentProvinceCode(resolvedAddress.provinceCode)) {
-      const error = new ApiError(422, "Hiện tại shop chỉ hỗ trợ giao và nhận tận nơi trong TP.HCM. Bạn có thể chọn nhận/trả tại shop hoặc sử dụng địa chỉ tại TP.HCM.");
+      const error = new ApiError(422, "Hiện tại shop chỉ hỗ trợ giao tận nơi trong TP.HCM. Bạn có thể chọn nhận và trả tại shop hoặc sử dụng địa chỉ tại TP.HCM.");
       error.code = "FULFILLMENT_PROVINCE_UNSUPPORTED";
       throw error;
     }

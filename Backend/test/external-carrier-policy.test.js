@@ -29,10 +29,10 @@ test("home delivery accepts canonical HCM and never quotes shop shipping fee", a
   assert.equal(result.feePaymentMode, "direct_to_carrier");
 });
 
-test("home collection outside HCM is rejected by backend", async () => {
+test("home collection is rejected for new fulfillment quotes", async () => {
   await assert.rejects(
     quote(null, { pickupMethod: "store_pickup", returnMethod: "home_collection", collectionAddress: address("01", "00004"), collectionSameAsDelivery: false }),
-    (error) => error.code === "FULFILLMENT_PROVINCE_UNSUPPORTED" && error.statusCode === 422
+    (error) => error.statusCode === 400
   );
 });
 
