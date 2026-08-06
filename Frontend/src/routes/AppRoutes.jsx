@@ -24,6 +24,7 @@ import { AccountPage } from "../pages/customer/AccountPage.jsx";
 import { ForgotPasswordPage } from "../pages/customer/ForgotPasswordPage.jsx";
 import { NotFoundPage } from "../pages/customer/NotFoundPage.jsx";
 import { OffersPage } from "../pages/customer/OffersPage.jsx";
+import { StateMessage } from "../components/common/StateMessage.jsx";
 
 const adminRoles = ["admin", "staff", "owner"];
 
@@ -60,7 +61,9 @@ function GuestRoute({ user, children }) {
 function AdminRedirect({ user }) {
   if (!user) return <Navigate to="/login" replace />;
   if (!adminRoles.includes(user.role)) return <Navigate to="/" replace />;
-  window.location.assign(import.meta.env.VITE_ADMIN_URL || "/");
+  const adminUrl = import.meta.env.VITE_ADMIN_URL;
+  if (!adminUrl) return <StateMessage tone="error" text="Trang quản trị chưa được cấu hình. Vui lòng thiết lập VITE_ADMIN_URL." />;
+  window.location.assign(adminUrl);
   return null;
 }
 

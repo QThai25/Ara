@@ -2286,8 +2286,11 @@ function VoucherManager({ items, pagination, categories, occasions, costumes, cu
   const queryRef = useRef(query);
   queryRef.current = query;
   const requestPage = (page) => {
-    if (paginationResetRef.current) return;
-    return reloadRef.current({ silent: true, voucherParams: { ...queryRef.current(), page } });
+    if (paginationResetRef.current || paginationLocked) return;
+    setPaginationLocked(true);
+    return Promise.resolve()
+      .then(() => reloadRef.current({ silent: true, voucherParams: { ...queryRef.current(), page } }))
+      .finally(() => setPaginationLocked(false));
   };
   const startFilterReset = () => {
     paginationResetRef.current = true;

@@ -50,6 +50,8 @@ import {
   toggleWishlist
 } from "../../services/wishlistService.js";
 
+const RETURN_METHOD = "store_return";
+
 import {
   money,
   formatDateTime,
@@ -1178,7 +1180,6 @@ export function CostumeDetailPage({
   const [rentalDays, setRentalDays] = useState(1);
   const [rentalQuote, setRentalQuote] = useState(null);
   const [pickupMethod, setPickupMethod] = useState(initialFulfillment.pickupMethod || "store_pickup");
-  const [returnMethod, setReturnMethod] = useState("store_return");
   const [savedAddresses, setSavedAddresses] = useState([]);
   const [deliveryAddressId, setDeliveryAddressId] = useState(initialFulfillment.deliveryAddressId || "");
   const [deliveryAddress, setDeliveryAddress] = useState({
@@ -1237,6 +1238,8 @@ export function CostumeDetailPage({
     if (!id || !product || available === null || !mainUseDate || !pickupTime) return undefined;
     const needsAddress = pickupMethod === "home_delivery";
     if (needsAddress && (!deliveryAddress.addressLine || !deliveryAddress.provinceCode || !deliveryAddress.districtCode || !deliveryAddress.communeCode)) {
+      setFulfillmentQuote(null);
+      setNearestBookable(null);
       setFulfillmentError("Vui lòng chọn hoặc nhập địa chỉ giao đồ để hệ thống tính giờ vận chuyển.");
       return undefined;
     }
@@ -1248,7 +1251,7 @@ export function CostumeDetailPage({
         : { address: deliveryAddress };
       const quotePayload = {
         pickupMethod,
-        returnMethod,
+        returnMethod: RETURN_METHOD,
         requestedStartAt: combineDateAndTime(mainUseDate, pickupTime),
         rentalDays,
         items: [{ costumeId: id, quantity: 1 }],
@@ -1300,7 +1303,7 @@ export function CostumeDetailPage({
       controller.abort();
       setCheckingFulfillment(false);
     };
-  }, [id, loadedProductId, available, mainUseDate, pickupTime, rentalDays, pickupMethod, returnMethod, deliveryAddressId, deliveryAddressLine, deliveryProvinceCode, deliveryDistrictCode, deliveryCommuneCode]);
+  }, [id, loadedProductId, available, mainUseDate, pickupTime, rentalDays, pickupMethod, deliveryAddressId, deliveryAddressLine, deliveryProvinceCode, deliveryDistrictCode, deliveryCommuneCode]);
 
   useEffect(() => {
     if (!isValidDateInput(mainUseDate)) return;
@@ -1774,7 +1777,7 @@ export function CostumeDetailPage({
 
     const selectedFulfillment = {
       pickupMethod,
-      returnMethod,
+      returnMethod: RETURN_METHOD,
       deliveryAddressId,
       deliveryAddress
     };
@@ -2092,12 +2095,9 @@ export function CostumeDetailPage({
             <div>
               <strong>Cách trả đồ</strong>
               <div className="ara-fulfillment-options">
-                {[["store_return","Tự trả tại cửa hàng","Mang đồ về ARA đúng hạn"]].map(([value,title,copy]) => (
-                  <label className={returnMethod === value ? "is-selected" : ""} key={value}>
-                    <input type="radio" className="ara-visually-hidden-input" name="detailReturnMethod" value={value} checked={returnMethod === value} onChange={() => setReturnMethod(value)}/>
-                    <span><strong>{title}</strong><small>{copy}</small></span><i/>
-                  </label>
-                ))}
+                <div className="booking-fulfillment-static">
+                  <span><strong>Tự trả tại cửa hàng</strong><small>Mang đồ về ARA đúng hạn</small></span><i/>
+                </div>
               </div>
             </div>
           </div>

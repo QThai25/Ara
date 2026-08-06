@@ -1,7 +1,7 @@
 import axios from "axios";
 
 const viteEnv = import.meta.env || {};
-const apiBaseUrl = viteEnv.VITE_API_BASE_URL || viteEnv.VITE_API_URL || "";
+const apiBaseUrl = viteEnv.VITE_API_BASE_URL || viteEnv.VITE_API_URL || "/api";
 
 export const REQUEST_TIMEOUT_MS = 15_000;
 export const PAYMENT_TIMEOUT_MS = 45_000;

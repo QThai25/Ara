@@ -19,6 +19,7 @@ test("normalizes canonical province code without accepting names", () => {
 test("home delivery accepts canonical HCM and never quotes shop shipping fee", async () => {
   const result = await quote(null, { pickupMethod: "home_delivery", returnMethod: "store_return", deliveryAddress: address("79", "25747") });
   assert.equal(result.deliveryAddress.provinceCode, "79");
+  assert.equal(result.fulfillmentMethod, "delivery_store_return");
   assert.equal(result.outboundFee, null);
   assert.equal(result.returnFee, null);
   assert.equal(result.totalShippingFee, null);
@@ -32,12 +33,13 @@ test("home delivery accepts canonical HCM and never quotes shop shipping fee", a
 test("home collection is rejected for new fulfillment quotes", async () => {
   await assert.rejects(
     quote(null, { pickupMethod: "store_pickup", returnMethod: "home_collection", collectionAddress: address("01", "00004"), collectionSameAsDelivery: false }),
-    (error) => error.statusCode === 400
+    (error) => error.statusCode === 400 && error.message === "Phương thức nhận/trả không hợp lệ."
   );
 });
 
 test("store pickup and return require no fulfillment address", async () => {
   const result = await quote(null, { pickupMethod: "store_pickup", returnMethod: "store_return" });
+  assert.equal(result.fulfillmentMethod, "store_pickup");
   assert.equal(result.totalShippingFee, 0);
   assert.equal(result.feeMode, "not_applicable");
 });

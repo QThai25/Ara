@@ -11,7 +11,7 @@ export function AdminLoginPage() {
   const { adminUser, login, loading, isAuthenticated, isAdmin } = useAdminAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const customerUrl = import.meta.env.VITE_CUSTOMER_URL || "/";
+  const customerUrl = import.meta.env.VITE_CUSTOMER_URL;
   const update = (field, value) => {
     setForm((current) => ({ ...current, [field]: value }));
     if (error) setError("");
@@ -127,7 +127,7 @@ export function AdminLoginPage() {
           </form>
 
           <div className="admin-login-form-footer">
-            <a href={customerUrl}><ArrowLeft size={16} /> Quay về website Ara</a>
+            {customerUrl && <a href={customerUrl}><ArrowLeft size={16} /> Quay về website Ara</a>}
             <span><ShieldCheck size={15} /> Phiên đăng nhập được bảo vệ</span>
           </div>
         </section>
