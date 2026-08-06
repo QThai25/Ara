@@ -43,6 +43,12 @@ test("refund report applies order status immediately after the rental order unwi
   });
   assert.deepEqual(specificStatusPipeline[2], { $match: { "refundOrder.status": "completed" } });
   assert.equal(specificStatusPipeline.filter((stage) => stage.$match?.["refundOrder.status"]).length, 1);
+
+  const combinedFiltersPipeline = refundFilterLookups({ status: "completed", search: "customer@example.com", paymentMethod: "bank" });
+  assert.deepEqual(combinedFiltersPipeline[0], specificStatusPipeline[0]);
+  assert.deepEqual(combinedFiltersPipeline[1], specificStatusPipeline[1]);
+  assert.deepEqual(combinedFiltersPipeline[2], { $match: { "refundOrder.status": "completed" } });
+  assert.equal(combinedFiltersPipeline.filter((stage) => stage.$match?.["refundOrder.status"]).length, 1);
 });
 
 test("customer deletion reports a successful block when history must be retained", async () => {

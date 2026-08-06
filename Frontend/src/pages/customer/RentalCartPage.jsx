@@ -791,6 +791,7 @@ export function RentalCartPage(props) {
       setScheduleError("");
       return undefined;
     }
+    const controller = new AbortController();
     const timer = setTimeout(async () => {
       try {
         const first = items[0];
@@ -808,7 +809,8 @@ export function RentalCartPage(props) {
               ? {addressId:guestInfo.deliveryAddressId}
               : {address:{addressLine:guestInfo.addressLine,communeCode:guestInfo.communeCode,wardName:guestInfo.wardName,districtCode:guestInfo.districtCode,districtName:guestInfo.districtName,provinceCode:guestInfo.provinceCode,provinceName:guestInfo.provinceName}}
             : undefined
-        });
+        }, { signal: controller.signal });
+        if (controller.signal.aborted) return;
         setScheduleError("");
         setShippingQuote({
           feeMode:quote?.feeMode || "external_direct_payment",
@@ -819,6 +821,7 @@ export function RentalCartPage(props) {
           totalShippingFee:quote?.pricing?.transportTotal ?? null
         });
       } catch (error) {
+        if (controller.signal.aborted || error?.name === "CanceledError" || error?.name === "AbortError") return;
         const message = error?.response?.data?.message || error?.response?.data?.error || error.message;
         const isScheduleIssue = /thời điểm|giờ (?:giao nhận|hoạt động)|phải về cửa hàng/i.test(String(message || ""));
         setScheduleError(isScheduleIssue ? message : "");
@@ -831,8 +834,8 @@ export function RentalCartPage(props) {
         });
       }
     }, 350);
-    return () => clearTimeout(timer);
-  }, [items,guestInfo.pickupMethod,guestInfo.returnMethod,guestInfo.collectionSameAsDelivery,guestInfo.deliveryAddressId,guestInfo.collectionAddressId,guestInfo.addressLine,guestInfo.communeCode,guestInfo.wardName,guestInfo.districtCode,guestInfo.districtName,guestInfo.provinceCode,guestInfo.provinceName,guestInfo.collectionAddressLine,guestInfo.collectionCommuneCode,guestInfo.collectionWardName,guestInfo.collectionDistrictCode,guestInfo.collectionDistrictName,guestInfo.collectionProvinceCode,guestInfo.collectionProvinceName,guestInfo.fullName,guestInfo.phone]);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [items,guestInfo.pickupMethod,guestInfo.returnMethod,guestInfo.deliveryAddressId,guestInfo.addressLine,guestInfo.communeCode,guestInfo.wardName,guestInfo.districtCode,guestInfo.districtName,guestInfo.provinceCode,guestInfo.provinceName,guestInfo.fullName,guestInfo.phone]);
 
   const revealCheckoutStep = (nextStep) => {
     setCheckoutStep((current) => Math.max(current, nextStep));
@@ -1599,10 +1602,6 @@ export function RentalCartPage(props) {
                     {[["store_pickup","Tự nhận tại cửa hàng","Nhận trực tiếp tại ARA"],["home_delivery","Giao tận nơi","ARA giao đến địa chỉ của bạn"]].map(([value,title,copy])=><label className={guestInfo.pickupMethod===value?"is-selected":""} key={value}><input type="radio" className="ara-visually-hidden-input" name="pickupMethod" value={value} checked={guestInfo.pickupMethod===value} onChange={updateGuestInfo("pickupMethod")}/><span><strong>{title}</strong><small>{copy}</small></span><i/></label>)}
                   </div>
                   {guestInfo.pickupMethod==="home_delivery"&&<div className="ara-shipping-address"><div className="ara-shipping-address-head"><MapPin size={18}/><span><strong>Địa chỉ giao đồ tại TP.HCM</strong><small>Shop hiện chỉ hỗ trợ giao tận nơi trong TP.HCM.</small></span></div><SavedAddressPicker addresses={savedAddresses.filter((item)=>String(item.provinceCode||"").padStart(2,"0")==="79")} value={guestInfo.deliveryAddressId} onChange={chooseSavedAddress("delivery")}/>{!guestInfo.deliveryAddressId&&<><AddressLocationFields allowedProvinceCodes={["79"]} provinceCode={guestInfo.provinceCode} districtCode={guestInfo.districtCode} communeCode={guestInfo.communeCode} onChange={(next)=>setGuestInfo((current)=>({...current,...next,wardName:next.communeName??current.wardName}))}/><label className="wide"><span>Số nhà, tên đường *</span><input required value={guestInfo.addressLine} onChange={updateGuestInfo("addressLine")}/></label></>}</div>}
-                  <strong className="ara-fulfillment-group-title">Cách trả đồ</strong>
-                  <div className="ara-fulfillment-options">
-                    {[["store_return","Tự trả tại cửa hàng","Mang đồ về ARA đúng hạn"]].map(([value,title,copy])=><label className={guestInfo.returnMethod===value?"is-selected":""} key={value}><input type="radio" className="ara-visually-hidden-input" name="returnMethod" value={value} checked={guestInfo.returnMethod===value} onChange={updateGuestInfo("returnMethod")}/><span><strong>{title}</strong><small>{copy}</small></span><i/></label>)}
-                  </div>
                   {shippingQuote.error?<p className="form-error">{shippingQuote.error}</p>:(guestInfo.pickupMethod==="home_delivery")&&<div className="ara-shipping-quote"><div><strong>Phí giao hàng thanh toán riêng</strong><span>Shop sẽ liên hệ đơn vị vận chuyển. Chi phí thực tế được thanh toán trực tiếp cho shipper và không nằm trong tổng đơn thuê.</span></div><label><input type="checkbox" checked={carrierFeeAccepted} onChange={(event)=>setCarrierFeeAccepted(event.target.checked)}/><span>Tôi hiểu và đồng ý thanh toán phí giao hàng trực tiếp cho đơn vị vận chuyển.</span></label></div>}
                 </fieldset>
                 <fieldset className="ara-payment-fieldset">
