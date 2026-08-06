@@ -1,4 +1,4 @@
-import React, { useLayoutEffect } from "react";
+import React, { useEffect, useLayoutEffect, useRef } from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { CustomerLayout } from "../layouts/CustomerLayout.jsx";
 import { AuthPage } from "../pages/customer/AuthPage.jsx";
@@ -54,16 +54,28 @@ function RequireAuth({ user, children, redirectTo = "/login" }) {
 }
 
 function GuestRoute({ user, children }) {
-  if (user) return <Navigate to="/" replace />;
+  const location = useLocation();
+  if (user) return <Navigate to={location.state?.from || "/"} replace />;
   return children;
 }
 
 function AdminRedirect({ user }) {
-  if (!user) return <Navigate to="/login" replace />;
-  if (!adminRoles.includes(user.role)) return <Navigate to="/" replace />;
+  const location = useLocation();
+  const redirectStartedRef = useRef(false);
   const adminUrl = import.meta.env.VITE_ADMIN_URL;
+
+  useEffect(() => {
+    if (!user || !adminRoles.includes(user.role) || !adminUrl || redirectStartedRef.current) return;
+    redirectStartedRef.current = true;
+    window.location.assign(adminUrl);
+  }, [adminUrl, user]);
+
+  if (!user) {
+    const from = `${location.pathname}${location.search}${location.hash}`;
+    return <Navigate to="/login" state={{ from }} replace />;
+  }
+  if (!adminRoles.includes(user.role)) return <Navigate to="/" replace />;
   if (!adminUrl) return <StateMessage tone="error" text="Trang quản trị chưa được cấu hình. Vui lòng thiết lập VITE_ADMIN_URL." />;
-  window.location.assign(adminUrl);
   return null;
 }
 

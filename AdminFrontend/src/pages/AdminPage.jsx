@@ -2274,6 +2274,8 @@ function VoucherManager({ items, pagination, categories, occasions, costumes, cu
   reloadRef.current = reload;
   const paginationResetRef = useRef(false);
   const pendingFilterResetRef = useRef(false);
+  const paginationRequestRef = useRef(null);
+  const paginationTokenRef = useRef(0);
   const pageSize = Number(pagination?.limit) || 20;
   const currentPage = Number(pagination?.page) || 1;
   const query = () => ({
@@ -2285,30 +2287,51 @@ function VoucherManager({ items, pagination, categories, occasions, costumes, cu
   });
   const queryRef = useRef(query);
   queryRef.current = query;
-  const requestPage = (page) => {
-    if (paginationResetRef.current || paginationLocked) return;
+  const beginPaginationRequest = () => {
+    const token = ++paginationTokenRef.current;
+    paginationRequestRef.current = token;
     setPaginationLocked(true);
+    return token;
+  };
+  const finishPaginationRequest = (token, onComplete) => {
+    if (paginationRequestRef.current !== token) return false;
+    paginationRequestRef.current = null;
+    setPaginationLocked(false);
+    onComplete?.();
+    return true;
+  };
+  const requestPage = (page) => {
+    if (paginationResetRef.current || paginationRequestRef.current) return;
+    const token = beginPaginationRequest();
     return Promise.resolve()
       .then(() => reloadRef.current({ silent: true, voucherParams: { ...queryRef.current(), page } }))
-      .finally(() => setPaginationLocked(false));
+      .finally(() => finishPaginationRequest(token, () => {
+        if (!pendingFilterResetRef.current) return;
+        pendingFilterResetRef.current = false;
+        startFilterReset();
+      }));
   };
   const startFilterReset = () => {
+    if (paginationRequestRef.current) {
+      pendingFilterResetRef.current = true;
+      return;
+    }
     paginationResetRef.current = true;
-    setPaginationLocked(true);
+    const token = beginPaginationRequest();
     Promise.resolve()
       .then(() => reloadRef.current({ silent: true, voucherParams: { ...queryRef.current(), page: 1 } }))
       .finally(() => {
+        if (!finishPaginationRequest(token)) return;
         paginationResetRef.current = false;
         if (pendingFilterResetRef.current) {
           pendingFilterResetRef.current = false;
           startFilterReset();
           return;
         }
-        setPaginationLocked(false);
       });
   };
   const resetPage = () => {
-    if (paginationResetRef.current) {
+    if (paginationResetRef.current || paginationRequestRef.current) {
       pendingFilterResetRef.current = true;
       return;
     }

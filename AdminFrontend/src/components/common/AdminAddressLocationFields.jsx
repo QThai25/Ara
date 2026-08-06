@@ -10,33 +10,58 @@ export function AdminAddressLocationFields({ provinceCode, districtCode, commune
   const [error, setError] = useState("");
 
   useEffect(() => {
+    let active = true;
     listProvinces()
       .then((result) => {
+        if (!active) return;
         const next = itemsFrom(result);
         setProvinces(allowedProvinceCodes.length ? next.filter((item) => allowedProvinceCodes.includes(String(item.code))) : next);
         setError("");
       })
-      .catch(() => setError("Không tải được danh sách tỉnh/thành phố."));
+      .catch(() => {
+        if (active) setError("Không tải được danh sách tỉnh/thành phố.");
+      });
+    return () => { active = false; };
   }, [allowedProvinceCodes.join(",")]);
 
   useEffect(() => {
+    let active = true;
     if (!provinceCode) {
       setDistricts([]);
-      return;
+      return () => { active = false; };
     }
     listDistricts(provinceCode)
-      .then((result) => { setDistricts(itemsFrom(result)); setError(""); })
-      .catch(() => { setDistricts([]); setError("Không tải được danh sách quận/huyện."); });
+      .then((result) => {
+        if (!active) return;
+        setDistricts(itemsFrom(result));
+        setError("");
+      })
+      .catch(() => {
+        if (!active) return;
+        setDistricts([]);
+        setError("Không tải được danh sách quận/huyện.");
+      });
+    return () => { active = false; };
   }, [provinceCode]);
 
   useEffect(() => {
+    let active = true;
     if (!provinceCode || !districtCode) {
       setCommunes([]);
-      return;
+      return () => { active = false; };
     }
     listCommunes(provinceCode, [districtCode])
-      .then((result) => { setCommunes(itemsFrom(result)); setError(""); })
-      .catch(() => { setCommunes([]); setError("Không tải được danh sách phường/xã."); });
+      .then((result) => {
+        if (!active) return;
+        setCommunes(itemsFrom(result));
+        setError("");
+      })
+      .catch(() => {
+        if (!active) return;
+        setCommunes([]);
+        setError("Không tải được danh sách phường/xã.");
+      });
+    return () => { active = false; };
   }, [provinceCode, districtCode]);
 
   const optionLabel = (item) => item.displayName || item.name;
