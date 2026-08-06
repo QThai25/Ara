@@ -5736,3 +5736,12 @@ html,body,#root,button,input,textarea,select,option,table,th,td,h1,h2,h3,h4,h5,h
   .refund-detail > dl { grid-template-columns: 1fr; }
   .refund-detail > dl > div:last-child { grid-column: auto; }
 }
+
+/* iOS Safari zooms focused text controls below 16px. */
+@media (max-width: 768px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]):not([type="color"]),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
