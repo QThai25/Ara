@@ -36,12 +36,12 @@ import {
 } from "../../services/rentalOrderService.js";
 import { listRefundDestinations } from "../../services/accountService.js";
 import {
-  cancelPayment,
   createPayment,
   getMyPayments,
   getPaymentQuote,
   getPaymentStatus,
-  reportManualTransfer
+  reportManualTransfer,
+  replacePayment
 } from "../../services/paymentService.js";
 import {
   formatDateTime,
@@ -125,6 +125,13 @@ const PAYMENT_METHODS = [
   }
 ];
 
+function hasRefundDestinationSnapshot(snapshot) {
+  return Boolean(
+    snapshot?.bankBin
+    && (snapshot.maskedAccountNumber || snapshot.accountNumberLast4 || snapshot.accountNumber || snapshot.encryptedAccountNumber)
+  );
+}
+
 function getPaymentIcon(method) {
   if (
     method === "bank_transfer" ||
@@ -182,6 +189,8 @@ export function MyOrderDetailPage({
 
   const requestRef = useRef(0);
   const openingPaymentRef = useRef(false);
+  const paymentSubmitRef = useRef(false);
+  const replacementSubmitRef = useRef(false);
 
   const load = async (signal, { silent = false } = {}) => {
     const requestId =
@@ -426,11 +435,24 @@ export function MyOrderDetailPage({
           )
       ) || null;
 
-    let refundDestinations = [];
-    if (Number(targetOrder?.totalDepositAmount || targetOrder?.depositAmount || 0) > 0) {
-      try { refundDestinations = await listRefundDestinations(); } catch { refundDestinations = []; }
+    const hasDeposit = Number(targetOrder?.totalDepositAmount || targetOrder?.depositAmount || 0) > 0;
+    const orderRefundDestination = hasRefundDestinationSnapshot(targetOrder?.refundDestinationSnapshot)
+      ? targetOrder.refundDestinationSnapshot
+      : null;
+    let availableRefundDestinations = Array.isArray(refundDestinations) ? refundDestinations : [];
+    if (hasDeposit && !orderRefundDestination && !availableRefundDestinations.length) {
+      try {
+        const loadedDestinations = await listRefundDestinations();
+        availableRefundDestinations = Array.isArray(loadedDestinations) ? loadedDestinations : [];
+      } catch {
+        availableRefundDestinations = [];
+      }
     }
-    const defaultDestination = refundDestinations.find((item) => item.isDefault && item.isEnabled) || refundDestinations.find((item) => item.isEnabled) || null;
+    const defaultDestination = orderRefundDestination
+      ? null
+      : availableRefundDestinations.find((item) => item.isDefault && item.isEnabled)
+        || availableRefundDestinations.find((item) => item.isEnabled)
+        || null;
     setPaymentDraft({
       order: targetOrder,
       paymentType,
@@ -440,8 +462,8 @@ export function MyOrderDetailPage({
       idempotencyKey:
         newIdempotencyKey(),
       createdPayment: null
-      ,step: 1,
-      refundDestinations,
+      ,step: orderRefundDestination ? 3 : 1,
+      refundDestinations: availableRefundDestinations,
       selectedRefundDestination: defaultDestination,
       refundFormType: null
     });
@@ -472,6 +494,7 @@ export function MyOrderDetailPage({
     }
 
     setPaymentDraft(null);
+    paymentSubmitRef.current = false;
   };
 
   const resumePendingPayment = async (targetOrder) => {
@@ -515,38 +538,23 @@ export function MyOrderDetailPage({
     }
   };
 
-  const changePaymentMethod = async () => {
+  const changePaymentMethod = () => {
     const currentPayment = paymentDraft?.createdPayment;
     const paymentId = currentPayment?.id || currentPayment?._id;
     if (!paymentId || submittingPayment) return;
 
-    try {
-      setSubmittingPayment(true);
-      await cancelPayment(paymentId);
-
-      const paymentType = paymentDraft.paymentType || currentPayment.paymentType || "full";
-      const orderId = paymentDraft.order.id || paymentDraft.order._id;
-      const quote = await getPaymentQuote({ orderId, paymentType });
-      const firstAvailableMethod = PAYMENT_METHODS.find((option) =>
-        quote?.supportedMethods?.[option.channel]?.includes(option.method)
-      ) || null;
-
-      setPaymentDraft((current) => ({
-        ...current,
-        quote,
-        selectedMethod: firstAvailableMethod,
-        idempotencyKey: newIdempotencyKey(),
-        createdPayment: null
-      }));
-      await load();
-      notify?.("Đã hủy giao dịch cũ. Bạn có thể chọn phương thức thanh toán khác.");
-    } catch (err) {
-      await load();
-      if (err?.status === 409) setPaymentDraft(null);
-      notify?.(err.message || "Không thể đổi phương thức thanh toán.", "error");
-    } finally {
-      setSubmittingPayment(false);
-    }
+    const nextMethod = PAYMENT_METHODS.find((option) =>
+      option.method !== currentPayment.method
+      && paymentDraft?.quote?.supportedMethods?.[option.channel]?.includes(option.method)
+    ) || null;
+    setPaymentDraft((current) => ({
+      ...current,
+      step: 1,
+      selectedMethod: nextMethod || current.selectedMethod,
+      idempotencyKey: newIdempotencyKey(),
+      createdPayment: null
+    }));
+    setTransferProof(null);
   };
 
   const methodEnabled = (
@@ -569,12 +577,16 @@ export function MyOrderDetailPage({
     setPaymentDraft(
       (current) => ({
         ...current,
-        selectedMethod: option
+        selectedMethod: option,
+        createdPayment: null,
+        methodChangeConfirmation: null
       })
     );
+    setTransferProof(null);
   };
 
-  const requiresRefundDestination = Number(paymentDraft?.order?.totalDepositAmount || paymentDraft?.order?.depositAmount || 0) > 0;
+  const requiresRefundDestination = Number(paymentDraft?.order?.totalDepositAmount || paymentDraft?.order?.depositAmount || 0) > 0
+    && !hasRefundDestinationSnapshot(paymentDraft?.order?.refundDestinationSnapshot);
 
   const continuePaymentFlow = () => {
     if (!paymentDraft?.selectedMethod) return;
@@ -601,12 +613,12 @@ export function MyOrderDetailPage({
     setPaymentDraft((current) => ({ ...current, refundDestinations: destinations, selectedRefundDestination: selected, refundFormType: null }));
   };
 
-  const submitPayment =
-    async () => {
+  const submitPayment = async () => {
       if (
         !paymentDraft?.order ||
         !paymentDraft.selectedMethod ||
-        submittingPayment
+        submittingPayment ||
+        paymentSubmitRef.current
       ) {
         return;
       }
@@ -616,6 +628,7 @@ export function MyOrderDetailPage({
         paymentDraft.order._id;
 
       try {
+        paymentSubmitRef.current = true;
         setSubmittingPayment(true);
 
         const payment =
@@ -629,10 +642,7 @@ export function MyOrderDetailPage({
                 paymentDraft
                   .selectedMethod
                   .channel,
-              method:
-                paymentDraft
-                  .selectedMethod
-                  .method
+              method: paymentDraft.selectedMethod.method
             },
             paymentDraft.idempotencyKey
           );
@@ -655,15 +665,113 @@ export function MyOrderDetailPage({
 
         await load();
       } catch (err) {
+        if (err?.status >= 500 || !err?.status || [409, 422].includes(err?.status)) await load(undefined, { silent: true });
+        if (err?.code === "PAYMENT_METHOD_CHANGE_CONFIRMATION_REQUIRED") {
+          const activePayment = err.data?.activePayment || (err.data?.paymentId ? {
+            id: err.data.paymentId,
+            method: err.data.currentMethod,
+            status: err.data.status,
+            expiresAt: err.data.expiresAt || null
+          } : null);
+          setPaymentDraft((current) => ({
+            ...current,
+            methodChangeConfirmation: {
+              ...(err.data || {}),
+              activePayment,
+              requestedMethod: err.data?.requestedMethod || current.selectedMethod?.method,
+              replacementIdempotencyKey: newIdempotencyKey(),
+              message: err.message
+            }
+          }));
+        }
+        if (err?.status >= 500) err.message = "Hệ thống chưa thể tạo giao dịch. Vui lòng kiểm tra lại trạng thái đơn trước khi thử lại.";
         notify?.(
           err.message ||
             "Không thể tạo thanh toán.",
           "error"
         );
       } finally {
+        paymentSubmitRef.current = false;
         setSubmittingPayment(false);
       }
     };
+
+  const keepPaymentNow = async (event) => {
+    event?.preventDefault();
+    event?.stopPropagation();
+    if (paymentSubmitRef.current || replacementSubmitRef.current || submittingPayment) return;
+
+    const confirmation = paymentDraft?.methodChangeConfirmation;
+    const activePayment = confirmation?.activePayment;
+    const activePaymentId = activePayment?.id || activePayment?._id;
+    if (!activePaymentId) {
+      setPaymentDraft((current) => ({ ...current, methodChangeConfirmation: null }));
+      return;
+    }
+
+    paymentSubmitRef.current = true;
+    setSubmittingPayment(true);
+    try {
+      const latest = await getPaymentStatus(activePaymentId);
+      const keptPayment = { ...activePayment, ...latest };
+      const keptMethod = PAYMENT_METHODS.find((option) => option.method === keptPayment.method);
+      setPaymentDraft((current) => ({
+        ...current,
+        createdPayment: keptPayment,
+        methodChangeConfirmation: null,
+        selectedMethod: keptMethod || current.selectedMethod,
+        step: 1
+      }));
+      setTransferProof(null);
+    } catch (err) {
+      notify?.(err.message || "Không thể tải lại giao dịch đang giữ.", "error");
+    } finally {
+      paymentSubmitRef.current = false;
+      setSubmittingPayment(false);
+    }
+  };
+
+  const replacePaymentNow = async (event) => {
+    event?.preventDefault();
+    event?.stopPropagation();
+    if (replacementSubmitRef.current || paymentSubmitRef.current || submittingPayment) return;
+
+    const confirmation = paymentDraft?.methodChangeConfirmation;
+    const oldPaymentId = confirmation?.activePayment?.id;
+    const method = confirmation?.requestedMethod || paymentDraft?.selectedMethod?.method;
+    if (!oldPaymentId || !method) {
+      notify?.("Không thể xác định giao dịch cũ. Vui lòng tải lại trạng thái thanh toán.", "error");
+      await load(undefined, { silent: true });
+      return;
+    }
+
+    replacementSubmitRef.current = true;
+    paymentSubmitRef.current = true;
+    setSubmittingPayment(true);
+    try {
+      const replacementKey = confirmation.replacementIdempotencyKey || newIdempotencyKey();
+      const payment = await replacePayment(oldPaymentId, { method, idempotencyKey: replacementKey });
+      const orderId = paymentDraft.order.id || paymentDraft.order._id;
+      setPaymentDraft((current) => ({
+        ...current,
+        createdPayment: payment,
+        methodChangeConfirmation: null,
+        idempotencyKey: newIdempotencyKey()
+      }));
+      setTransferProof(null);
+      if (payment.payUrl) sessionStorage.setItem("ara_pending_payment", JSON.stringify({ paymentId: payment.id || payment._id, orderId }));
+      await load();
+      notify?.("Đã hủy giao dịch cũ và tạo giao dịch mới.");
+    } catch (err) {
+      await load(undefined, { silent: true });
+      if (err?.status >= 500 || !err?.status) err.message = "Hệ thống chưa thể đổi phương thức. Vui lòng kiểm tra lại trạng thái đơn trước khi thử lại.";
+      notify?.(err.message || "Không thể đổi phương thức thanh toán.", "error");
+    } finally {
+      replacementSubmitRef.current = false;
+      paymentSubmitRef.current = false;
+      setSubmittingPayment(false);
+    }
+  };
 
   const copyText = async (
     value,
@@ -974,6 +1082,18 @@ export function MyOrderDetailPage({
             onMouseDown={(event) =>
               event.stopPropagation()
             }
+            onKeyDown={(event) => {
+              if (paymentDraft.methodChangeConfirmation && event.key === "Enter") {
+                event.preventDefault();
+                event.stopPropagation();
+              }
+            }}
+            onSubmitCapture={(event) => {
+              if (paymentDraft.methodChangeConfirmation) {
+                event.preventDefault();
+                event.stopPropagation();
+              }
+            }}
           >
             <div className="ara-payment-modal__header">
               <div>
@@ -1023,6 +1143,16 @@ export function MyOrderDetailPage({
                 <X size={20} />
               </button>
             </div>
+
+            {paymentDraft.methodChangeConfirmation && !created && <div className="ara-payment-method-change-confirmation" role="alert">
+              <strong>Giao dịch hiện tại chưa hoàn tất</strong>
+              <p>{paymentDraft.methodChangeConfirmation.message}</p>
+              <small>Chỉ giao dịch cũ bị hủy sau khi bạn xác nhận đổi phương thức. Hệ thống không tạo đồng thời hai giao dịch đang hoạt động.</small>
+              <div className="ara-payment-step-actions">
+                <button type="button" onClick={keepPaymentNow} disabled={submittingPayment}>Giữ giao dịch cũ</button>
+                <button type="button" onClick={replacePaymentNow} disabled={submittingPayment}>{submittingPayment ? "Đang đổi..." : "Hủy giao dịch cũ và đổi"}</button>
+              </div>
+            </div>}
 
             {!created && <div className="ara-payment-flow-progress" aria-label="Tiến trình thanh toán">
               {["Phương thức", "Nhận hoàn cọc", "Xác nhận"].map((label, index) => {

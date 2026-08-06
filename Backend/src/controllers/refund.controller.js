@@ -1,7 +1,24 @@
-import * as s from "../services/refund.service.js";import {asyncHandler}from"../utils/asyncHandler.js";import{sendSuccess}from"../utils/apiResponse.js";
-export const getOrder=asyncHandler(async(req,res)=>sendSuccess(res,"Thông tin hoàn cọc.",await s.getOrderRefund(req.params.orderId,req.user)));export const destination=asyncHandler(async(req,res)=>sendSuccess(res,"Đã chọn điểm nhận hoàn cọc.",await s.selectDestination(req.params.orderId,req.body.refundDestinationId,req.user)));
-export const destinationInput=asyncHandler(async(req,res)=>sendSuccess(res,"Đã xác nhận tài khoản nhận hoàn cọc.",await s.captureDestinationInput(req.params.orderId,req.body,req.paymentActor||req.user)));
-export const list=asyncHandler(async(req,res)=>sendSuccess(res,"Danh sách hoàn cọc.",await s.list(req.query)));export const detail=asyncHandler(async(req,res)=>sendSuccess(res,"Chi tiết hoàn cọc.",await s.detail(req.params.id)));export const start=asyncHandler(async(req,res)=>sendSuccess(res,"Đã bắt đầu xử lý hoàn cọc.",await s.start(req.params.id,req.user)));export const complete=asyncHandler(async(req,res)=>sendSuccess(res,"Đã ghi nhận hoàn cọc thực tế.",await s.complete(req.params.id,req.body,req.user)));export const fail=asyncHandler(async(req,res)=>sendSuccess(res,"Đã ghi nhận hoàn cọc thất bại.",await s.fail(req.params.id,req.body,req.user)));export const cancel=asyncHandler(async(req,res)=>sendSuccess(res,"Đã hủy giao dịch hoàn cọc.",await s.cancel(req.params.id,req.body,req.user)));
-export const retry=asyncHandler(async(req,res)=>sendSuccess(res,"Đã đưa khoản hoàn về hàng chờ.",await s.retry(req.params.id,req.user)));export const overrideDestination=asyncHandler(async(req,res)=>sendSuccess(res,"Đã thay đổi tài khoản nhận hoàn cọc.",await s.overrideDestination(req.params.id,req.body,req.user)));
-export const uploadProof=asyncHandler(async(req,res)=>sendSuccess(res,"Đã tải chứng từ hoàn cọc.",await s.uploadProof(req.params.id,req.file,req.user),201));
-export const requestInformation=asyncHandler(async(req,res)=>sendSuccess(res,"Đã gửi yêu cầu bổ sung tài khoản.",await s.requestInformation(req.params.id,req.user)));
+import * as s from "../services/refund.service.js";
+import { asyncHandler } from "../utils/asyncHandler.js";
+import { sendSuccess } from "../utils/apiResponse.js";
+
+export const getOrder = asyncHandler(async (req, res) => sendSuccess(res, "Thông tin hoàn cọc.", await s.getOrderRefund(req.params.orderId, req.user)));
+export const destination = asyncHandler(async (req, res) => sendSuccess(res, "Đã chọn điểm nhận hoàn cọc.", await s.selectDestination(req.params.orderId, req.body.refundDestinationId, req.user)));
+export const destinationInput = asyncHandler(async (req, res) => sendSuccess(res, "Đã xác nhận tài khoản nhận hoàn cọc.", await s.captureDestinationInput(req.params.orderId, req.body, req.paymentActor || req.user)));
+export const list = asyncHandler(async (req, res) => sendSuccess(res, "Danh sách hoàn cọc.", await s.list({ ...req.query, source: "settlement" })));
+export const detail = asyncHandler(async (req, res) => sendSuccess(res, "Chi tiết hoàn cọc.", await s.detail(req.params.id, { source: "settlement" })));
+export const start = asyncHandler(async (req, res) => sendSuccess(res, "Đã bắt đầu xử lý hoàn cọc.", await s.start(req.params.id, req.user)));
+export const complete = asyncHandler(async (req, res) => sendSuccess(res, "Đã ghi nhận hoàn cọc thực tế.", await s.complete(req.params.id, req.body, req.user)));
+export const fail = asyncHandler(async (req, res) => sendSuccess(res, "Đã ghi nhận hoàn cọc thất bại.", await s.fail(req.params.id, req.body, req.user)));
+export const cancel = asyncHandler(async (req, res) => sendSuccess(res, "Đã hủy giao dịch hoàn cọc.", await s.cancel(req.params.id, req.body, req.user)));
+export const retry = asyncHandler(async (req, res) => sendSuccess(res, "Đã đưa khoản hoàn về hàng chờ.", await s.retry(req.params.id, req.user)));
+export const overrideDestination = asyncHandler(async (req, res) => sendSuccess(res, "Đã thay đổi tài khoản nhận hoàn cọc.", await s.overrideDestination(req.params.id, req.body, req.user)));
+export const uploadProof = asyncHandler(async (req, res) => sendSuccess(res, "Đã tải chứng từ hoàn cọc.", await s.uploadProof(req.params.id, req.file, req.user), 201));
+export const requestInformation = asyncHandler(async (req, res) => sendSuccess(res, "Đã gửi yêu cầu bổ sung tài khoản.", await s.requestInformation(req.params.id, req.user)));
+export const contact = asyncHandler(async (req, res) => sendSuccess(res, "Đã ghi nhận lịch sử liên hệ khách hàng.", await s.recordContact(req.params.id, req.body, req.user)));
+
+export const manualList = asyncHandler(async (req, res) => sendSuccess(res, "Danh sách giao dịch hoàn tiền.", await s.list({ ...req.query, source: "manual_refund" })));
+export const manualSearch = asyncHandler(async (req, res) => sendSuccess(res, "Kết quả tra cứu giao dịch.", await s.searchManualRefundContexts(req.query.search, req.query.limit)));
+export const manualContext = asyncHandler(async (req, res) => sendSuccess(res, "Ngữ cảnh tạo hoàn tiền.", await s.getManualRefundContext(req.query)));
+export const manualCreate = asyncHandler(async (req, res) => sendSuccess(res, "Đã tạo yêu cầu hoàn tiền.", await s.createManualRefund(req.body, req.user), 201));
+export const manualDetail = asyncHandler(async (req, res) => sendSuccess(res, "Chi tiết hoàn tiền.", await s.detail(req.params.id, { source: "manual_refund" })));

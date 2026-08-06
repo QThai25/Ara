@@ -35,6 +35,21 @@ test("checkout and settlement use an order refund snapshot as source of truth", 
   assert.match(customerUi, /Tạo mã QR thanh toán/);
 });
 
+test("customer checkout reuses a saved refund destination instead of forcing a new entry", () => {
+  const customerUi = fs.readFileSync(new URL("../../Frontend/src/pages/customer/MyOrderDetailPage.jsx", import.meta.url), "utf8");
+  assert.match(customerUi, /Array\.isArray\(refundDestinations\) \? refundDestinations : \[\]/);
+  assert.match(customerUi, /selectedRefundDestination: defaultDestination/);
+  assert.match(customerUi, /hasRefundDestinationSnapshot\(targetOrder\?\.refundDestinationSnapshot\)/);
+  assert.match(customerUi, /hasRefundDestinationSnapshot\(paymentDraft\?\.order\?\.refundDestinationSnapshot\)/);
+});
+
+test("creating a new default refund destination avoids the partial unique index collision", () => {
+  const accountService = fs.readFileSync(new URL("../src/services/accountAsset.service.js", import.meta.url), "utf8");
+  assert.match(accountService, /const shouldBeDefault = body\.isDefault === true \|\| count === 0/);
+  assert.match(accountService, /RefundDestination\.create\(\{ userId, \.\.\.await destinationInput\(body\), isDefault: false \}\)/);
+  assert.match(accountService, /item\.isDefault = true;/);
+});
+
 test("PayOS webhook requires link id and never writes refund destination", () => {
   const payment = fs.readFileSync(new URL("../src/services/payment.service.js", import.meta.url), "utf8");
   const webhook = payment.slice(payment.indexOf("export async function handlePayosWebhook"), payment.indexOf("export async function listAdminPayments"));

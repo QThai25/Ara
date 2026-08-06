@@ -37,7 +37,7 @@ function ActionLabel({ refund }) {
   return "Xem chi tiết";
 }
 
-export function AdminFulfillmentRefundPage({ notify }) {
+export function AdminFulfillmentRefundPage({ notify, embedded = false, source = "settlement" }) {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const [search, setSearch] = useState(params.get("search") || "");
@@ -65,14 +65,14 @@ export function AdminFulfillmentRefundPage({ notify }) {
     background ? setRefreshing(true) : setLoading(true);
     setError("");
     try {
-      const response = await listRefunds({ page, limit: PAGE_SIZE, status: status || undefined, search: debouncedSearch || undefined }, { signal });
+      const response = await listRefunds({ source, page, limit: PAGE_SIZE, status: status || undefined, search: debouncedSearch || undefined }, { signal });
       if (requestId === requestRef.current) setData(response.data || response);
     } catch (err) {
       if (!signal?.aborted && requestId === requestRef.current) { setError(err.message); notify?.(err.message, "error"); }
     } finally {
       if (requestId === requestRef.current) { setLoading(false); setRefreshing(false); }
     }
-  }, [page, status, debouncedSearch, notify]);
+  }, [page, status, debouncedSearch, notify, source]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -81,7 +81,7 @@ export function AdminFulfillmentRefundPage({ notify }) {
   }, [load]);
 
   const primaryAction = (refund) => {
-    navigate(`/refunds/${idOf(refund)}`);
+    navigate(`/deposit-refunds/${idOf(refund)}`);
   };
 
   const summaryCards = [
@@ -90,13 +90,13 @@ export function AdminFulfillmentRefundPage({ notify }) {
     ["failed", "Thất bại", XCircle], ["canceled", "Đã hủy", XCircle]
   ];
 
-  return <main className="admin-refunds-page">
-    <AdminPageHeader
+  return <main className={`admin-refunds-page ${embedded ? "is-embedded" : ""}`}>
+    {!embedded && <AdminPageHeader
       eyebrow="TÀI CHÍNH"
       title="Hoàn cọc"
       description="Theo dõi và xử lý tiền cọc cần hoàn cho khách hàng."
       action={<button type="button" className="refund-refresh" title="Tải lại danh sách hoàn cọc" aria-label="Tải lại danh sách hoàn cọc" disabled={refreshing || loading} onClick={() => load({ background: true })}>{refreshing ? <LoaderCircle className="is-spinning" size={17}/> : <RefreshCw size={17}/>}<span>{refreshing ? "Đang tải lại" : "Tải lại"}</span></button>}
-    />
+    />}
 
     <section className="refund-summary" aria-label="Tổng hợp trạng thái hoàn cọc">
       {summaryCards.map(([key, label, Icon]) => <AdminStatCard key={key} icon={<Icon size={19}/>} label={label} value={data.summary?.[key]?.count || 0} hint={money(data.summary?.[key]?.amount || 0)}/>) }

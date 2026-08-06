@@ -20,6 +20,29 @@ Nhân viên không được xác nhận chuyển khoản, xử lý hoàn cọc, 
 
 Menu và nút bị ẩn theo quyền chỉ giúp giao diện dễ dùng. Backend vẫn kiểm tra quyền cho mọi request.
 
+### Đơn hết hạn và khoản chuyển muộn
+
+Hạn giữ đơn/thanh toán chỉ tính phút trong giờ hoạt động của cửa hàng (mặc định
+08:00–22:00, múi giờ Asia/Ho_Chi_Minh). Khi khách đã báo chuyển khoản, payment
+chờ đối soát sẽ không bị scheduler làm hết hạn. Đơn hết hạn vẫn được lưu để
+Owner tra cứu.
+
+Owner có thể mở payment detail và chọn **Ghi nhận chuyển khoản và tạo hoàn tiền**
+khi ngân hàng có giao dịch thực. Modal yêu cầu số tiền thực tế, thời điểm nhận,
+mã tham chiếu, nội dung, lý do và xác nhận: *Tôi đã kiểm tra tài khoản ngân hàng
+và xác nhận khoản tiền này đã thực sự được nhận.* Hệ thống tạo một hồ sơ hoàn lại
+đúng toàn bộ số tiền thực tế. Đơn hết hạn không được khôi phục, reservation đã
+giải phóng không được tạo lại, và Payment gốc không chuyển sang success.
+
+Vào menu **Hoàn tiền** để chọn riêng hai tab **Hoàn cọc đơn thuê** và
+**Chuyển khoản vào đơn hết hạn**. Tab mới có số tiền/thời gian nhận, trạng thái
+liên hệ, lịch sử liên hệ có audit, điểm nhận tiền bảo mật và các bước xử lý hoàn
+tiền thủ công dùng chung.
+
+Staff không thể thực hiện action này chỉ vì nhìn thấy nút; Backend kiểm tra
+`PAYMENTS_CONFIRM_BANK_TRANSFER`. Kết quả recovery idempotent, và
+scheduler/lazy expiration không xóa dữ liệu lịch sử.
+
 ## 2. Đăng nhập, đổi mật khẩu và đăng xuất
 
 1. Mở URL AdminFrontend do ARA cung cấp.
@@ -354,3 +377,47 @@ Không cung cấp password, JWT, OTP, API key, cookie, đầy đủ STK hoặc `
 Không chạy seed, migration, webhook registration hay sửa MongoDB trong ca vận hành.
 
 Tài liệu kỹ thuật liên quan: [RBAC](ADMIN_RBAC.md), [Payment](guides/PAYMENT_SETUP.md), [Fulfillment và hoàn cọc](FULFILLMENT_AND_REFUND.md).
+
+## 22. Ghi nhận chuyển khoản vào đơn hết hạn — Owner
+
+Khi đơn có trạng thái `expired`, lịch trang phục đã được giải phóng và payment là
+chuyển khoản ngân hàng thủ công ở trạng thái `expired` hoặc `canceled`, Backend có
+thể trả về `latePaymentRecoveryEligibility.eligible=true`. AdminFrontend dùng object
+này để hiển thị action **Ghi nhận chuyển khoản và tạo hoàn tiền** trên cả chi tiết
+đơn thuê và chi tiết payment; không tự suy đoán từ status.
+
+`awaiting_confirmation`, kể cả payment đã có `proofSubmittedAt`, vẫn đi theo xác
+nhận thanh toán thông thường và trả về `USE_NORMAL_PAYMENT_CONFIRMATION`. Payment
+success/refunded, recovery đã hoàn tất, payment `failed` hoặc status lịch sử không
+được model hỗ trợ đều bị từ chối an toàn. Staff không có
+`PAYMENTS_CONFIRM_BANK_TRANSFER` và không thể gọi mutation.
+
+Modal phải kiểm tra số tiền thực nhận, thời điểm nhận, mã tham chiếu, nội dung
+chuyển khoản, lý do và cảnh báo đơn không thể khôi phục. Sau khi gửi, refresh
+detail để xem `refund_required` và mở hồ sơ hoàn tiền; không bấm lặp khi chưa rõ
+kết quả.
+
+Hồ sơ **Chuyển khoản vào đơn hết hạn** ban đầu chỉ là yêu cầu hoàn tiền. Nếu chưa
+có tài khoản nhận hợp lệ, trạng thái là **Chờ thông tin hoàn tiền**, liên hệ là
+**Chưa liên hệ** và action là **Liên hệ khách**. Nếu đã có tài khoản hợp lệ nhưng
+chưa bắt đầu chuyển, trạng thái là **Chờ xử lý** và action là **Bắt đầu hoàn tiền**.
+Chỉ sau khi Owner bấm bắt đầu mới tạo attempt, sinh VietQR và chuyển sang
+**Đang hoàn tiền**. Sau khi nhập mã giao dịch/chứng từ thực tế mới được chuyển
+sang **Đã hoàn tiền**.
+
+Để sửa dữ liệu dev/staging cũ bị gắn `processing` nhưng chưa bắt đầu giao dịch,
+dùng `ALLOW_LATE_PAYMENT_REFUND_REPAIR=true npm run repair:late-payment-refunds`
+ở chế độ dry-run; chỉ dùng `-- --apply` sau khi đã kiểm tra danh sách ID. Script
+từ chối production và không đụng vào tab Hoàn cọc.
+
+Fixture QA chỉ được chạy trong database local/dev/staging:
+
+```powershell
+$env:ALLOW_TEST_FIXTURE_SEED="true"
+npm run seed:late-payment-recovery
+npm run seed:late-payment-recovery:cleanup
+```
+
+Script in tên database, mã đơn/payment và URL Admin; chỉ tạo hai đơn
+`QA-EXPIRED-TRANSFER-REFUND` và `QA-EXPIRED-TRANSFER-REFUND-SECOND`, đồng thời
+từ chối production.

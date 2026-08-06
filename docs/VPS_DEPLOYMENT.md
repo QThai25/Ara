@@ -29,6 +29,7 @@ Biến tối thiểu:
 - URLs/CORS: `CORS_ORIGINS`, `FRONTEND_URL`, `BACKEND_URL`.
 - Media: `CLOUDINARY_*`.
 - Manual bank: `ENABLE_MANUAL_BANK_TRANSFER`, `BANK_*` nếu bật.
+- Expiration: `RENTAL_EXPIRATION_INTERVAL_MS` (minimum 60000; default 60000).
 - payOS: `PAYOS_*` nếu `PAYOS_ENABLED=true`.
 
 Luôn đặt:
@@ -83,6 +84,13 @@ pm2 logs ara-backend --lines 100
 ```
 
 Log không được chứa Authorization, cookie, password, OTP, secret, đầy đủ STK hoặc payment callback raw.
+
+The Backend starts one expiration scheduler per process. It materializes stale
+pending holds and active payments about once per minute, never expires a
+submitted manual-transfer review, and releases held inventory without deleting
+the order history. The scheduler is stopped by the existing graceful shutdown
+handlers. Keep one Backend instance unless scheduler ownership is deliberately
+externalized.
 
 ## Nginx và HTTPS
 

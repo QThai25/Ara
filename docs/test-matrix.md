@@ -30,6 +30,9 @@ Cập nhật: **02/08/2026**. `Pass` chỉ áp dụng cho test/lệnh đã chạ
 | PAY-02 | Payment | PayOS enabled/disabled | Customer | Environment configured | Unit | Method exposed only when enabled | Pass |
 | PAY-03 | Payment RBAC | Confirm manual bank transfer | Staff/Owner | Awaiting confirmation | Policy/service | Staff 403; Owner continues to business guard | Pass |
 | PAY-04 | Payment methods | Check removed providers | Customer | API available | Unit | MoMo/VNPay not exposed; cash/bank/payOS follow config | Pass |
+| PAY-05 | Store-business deadline | Create at 07:50, 08:00, 21:20, 21:40, 21:50, 22:00 and 22:10 | Customer/guest | Fixed clock, Asia/Ho_Chi_Minh | Unit | Deadline pauses outside 08:00–22:00; 21:50 + 30 business minutes = next day 08:20 | Pass |
+| PAY-06 | Manual review | Report proof then run lazy/scheduled expiry | Customer/guest | Awaiting confirmation | Unit/static | Order/payment deadlines clear; review payment is not expired or duplicated | Pass |
+| PAY-07 | Late recovery | Owner verifies expired transfer with available/conflicting schedule | Owner | Expired order/payment, verified transaction | Service/static | Atomic restore when available; received-money + existing refund/manual resolution on conflict; idempotent | Pass (contract/static); DB integration pending |
 | INS-01 | Inspection | Create/upload/submit | Staff | Returned order | Policy/static + build | Staff allowed; settlement approval remains Owner-only | Pass; real upload pending |
 | REF-01 | Refund | Process/complete refund | Staff/Owner | Valid DepositRefund | Policy/service | Staff denied; Owner remains subject to ledger/idempotency guard | Pass |
 | TAX-01 | Costume taxonomy | Create with category defaults | Owner | Active taxonomy | Unit | Default style/occasion arrays applied | Pass |
@@ -50,9 +53,30 @@ Cập nhật: **02/08/2026**. `Pass` chỉ áp dụng cho test/lệnh đã chạ
 | E2E-03 | RBAC session | Staff login → Owner block/reset → old HTTP/socket use | Owner/Staff | Seeded DB/browser/socket | Integration/E2E | Old session rejected immediately | Blocked: browser/test DB not configured |
 | E2E-04 | Responsive admin | Sidebar/select/dedicated pages | Owner/Staff | Desktop/tablet/mobile browser | Visual/E2E | Menu, focus, portal, back/refresh and 403 states đúng | Blocked: browser runner not configured |
 
+## Expiration/recovery operational checks
+
+- Run the scheduler as a single Backend instance; it starts once, runs about once
+  per minute, skips overlapping cycles, logs failures and is stopped during
+  SIGTERM/SIGINT shutdown.
+- Verify future deadlines and submitted manual-review proofs remain unchanged.
+- Verify expired orders remain searchable with their proof, payment, reservation
+  and audit history after held inventory is released.
+- Use a dedicated staging database for availability-conflict and concurrent
+  recovery tests. Never run recovery smoke tests against production.
+
 Tests must remain order-independent. Database-backed E2E should use a dedicated database and deterministic seeds; it must never target production.
 
 Kết quả authoritative cùng source commit `e345cd72f8f79b1eb568e8b8a8282ef826aa9e7d` lúc **2026-08-03T18:33:45+07:00**: Backend **232/232**, Frontend **17/19**, AdminFrontend **29/30**; Backend `npm run check` và cả hai production build pass. Hai lỗi Frontend và một lỗi AdminFrontend là các source-contract assertion cũ, không phải lỗi runtime của build. Voucher coverage trong cùng lần chạy: Backend `test/voucher.test.js` **10/10** pass. Browser mutation/E2E với database test cô lập vẫn chưa chạy.
+# Late-payment recovery
+
+| REC-01 | Late recovery eligibility | Expired/released order + canceled direct manual payment | Owner | Backend eligibility object | Unit + Admin contract | `eligible=true`, exact action label on order and payment detail | Pass |
+| REC-02 | Late recovery RBAC | Same fixture as REC-01 | Staff | Staff lacks `payments.confirm_bank_transfer` | Unit/service | Eligibility denied and mutation returns 403 | Pass |
+| REC-03 | Normal proof confirmation | `awaiting_confirmation` with/without proof | Owner/Staff | Manual payment review | Unit | `USE_NORMAL_PAYMENT_CONFIRMATION`; stale expiry excludes proof | Pass |
+| REC-04 | Expired-order transfer refund | Canceled direct manual transfer + released reservation | Owner | Two guarded QA fixtures | Unit/static + Admin contract | Exactly one `refund_required` case with full actual amount; order/payment/reservation are not restored; replay is idempotent | Pass |
+| REC-05 | Fixture safety | Seed/cleanup command | Operator | `ALLOW_TEST_FIXTURE_SEED=true`, allowed DB name | Static + local DB smoke | Production/default DB refused; IDs and Admin URLs printed; cleanup is fixture-scoped | Pass |
+| REC-06 | Expired-order refund request lifecycle | New case with/without destination | Owner | Separate request and transaction states | Backend/Admin contract | `awaiting_information`/`pending` before start; no QR/attempt; exact actions from Backend | Pass |
+| REC-07 | Expired-order refund repair | Legacy processing case with no start/attempt/evidence | Operator | Dry-run and explicit apply guard | Static | Development/staging only; production refused; deposit refunds untouched | Pass |
+
 # Voucher
 
 - Percent/fixed, minimum order, maximum discount, upcoming/expired/inactive/exhausted.

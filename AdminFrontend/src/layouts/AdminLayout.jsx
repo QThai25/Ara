@@ -10,7 +10,8 @@ const navItems = [
   { to: "/dashboard", label: "Tổng quan", icon: LayoutDashboard, end: true, permission: P.DASHBOARD_VIEW_OPERATIONAL },
   { to: "/orders", label: "Đơn thuê", icon: PackageCheck, permission: P.ORDERS_VIEW },
   { to: "/payments", label: "Thanh toán", icon: CreditCard, permission: P.PAYMENTS_VIEW_STATUS },
-  { to: "/refunds", label: "Hoàn cọc", icon: WalletCards, permission: P.REFUNDS_VIEW_SENSITIVE },
+  { to: "/deposit-refunds", label: "Hoàn cọc", icon: WalletCards, permission: P.REFUNDS_VIEW_SENSITIVE },
+  { to: "/refund-transactions", label: "Hoàn tiền", icon: WalletCards, permission: P.REFUNDS_VIEW_STATUS },
   { to: "/notifications", label: "Thông báo", icon: Bell, permission: P.NOTIFICATIONS_SEND_ORDER },
   { to: "/inspections", label: "Kiểm tra trả đồ", icon: Boxes, permission: P.INSPECTIONS_CREATE },
   { to: "/costumes", label: "Trang phục", icon: Shirt, permission: P.INVENTORY_VIEW },
@@ -29,10 +30,10 @@ const navItems = [
 
 const navGroups = [
   { id: "overview", label: "Tổng quan", items: navItems.slice(0, 1) },
-  { id: "operations", label: "Vận hành", items: navItems.slice(1, 6) },
-  { id: "catalog", label: "Kho & danh mục", items: navItems.slice(6, 11) },
-  { id: "customers", label: "Khách hàng & nội dung", items: navItems.slice(11, 15) },
-  { id: "analytics", label: "Phân tích", items: navItems.slice(15, 16) },
+  { id: "operations", label: "Vận hành", items: navItems.slice(1, 7) },
+  { id: "catalog", label: "Kho & danh mục", items: navItems.slice(7, 12) },
+  { id: "customers", label: "Khách hàng & nội dung", items: navItems.slice(12, 16) },
+  { id: "analytics", label: "Phân tích", items: navItems.slice(16, 17) },
   { id: "system", label: "Hệ thống", items: navItems.slice(16) }
 ];
 

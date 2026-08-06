@@ -11,6 +11,69 @@ export const PAYMENT_TYPES = [
 export const ACTIVE_PAYMENT_STATUSES = ["pending", "awaiting_confirmation"];
 export const SUCCESS_PAYMENT_STATUSES = ["success"];
 
+/*
+ * Keep payment lifecycle decisions in one place.  The Payment model is the
+ * source of truth for the actual enum values; these groups only describe how
+ * an active payment may be used by the create-payment flow.
+ */
+export const PAYMENT_STATUS_GROUPS = Object.freeze({
+  ACTIVE_REPLACEABLE: ["pending", "awaiting_confirmation"],
+  ACTIVE_LOCKED: ["awaiting_confirmation"],
+  FINAL_SUCCESS: ["success"],
+  FINAL_FAILURE_OR_RETRYABLE: ["expired", "failed", "canceled"],
+  FINANCIAL_PROCESSING: ["refunded"]
+});
+
+const PAYMENT_METHOD_ALIASES = Object.freeze({
+  bank_transfer: "bank_transfer",
+  cash: "cash",
+  payos: "payos",
+  payos_qr: "payos_qr"
+});
+
+export function normalizePaymentMethod(method) {
+  return PAYMENT_METHOD_ALIASES[String(method || "").trim().toLowerCase()] || "";
+}
+
+export function isSuccessfulPayment(payment) {
+  return PAYMENT_STATUS_GROUPS.FINAL_SUCCESS.includes(payment?.status);
+}
+
+export function isLockedPayment(payment) {
+  return Boolean(
+    payment?.active
+      && PAYMENT_STATUS_GROUPS.ACTIVE_LOCKED.includes(payment.status)
+      && (payment.proofSubmittedAt || payment.proofUrl || payment.proofAsset?.publicId)
+  );
+}
+
+export function isReplaceableActivePayment(payment) {
+  return Boolean(
+    payment?.active
+      && PAYMENT_STATUS_GROUPS.ACTIVE_REPLACEABLE.includes(payment.status)
+      && !isLockedPayment(payment)
+  );
+}
+
+export function canCreateReplacementPayment(payment) {
+  return !payment
+    || isReplaceableActivePayment(payment)
+    || (payment.active === false && PAYMENT_STATUS_GROUPS.FINAL_FAILURE_OR_RETRYABLE.includes(payment.status));
+}
+
+function paymentMethodFamily(method) {
+  return ["payos", "payos_qr"].includes(method) ? "payos" : method;
+}
+
+export function arePaymentMethodsCompatible(left, right) {
+  return paymentMethodFamily(left) === paymentMethodFamily(right);
+}
+
+export function canReusePayment(payment, requestedMethod) {
+  return isReplaceableActivePayment(payment)
+    && arePaymentMethodsCompatible(payment.method, requestedMethod);
+}
+
 const money = (value) => Math.max(0, Number(value || 0));
 
 export function summarizeSuccessfulPayments(order, payments = []) {

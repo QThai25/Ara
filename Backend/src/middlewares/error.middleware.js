@@ -21,6 +21,7 @@ export function errorHandler(err, req, res, next) {
       ? "Có lỗi hệ thống, vui lòng thử lại sau."
       : err.message || "Yêu cầu không thể xử lý.",
     code: isServerError ? "SERVER_ERROR" : err.code || undefined,
+    errorCode: isServerError ? "SERVER_ERROR" : err.code || undefined,
     data: isServerError ? null : err.data || null,
     requestId: req.requestId
   });

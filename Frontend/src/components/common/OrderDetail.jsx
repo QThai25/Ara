@@ -1,5 +1,5 @@
-import { AlertCircle, AlertTriangle, CreditCard, Info, Landmark } from "lucide-react";
-import React from "react";
+import { AlertCircle, AlertTriangle, CreditCard, Info, Landmark, Timer } from "lucide-react";
+import React, { useEffect, useState } from "react";
 
 import {
   costumeImage,
@@ -25,6 +25,41 @@ const DEPOSIT_PAID_STATUSES = [
   "paid",
   "fully_paid"
 ];
+
+const HOLD_COUNTDOWN_STATUSES = new Set(["pending_payment", "pending", "confirmed"]);
+
+function CustomerHoldCountdown({ expiresAt }) {
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    if (!expiresAt) return undefined;
+    const update = () => setNow(Date.now());
+    update();
+    const timer = window.setInterval(update, 1000);
+    return () => window.clearInterval(timer);
+  }, [expiresAt]);
+
+  const expiryTime = new Date(expiresAt).getTime();
+  if (!Number.isFinite(expiryTime)) return null;
+
+  const remainingSeconds = Math.max(0, Math.ceil((expiryTime - now) / 1000));
+  const minutes = Math.floor(remainingSeconds / 60);
+  const seconds = remainingSeconds % 60;
+  const remainingLabel = minutes >= 60
+    ? `${Math.floor(minutes / 60)} giờ ${minutes % 60} phút`
+    : `${minutes} phút ${seconds} giây`;
+  const expired = remainingSeconds <= 0;
+
+  return (
+    <div className={`ara-customer-hold-countdown${expired ? " is-expired" : minutes < 10 ? " is-urgent" : ""}`} role="timer" aria-live="polite">
+      <Timer size={15} />
+      <span>
+        <small>Thời gian giữ đơn</small>
+        <strong>{expired ? "Đã hết thời gian giữ đơn" : `Còn ${remainingLabel}`}</strong>
+      </span>
+    </div>
+  );
+}
 
 function getPaymentMessage(paymentStatus) {
   switch (paymentStatus) {
@@ -125,6 +160,10 @@ export function OrderDetail({
   const canPayRentalBalance = !isCashOnPickup && Boolean(paymentQuotes.rental_balance?.canPay && paymentQuotes.rental_balance.payableAmount > 0);
   const canPayPenalty = Boolean(paymentQuotes.penalty?.canPay && paymentQuotes.penalty.payableAmount > 0);
   const latestPayment = [...payments].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))[0];
+  const manualTransferReviewPending = latestPayment?.method === "bank_transfer"
+    && latestPayment?.status === "awaiting_confirmation"
+    && !latestPayment?.expiresAt;
+  const latePaymentConflict = order.latePaymentRecovery?.outcome === "availability_conflict";
   const paymentMethod = latestPayment?.method || (isCashOnPickup ? "cash" : "bank_transfer");
   const isPayos = ["payos", "payos_qr"].includes(paymentMethod);
   const methodLabel = isPayos ? "QR PayOS" : isCashOnPickup ? "Tiền mặt khi nhận đồ" : "Chuyển khoản ngân hàng";
@@ -132,6 +171,13 @@ export function OrderDetail({
   const preferredQuote = canPayFull ? ["full", paymentQuotes.full] : canPayDeposit ? ["deposit", paymentQuotes.deposit] : canPayRentalBalance ? ["rental_balance", paymentQuotes.rental_balance] : null;
   const totalDue = Number(preferredQuote?.[1]?.payableAmount ?? order.pricing?.remainingAmount ?? 0);
   const isCompleted = orderStatus === "completed";
+  const canShowHoldCountdown = Boolean(
+    order.holdExpiresAt
+    && HOLD_COUNTDOWN_STATUSES.has(orderStatus)
+    && !isCompleted
+    && !isExpired
+    && !isDepositPaid
+  );
   const paidAmount = Number(order.pricing?.paidAmount || 0);
   const refundedDeposit = Number(order.financialSnapshot?.depositAmountRefunded || order.pricing?.refundedAmount || 0);
   const refundDestination = order.refundDestinationSnapshot || (!isCompleted ? savedRefundDestination : null);
@@ -160,7 +206,10 @@ export function OrderDetail({
           </p>
         </div>
 
-        <StatusBadge value={orderStatus} />
+        <div className="ara-order-status-group">
+          <StatusBadge value={orderStatus} />
+          {canShowHoldCountdown && <CustomerHoldCountdown expiresAt={order.holdExpiresAt} />}
+        </div>
       </div>
 
       {isExpired && (
@@ -316,6 +365,7 @@ export function OrderDetail({
           <span className={`ara-customer-payment-status is-${isCompleted ? "completed" : paymentStatus}`}>{isCompleted ? "Đã quyết toán" : getPaymentStatusLabel(paymentStatus)}</span>
         </header>
 
+        {!isCompleted && order.paymentExpiresAt && ["unpaid", "pending", "awaiting_payment"].includes(order.paymentStatus) && <p className="payment-state payment-state-pending"><strong>Thanh toán ngay để đơn của bạn được giữ chỗ.</strong> Đơn được giữ đến {formatDateTime(order.paymentExpiresAt)}; sau thời điểm này lịch trang phục có thể được giải phóng. ARA sẽ kiểm tra giao dịch trong giờ hoạt động.</p>}
         <div className="ara-customer-payment-total"><span>{isCompleted ? "Tổng tiền đã thu" : "Tổng cần thanh toán"}</span><strong>{money(isCompleted ? paidAmount : totalDue)}</strong></div>
         <dl className="ara-customer-payment-breakdown">
           <div><dt>Phí thuê</dt><dd>{money(order.totalRentalPrice)}</dd></div>
@@ -326,6 +376,9 @@ export function OrderDetail({
         {Number(order.totalDepositAmount || 0) > 0 && (refundDestination ? <div className="ara-refund-destination-summary"><span className="ara-refund-destination-summary__icon"><Landmark size={20}/></span><div><small>{isCompleted ? "Tài khoản đã nhận hoàn cọc" : "Tài khoản nhận hoàn cọc mặc định"}</small><strong>{refundDestination.bankName || refundDestination.label || "VietQR nhận hoàn cọc"}</strong><span>{refundDestination.maskedAccountNumber || "Mã VietQR đã lưu"} · {refundDestination.accountName || refundDestination.accountHolderName || "Đã lưu trong tài khoản"}</span></div>{!isCompleted && onAddRefundDestination && <button type="button" disabled={paymentActionPending} onClick={onAddRefundDestination}>Thay đổi</button>}</div> : !isCompleted && <div className="ara-refund-destination-warning" role="status"><AlertCircle size={21}/><div><strong>Chưa có tài khoản nhận hoàn cọc</strong><p>Hãy bổ sung tài khoản để ARA có thể hoàn lại tiền cọc sau khi nhận và kiểm tra đồ.</p></div>{onAddRefundDestination && <button type="button" disabled={paymentActionPending} onClick={onAddRefundDestination}>Bổ sung tài khoản</button>}</div>)}
 
         <div className="ara-customer-payment-method"><div><span>Phương thức thanh toán</span><strong>{methodLabel}</strong><small>{isCompleted ? "Thông tin thanh toán đã được chốt cùng đơn thuê" : methodHelp}</small></div>{!isCompleted && preferredQuote && <button type="button" disabled={paymentActionPending} onClick={() => pay(order, preferredQuote[0], preferredQuote[1])}>Thay đổi</button>}</div>
+
+        {manualTransferReviewPending && <div className="payment-state payment-state-awaiting-verification" role="status"><div className="payment-state-icon"><CreditCard size={18} /></div><div className="payment-state-content"><strong>ARA đã nhận thông báo chuyển khoản</strong><span>Đơn đang chờ cửa hàng đối soát và không còn tính thời gian hết hạn thanh toán.</span></div></div>}
+        {latePaymentConflict && <div className="payment-state payment-state-expired" role="alert"><div className="payment-state-icon"><AlertTriangle size={18} /></div><div className="payment-state-content"><strong>ARA đã ghi nhận khoản chuyển</strong><span>ARA đã ghi nhận khoản chuyển của bạn nhưng lịch thuê ban đầu không còn trống. Cửa hàng sẽ liên hệ để đổi lịch hoặc hoàn tiền.</span></div></div>}
 
         {!readonly && (canPayDeposit || canPayFull || canPayRentalBalance) && <div className="ara-customer-payment-actions">
           {canPayDeposit && <button type="button" disabled={paymentActionPending} onClick={() => pay(order, "deposit", paymentQuotes.deposit)}><CreditCard size={16}/>{paymentActionPending ? "Đang mở thanh toán…" : `Đặt cọc ${money(paymentQuotes.deposit.payableAmount)}`}</button>}

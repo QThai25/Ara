@@ -7,7 +7,12 @@ import { ApiError } from "../utils/ApiError.js";
 import { runFinancialTransaction } from "../utils/financialTransaction.js";
 import {
   ACTIVE_PAYMENT_STATUSES,
+  canReusePayment,
   calculatePaymentQuote,
+  isLockedPayment,
+  isReplaceableActivePayment,
+  arePaymentMethodsCompatible,
+  normalizePaymentMethod,
   deriveOrderPaymentStatus,
   getActivePayments,
   getSuccessfulPayments
@@ -21,10 +26,14 @@ import { cancelPayosPayment, createPayosPayment, getPayosPaymentStatus, verifyPa
 import { requestInvoiceDelivery } from "./invoice.service.js";
 import { emitOrderUpdated, emitPaymentUpdated } from "../realtime/socket.js";
 import { DepositRefund } from "../models/DepositRefund.js";
+import { LatePaymentRecovery } from "../models/LatePaymentRecovery.js";
+import { Reservation } from "../models/Reservation.js";
+import { TransportReservation } from "../models/TransportReservation.js";
 import { RefundDestination } from "../models/RefundDestination.js";
 import { adminDestination, revealDestinationSnapshot } from "./accountAsset.service.js";
 import { AuditLog } from "../models/AuditLog.js";
 import { storeBusinessStatus, storeConfig } from "../config/store.config.js";
+import { computeStoreAwareExpiry } from "./rentalTimeline.service.js";
 import { buildVietQrDataUrl } from "./vietQr.service.js";
 import { listSupportedBanks } from "./bankCatalog.service.js";
 import { cloudinary } from "../config/cloudinary.js";
@@ -35,6 +44,41 @@ const TERMINAL_PAYMENT_STATUSES = ["success", "failed", "canceled", "expired", "
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const isPayosMethod = (method) => ["payos", "payos_qr"].includes(method);
 const escapeRegex = (value = "") => String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const payosCreationLocks = new Map();
+
+function paymentConflict(statusCode, code, message, data = null) {
+  const error = new ApiError(statusCode, message, data);
+  error.code = code;
+  return error;
+}
+
+function activePaymentSummary(payment, requestedMethod) {
+  return {
+    errorCode: "PAYMENT_METHOD_CHANGE_CONFIRMATION_REQUIRED",
+    activePayment: {
+      id: String(payment._id),
+      method: payment.method,
+      status: payment.status,
+      expiresAt: payment.expiresAt || null
+    },
+    requestedMethod,
+    // Keep the legacy fields for older clients while they roll forward.
+    paymentId: String(payment._id),
+    currentMethod: payment.method
+  };
+}
+
+async function withPayosCreationLock(paymentId, work) {
+  const key = String(paymentId);
+  const previous = payosCreationLocks.get(key) || Promise.resolve();
+  const current = previous.catch(() => {}).then(work);
+  payosCreationLocks.set(key, current);
+  try {
+    return await current;
+  } finally {
+    if (payosCreationLocks.get(key) === current) payosCreationLocks.delete(key);
+  }
+}
 
 async function configuredTransferBankBin(transfer) {
   if (/^\d{6}$/.test(paymentConfig.bankTransfer.bankBin)) return paymentConfig.bankTransfer.bankBin;
@@ -117,6 +161,11 @@ const detailPopulate = [
   }
 ];
 
+const listPopulate = [
+  { path: "customerId", select: "name phone email phoneNormalized", strictPopulate: false },
+  { path: "orderId", select: "orderCode", strictPopulate: false }
+];
+
 const orderPopulate = [{ path: "items", populate: { path: "costumeId" } }];
 
 function withSession(query, session) {
@@ -161,9 +210,11 @@ function paymentTypeCode(paymentType) {
   }[paymentType] || "PAY";
 }
 
-function createPaymentReference(order, paymentType) {
+function createPaymentReference(order, paymentType, idempotencyKey) {
   const orderCode = String(order.orderCode || order._id).replace(/[^a-z0-9]/gi, "").toUpperCase();
-  return `ARA-${paymentTypeCode(paymentType)}-${orderCode}`.slice(0, 50);
+  const attempt = String(idempotencyKey || "").replace(/[^a-z0-9]/gi, "").slice(0, 12).toUpperCase();
+  const base = `ARA-${paymentTypeCode(paymentType)}-${orderCode}`;
+  return attempt ? `${base.slice(0, 37)}-${attempt}` : base.slice(0, 50);
 }
 
 function bankTransferConfig() {
@@ -242,7 +293,10 @@ async function expirePayment(paymentId) {
       _id: paymentId,
       active: true,
       expiresAt: { $lte: new Date() },
-      status: { $in: ACTIVE_PAYMENT_STATUSES }
+      $or: [
+        { status: "pending" },
+        { status: "awaiting_confirmation", proofSubmittedAt: null }
+      ]
     }), session);
     if (!payment) return false;
 
@@ -265,7 +319,10 @@ export async function expireStalePayments(orderId = null) {
   const filter = {
     active: true,
     expiresAt: { $ne: null, $lte: new Date() },
-    status: { $in: ACTIVE_PAYMENT_STATUSES }
+    $or: [
+      { status: "pending" },
+      { status: "awaiting_confirmation", proofSubmittedAt: null }
+    ]
   };
   if (orderId) filter.orderId = orderId;
   const ids = await Payment.find(filter).distinct("_id");
@@ -304,9 +361,13 @@ export async function getPaymentQuote(user, { orderId, paymentType }) {
   return { ...quote, supportedMethods: supportedMethods() };
 }
 
-export async function createPayment(user, payload, idempotencyKey, requestMeta = {}) {
+export async function createPayment(user, payload, idempotencyKey, requestMeta = {}, options = {}) {
   idempotencyKey ||= payload.idempotencyKey;
   payload = { ...payload };
+  payload.method = normalizePaymentMethod(payload.method);
+  if (!payload.method) {
+    throw paymentConflict(422, "PAYMENT_METHOD_UNSUPPORTED", "Phương thức thanh toán không được hỗ trợ.");
+  }
   if (isAdmin(user) && !canAdjustPayments(user) && !canProcessRefunds(user)) {
     throw new ApiError(403, "Nhân viên không được tạo hoặc điều chỉnh giao dịch tài chính.");
   }
@@ -339,6 +400,10 @@ export async function createPayment(user, payload, idempotencyKey, requestMeta =
 
   await expireStalePayments(payload.orderId);
   let paymentId;
+  let paymentReused = false;
+  const replacementPaymentId = options.replacementPaymentId
+    ? String(options.replacementPaymentId)
+    : "";
   try {
     paymentId = await runFinancialTransaction("tạo thanh toán", async (session) => {
       const existingByKey = await withSession(Payment.findOne({ idempotencyKey }), session);
@@ -350,12 +415,21 @@ export async function createPayment(user, payload, idempotencyKey, requestMeta =
         if (!sameRequest || (String(existingByKey.customerId) !== String(user?._id) && !isAdmin(user) && !isGuestForOrder(user, existingByKey.orderId))) {
           throw new ApiError(409, "Idempotency-Key đã được dùng cho yêu cầu khác.");
         }
-        return existingByKey._id;
+        return { paymentId: existingByKey._id, reused: true };
       }
 
       const order = await loadOrder(payload.orderId, session);
       if (!order) throw new ApiError(404, "Không tìm thấy đơn thuê.");
       assertOrderAccess(order, user);
+      // Method switching is resolved against the active payment below.
+      order.paymentPreference = payload.method;
+      if (
+        ["pending_payment", "confirmed"].includes(order.status)
+        && order.holdExpiresAt
+        && new Date(order.holdExpiresAt).getTime() <= Date.now()
+      ) {
+        throw new ApiError(409, "Thời gian giữ đơn đã hết hạn; không thể tạo giao dịch mới.");
+      }
       const requiresRefundDestination = Number(order.totalDepositAmount || order.depositAmount || 0) > 0
         && ["deposit", "full", "rental_balance"].includes(payload.paymentType)
         && payload.method !== "cash";
@@ -376,24 +450,111 @@ export async function createPayment(user, payload, idempotencyKey, requestMeta =
         throw new ApiError(400, quote.reason || "Không còn số tiền cần thanh toán.");
       }
 
+      if (!quote.canPay || quote.payableAmount <= 0) {
+        const successful = await getSuccessfulPayments(order._id, session);
+        const paymentStageGroup = paymentGroup(payload.paymentType);
+        if (successful.some((payment) => payment.paymentGroup === paymentStageGroup)) {
+          throw paymentConflict(409, "PAYMENT_ALREADY_COMPLETED", "Đơn đã có khoản thanh toán thành công và không thể tạo giao dịch thay thế.");
+        }
+        const financialPayment = await withSession(Payment.findOne({
+          orderId: order._id,
+          paymentGroup: paymentStageGroup,
+          status: "refunded"
+        }), session);
+        if (financialPayment) {
+          throw paymentConflict(409, "PAYMENT_REFUND_IN_PROGRESS", "Giao dịch đang thuộc quy trình hoàn tiền và chưa thể tạo lại.", { paymentId: String(financialPayment._id) });
+        }
+        const notPayable = new ApiError(422, quote.reason || "Không còn số tiền cần thanh toán.");
+        notPayable.code = "PAYMENT_STAGE_NOT_PAYABLE";
+        throw notPayable;
+      }
+
       const group = paymentGroup(payload.paymentType);
-      const active = await withSession(Payment.findOne({
+      let active = await withSession(Payment.findOne({
         orderId: order._id,
         paymentGroup: group,
         active: true,
-        status: { $in: ACTIVE_PAYMENT_STATUSES }
+        status: { $in: ACTIVE_PAYMENT_STATUSES },
+        ...(replacementPaymentId ? { _id: replacementPaymentId } : {})
       }), session);
 
-      if (active) {
-        return active._id;
+      if (active?.provider === "payos" && (active.providerOrderId || active.providerOrderCode)) {
+        try {
+          const remote = await getPayosPaymentStatus(active.providerOrderId || active.providerOrderCode);
+          if (remote.status === "PAID") {
+            throw paymentConflict(409, "PAYMENT_ALREADY_COMPLETED", "PayOS đã ghi nhận khoản tiền; hệ thống đang chờ hoàn tất đối soát.");
+          }
+          if (["CANCELLED", "EXPIRED", "FAILED"].includes(remote.status)) {
+            active.status = remote.status === "CANCELLED" ? "canceled" : remote.status === "EXPIRED" ? "expired" : "failed";
+            active.active = false;
+            active.expiredAt = remote.status === "EXPIRED" ? new Date() : active.expiredAt;
+            active.failedAt = remote.status === "FAILED" ? new Date() : active.failedAt;
+            active.failureReason = `PayOS: ${remote.status}`;
+            await active.save(session ? { session } : {});
+            active = null;
+          }
+        } catch (providerError) {
+          if (providerError?.code === "PAYMENT_ALREADY_COMPLETED") throw providerError;
+          // Provider reconciliation can be temporarily unavailable; the
+          // webhook/reconciliation scheduler remains the source of truth.
+        }
       }
 
-      const reference = createPaymentReference(order, payload.paymentType);
+      if (active) {
+        if (isLockedPayment(active)) {
+          throw paymentConflict(
+            409,
+            "PAYMENT_ALREADY_SUBMITTED",
+            "Giao dịch này đã được báo chuyển khoản và đang chờ ARA đối soát.",
+            { paymentId: String(active._id), method: active.method, status: active.status }
+          );
+        }
+
+        if (canReusePayment(active, payload.method)) {
+          return { paymentId: active._id, reused: true };
+        }
+
+        if (!isReplaceableActivePayment(active)) {
+          throw paymentConflict(
+            409,
+            "PAYMENT_STAGE_ALREADY_PAID",
+            "Đơn đang ở giai đoạn thanh toán không thể thay thế giao dịch.",
+            { paymentId: String(active._id), method: active.method, status: active.status }
+          );
+        }
+
+        const confirmedReplacement = Boolean(replacementPaymentId)
+          && String(replacementPaymentId) === String(active._id);
+        if (!confirmedReplacement) {
+          throw paymentConflict(
+            409,
+            "PAYMENT_METHOD_CHANGE_CONFIRMATION_REQUIRED",
+            `Đơn đang có một giao dịch ${active.method} chưa hoàn tất. Bạn có muốn hủy giao dịch này và đổi sang ${payload.method} không?`,
+            activePaymentSummary(active, payload.method)
+          );
+        }
+
+        if (active.provider === "payos" && (active.providerOrderId || active.providerOrderCode)) {
+          await cancelPayosPayment(active.providerOrderId || active.providerOrderCode);
+        }
+        active.status = "canceled";
+        active.active = false;
+        active.canceledAt = new Date();
+        active.failureReason = `Giao dịch bị thay thế bằng phương thức ${payload.method}.`;
+        await active.save(session ? { session } : {});
+      }
+
+      const reference = createPaymentReference(order, payload.paymentType, idempotencyKey);
       const online = payload.channel === "online";
       const payosOrderCode = isPayosMethod(payload.method) ? await nextPayosOrderCode() : undefined;
       const expiresMinutes = payload.method === "cash"
         ? Math.max(15, Number(process.env.PAYMENT_CASH_EXPIRES_MINUTES || 1440))
         : paymentConfig.paymentExpiryMinutes;
+      const storeAwareExpiry = payload.method === "bank_transfer"
+        ? order.holdExpiresAt && new Date(order.holdExpiresAt).getTime() > Date.now()
+          ? new Date(order.holdExpiresAt)
+          : computeStoreAwareExpiry(new Date(), expiresMinutes, storeConfig)
+        : null;
       let dynamicTransferQr = "";
       if (payload.method === "bank_transfer") {
         const bankBin = await configuredTransferBankBin(transfer);
@@ -417,7 +578,7 @@ export async function createPayment(user, payload, idempotencyKey, requestMeta =
         returnUrl: online ? (payload.method === "momo" ? paymentConfig.momo.redirectUrl : paymentConfig.vnpay.returnUrl) : "",
         paymentReference: reference,
         idempotencyKey,
-        expiresAt: new Date(Date.now() + expiresMinutes * 60 * 1000),
+        expiresAt: storeAwareExpiry || new Date(Date.now() + expiresMinutes * 60 * 1000),
         ...(payload.method === "bank_transfer" ? {
           transferInstructions: {
             bankName: transfer.bankName,
@@ -437,27 +598,37 @@ export async function createPayment(user, payload, idempotencyKey, requestMeta =
       order.paymentExpiresAt = payment.expiresAt;
       order.paymentStatus = online ? "pending" : payload.method === "bank_transfer" ? "pending" : "unpaid";
       await order.save(session ? { session } : {});
-      return payment._id;
+      return { paymentId: payment._id, reused: false };
     });
+    paymentReused = paymentId?.reused === true;
+    paymentId = paymentId?.paymentId || paymentId;
   } catch (error) {
     if (error?.code !== 11000) throw error;
     const existing = await Payment.findOne({ idempotencyKey });
-    if (existing) paymentId = existing._id;
+    if (existing) { paymentId = existing._id; paymentReused = true; }
     else {
       const active = await Payment.findOne({
         orderId: payload.orderId,
         paymentGroup: paymentGroup(payload.paymentType),
-        active: true
+        active: true,
+        status: { $in: ACTIVE_PAYMENT_STATUSES }
       });
-      if (active) paymentId = active._id;
-      else throw error;
+      if (active && canReusePayment(active, payload.method)) { paymentId = active._id; paymentReused = true; }
+      else if (active && isLockedPayment(active)) {
+        throw paymentConflict(409, "PAYMENT_ALREADY_SUBMITTED", "Giao dịch này đã được báo chuyển khoản và đang chờ ARA đối soát.", { paymentId: String(active._id), method: active.method, status: active.status });
+      } else if (active && isReplaceableActivePayment(active)) {
+        throw paymentConflict(409, "PAYMENT_METHOD_CHANGE_CONFIRMATION_REQUIRED", `Đơn đang có một giao dịch ${active.method} chưa hoàn tất. Bạn có muốn hủy giao dịch này và đổi sang ${payload.method} không?`, activePaymentSummary(active, payload.method));
+      } else throw error;
     }
   }
 
   let populated = await populatePayment(paymentId);
   if (populated.method === "bank_transfer") populated = await refreshManualTransferQr(populated);
   if (populated.channel === "online" && !populated.payUrl && populated.status === "pending") {
-    try {
+    await withPayosCreationLock(paymentId, async () => {
+      populated = await populatePayment(paymentId);
+      if (!populated || populated.payUrl || populated.status !== "pending") return;
+      try {
       let providerResult;
       if (populated.method === "momo") providerResult = await createMomoPayment({ payment: populated, order: populated.orderId, ipAddress: requestMeta.ipAddress });
       else if (populated.method === "vnpay") providerResult = createVnpayPayment({ payment: populated, order: populated.orderId, ipAddress: requestMeta.ipAddress });
@@ -478,7 +649,8 @@ export async function createPayment(user, payload, idempotencyKey, requestMeta =
     } catch (error) {
       await Payment.updateOne({ _id: populated._id, status: "pending" }, { $set: { status: "failed", active: false, failedAt: new Date(), failureReason: error.message } });
       throw error;
-    }
+      }
+    });
   }
   const order = populated.orderId;
   const customerTemplate = paymentNotification("requested_customer", populated, order);
@@ -492,14 +664,75 @@ export async function createPayment(user, payload, idempotencyKey, requestMeta =
     eventKey: `payment:${populated._id}:awaiting_confirmation:customer`
   });
   await notifyAdmins({ ...adminTemplate, eventKey: `payment:${populated._id}:awaiting_confirmation:admin` });
-  return populated;
+  return { ...(populated.toObject ? populated.toObject({ virtuals: true }) : populated), reused: paymentReused };
 }
 
-async function paginate(query, { page = 1, limit = 20 } = {}) {
+export async function replacePayment(oldPaymentId, user, payload = {}, idempotencyKey, requestMeta = {}) {
+  idempotencyKey ||= payload.idempotencyKey;
+  if (!UUID_PATTERN.test(String(idempotencyKey || ""))) {
+    throw new ApiError(400, "Idempotency-Key phải là UUID hợp lệ.");
+  }
+
+  // A retry must return the already-created replacement even though the old
+  // payment has been canceled by the first request.
+  const existingByKey = await Payment.findOne({ idempotencyKey });
+  if (existingByKey) {
+    assertPaymentAccess(existingByKey, user);
+    const existing = await populatePayment(existingByKey._id);
+    return {
+      ...(existing?.toObject ? existing.toObject({ virtuals: true }) : existing),
+      reused: true
+    };
+  }
+
+  if (!mongoose.isValidObjectId(oldPaymentId)) {
+    throw paymentConflict(422, "PAYMENT_REPLACEMENT_INVALID_OLD_PAYMENT", "Giao dịch cũ không hợp lệ.");
+  }
+
+  const oldPayment = await Payment.findById(oldPaymentId);
+  if (!oldPayment) {
+    throw paymentConflict(404, "PAYMENT_REPLACEMENT_OLD_PAYMENT_NOT_FOUND", "Không tìm thấy giao dịch cũ.");
+  }
+  assertPaymentAccess(oldPayment, user);
+
+  const method = normalizePaymentMethod(payload.method);
+  if (!method) throw paymentConflict(422, "PAYMENT_METHOD_UNSUPPORTED", "Phương thức thanh toán không được hỗ trợ.");
+  if (arePaymentMethodsCompatible(oldPayment.method, method)) {
+    throw paymentConflict(422, "PAYMENT_METHOD_UNCHANGED", "Phương thức thanh toán mới phải khác giao dịch cũ.");
+  }
+  if (isLockedPayment(oldPayment)) {
+    throw paymentConflict(409, "PAYMENT_ALREADY_SUBMITTED", "Giao dịch này đã được báo chuyển khoản và đang chờ ARA đối soát.", { paymentId: String(oldPayment._id), method: oldPayment.method, status: oldPayment.status });
+  }
+  if (!isReplaceableActivePayment(oldPayment)) {
+    throw paymentConflict(409, "PAYMENT_REPLACEMENT_NOT_ALLOWED", "Giao dịch cũ không còn ở trạng thái có thể thay thế.", { paymentId: String(oldPayment._id), method: oldPayment.method, status: oldPayment.status });
+  }
+
+  return createPayment(
+    user,
+    {
+      orderId: String(oldPayment.orderId),
+      paymentType: oldPayment.paymentType,
+      channel: isPayosMethod(method) ? "online" : "direct",
+      method
+    },
+    idempotencyKey,
+    requestMeta,
+    { replacementPaymentId: String(oldPayment._id) }
+  );
+}
+
+async function paginate(query, { page = 1, limit = 20 } = {}, populate = detailPopulate) {
   const safePage = Math.max(1, Number(page) || 1);
   const safeLimit = Math.min(50, Math.max(1, Number(limit) || 20));
-  const total = await query.model.countDocuments(query.getFilter());
-  const items = await query.skip((safePage - 1) * safeLimit).limit(safeLimit).populate(detailPopulate);
+  const filter = query.getFilter();
+  const [total, items] = await Promise.all([
+    query.model.countDocuments(filter),
+    query
+      .skip((safePage - 1) * safeLimit)
+      .limit(safeLimit)
+      .populate(populate)
+      .lean()
+  ]);
   return {
     items: items.map((item) => presentPayment(item, { includeProof: false })),
     pagination: {
@@ -521,7 +754,8 @@ export async function listMyPayments(customerId, params = {}) {
     Payment.find(filter)
       .select("-proofAsset -proofUrl -qrCode -transferInstructions.qrUrl")
       .sort({ createdAt: -1 }),
-    params
+    params,
+    listPopulate
   );
 }
 
@@ -563,6 +797,9 @@ export async function reportManualTransfer(id, user, _body = {}, file = null) {
   if (!payment.active || !["pending", "awaiting_confirmation"].includes(payment.status)) {
     throw new ApiError(400, "Giao dịch không còn ở trạng thái có thể báo chuyển khoản.");
   }
+  if (payment.expiresAt && new Date(payment.expiresAt).getTime() <= Date.now() && !payment.proofSubmittedAt) {
+    throw new ApiError(409, "Giao dịch đã quá hạn thanh toán; vui lòng liên hệ ARA để được đối soát thủ công.");
+  }
 
   if (!file) throw new ApiError(400, "Vui lòng tải ảnh biên lai hoặc ảnh giao dịch trước khi gửi xác nhận.");
   let metadata;
@@ -570,7 +807,9 @@ export async function reportManualTransfer(id, user, _body = {}, file = null) {
   const actualMime = ({ jpeg: "image/jpeg", png: "image/png", webp: "image/webp" })[metadata.format];
   if (!actualMime) throw new ApiError(400, "Minh chứng chỉ hỗ trợ PNG, JPG, JPEG hoặc WEBP.");
   const uploaded = await uploadPrivatePaymentProof(file, payment._id);
+  const previousStatus = payment.status;
   payment.status = "awaiting_confirmation";
+  payment.expiresAt = null;
   payment.proofUrl = "";
   payment.proofAsset = { publicId: uploaded.public_id, mimeType: actualMime, uploadedAt: new Date() };
   payment.proofSubmittedAt = new Date();
@@ -581,6 +820,7 @@ export async function reportManualTransfer(id, user, _body = {}, file = null) {
     order.paymentStatus = "awaiting_verification";
     order.paymentMethod = payment.method;
     order.holdExpiresAt = null;
+    order.paymentExpiresAt = null;
     await order.save();
   }
 
@@ -589,7 +829,7 @@ export async function reportManualTransfer(id, user, _body = {}, file = null) {
     action: "payment_transfer_reported",
     entityType: "payment",
     entityId: payment._id,
-    before: { status: "pending" },
+    before: { status: previousStatus },
     after: { status: "awaiting_verification", proofAssetId: payment.proofAsset.publicId }
   });
   return presentPayment(await populatePayment(payment._id));
@@ -741,6 +981,17 @@ export async function listAdminPayments(params = {}) {
   if (params.paymentType && params.paymentType !== "refund") {
     filter.paymentType = params.paymentType;
   }
+  if (params.lateTransferReview === true || params.lateTransferReview === "true") {
+    const expiredOrders = await RentalOrder.find({ status: "expired" }).select("_id").lean();
+    filter.method = "bank_transfer";
+    filter.channel = "direct";
+    filter.status = { $in: ["expired", "awaiting_confirmation"] };
+    filter.orderId = { $in: expiredOrders.map((item) => item._id) };
+  }
+  if (params.unresolvedReceivedMoney === true || params.unresolvedReceivedMoney === "true") {
+    const recoveryRows = await LatePaymentRecovery.find({ outcome: "availability_conflict", refundId: { $ne: null } }).select("paymentId").lean();
+    filter._id = { $in: recoveryRows.map((item) => item.paymentId) };
+  }
   const search = String(params.search || "").trim();
   if (search) {
     const regex = new RegExp(escapeRegex(search), "i");
@@ -750,7 +1001,8 @@ export async function listAdminPayments(params = {}) {
     Payment.find(filter)
       .select("-proofAsset -proofUrl -qrCode -transferInstructions.qrUrl")
       .sort({ createdAt: -1 }),
-    params
+    params,
+    listPopulate
   );
 }
 
@@ -785,7 +1037,8 @@ async function paginateAdminPaymentSearch(filter, regex, params = {}) {
   const documents = ids.length
     ? await Payment.find({ _id: { $in: ids } })
       .select("-proofAsset -proofUrl -qrCode -transferInstructions.qrUrl")
-      .populate(detailPopulate)
+      .populate(listPopulate)
+      .lean()
     : [];
   const byId = new Map(documents.map((item) => [String(item._id), item]));
   const items = ids.map((id) => byId.get(String(id))).filter(Boolean).map((item) => presentPayment(item, { includeProof: false }));
@@ -796,36 +1049,71 @@ async function paginateAdminPaymentSearch(filter, regex, params = {}) {
   };
 }
 
-export async function getAdminPayment(id, { includeRefundSensitive = true, includeProof = true } = {}) {
+export async function getAdminPayment(id, { includeRefundSensitive = true, includeProof = true, actor = null } = {}) {
   await expirePayment(id);
   const payment = await populatePayment(id);
   if (!payment) throw new ApiError(404, "Không tìm thấy thanh toán.");
-  if (payment.paymentType !== "refund" || !includeRefundSensitive) return presentPayment(payment, { includeProof });
-  const orderId = payment.orderId?._id || payment.orderId;
-  const refund = await DepositRefund.findOne({ orderId }).sort({ createdAt: -1 });
+  const recovery = await LatePaymentRecovery.findOne({ paymentId: payment._id }).sort({ createdAt: -1 }).lean();
+  const manualRefund = await DepositRefund.findOne({ paymentId: payment._id, source: { $in: ["manual_refund", "late_payment_recovery"] } }).sort({ createdAt: -1 }).select("_id status").lean();
+  const order = payment.orderId?._id ? payment.orderId : await RentalOrder.findById(payment.orderId);
+  const orderId = order?._id || payment.orderId;
+  const [reservations, transportReservations] = orderId
+    ? await Promise.all([
+      Reservation.find({ orderId }).select("status").lean(),
+      TransportReservation.find({ orderId }).select("status").lean()
+    ])
+    : [[], []];
+  const { getLatePaymentRecoveryEligibility } = await import("./latePaymentRecovery.service.js");
+  const latePaymentRecoveryEligibility = getLatePaymentRecoveryEligibility({
+    order,
+    payment,
+    recovery,
+    manualRefund,
+    actor,
+    reservations,
+    transportReservations
+  });
+  const recoveryProjection = recovery ? {
+    id: recovery._id,
+    status: recovery.status,
+    outcome: recovery.outcome,
+    expectedAmount: recovery.expectedAmount,
+    actualReceivedAmount: recovery.actualReceivedAmount,
+    receivedAt: recovery.receivedAt,
+    transactionReference: recovery.transactionReference,
+    transferContent: includeProof ? recovery.transferContent : undefined,
+    reason: includeProof ? recovery.reason : undefined,
+    conflicts: recovery.conflicts,
+    refundId: recovery.refundId
+  } : null;
+  if (payment.paymentType !== "refund" || !includeRefundSensitive) return { ...presentPayment(payment, { includeProof }), latePaymentRecovery: recoveryProjection, latePaymentRecoveryEligibility };
+  const refund = await DepositRefund.findOne({ orderId, source: { $in: ["settlement", null] } }).sort({ createdAt: -1 });
   const destination = refund?.destinationId
     ? await RefundDestination.findById(refund.destinationId).select("+encryptedAccountNumber")
     : await RefundDestination.findOne({ userId: payment.customerId?._id || payment.customerId, isDefault: true, isEnabled: true }).select("+encryptedAccountNumber");
   const value = presentPayment(payment, { includeProof });
   return {
     ...value,
+    latePaymentRecovery: recoveryProjection,
+    latePaymentRecoveryEligibility,
     refundCode: refund?.refundCode || payment.paymentReference,
     refundDestination: adminDestination(destination),
     refundDestinationMissing: !destination
   };
 }
 
-export async function markPaymentSuccessful(id, options = {}) {
-  let paymentId;
-  paymentId = await runFinancialTransaction("xác nhận thanh toán", async (session) => {
+async function markPaymentSuccessfulInSession(id, options = {}, session = null) {
     const payment = await withSession(Payment.findById(id), session);
     if (!payment) throw new ApiError(404, "Không tìm thấy thanh toán.");
     if (payment.status === "success" || payment.status === "refunded") return payment._id;
-    if (TERMINAL_PAYMENT_STATUSES.includes(payment.status)) {
+    if (TERMINAL_PAYMENT_STATUSES.includes(payment.status) && !(options.recovery && ["expired", "canceled"].includes(payment.status))) {
       throw new ApiError(400, "Giao dịch đã kết thúc và không thể xác nhận.");
     }
     if (options.requireDirect && (payment.channel !== "direct" || payment.status !== "awaiting_confirmation")) {
       throw new ApiError(400, "Giao dịch không còn chờ cửa hàng xác nhận.");
+    }
+    if (options.recovery && (payment.channel !== "direct" || payment.method !== "bank_transfer")) {
+      throw new ApiError(400, "Chỉ giao dịch chuyển khoản thủ công mới được đối soát chuyển muộn.");
     }
 
     const order = await withSession(RentalOrder.findById(payment.orderId), session);
@@ -846,6 +1134,13 @@ export async function markPaymentSuccessful(id, options = {}) {
     payment.status = payment.paymentType === "refund" ? "refunded" : "success";
     payment.active = false;
     payment.paidAt = paidAt;
+    if (options.recovery) {
+      payment.expiresAt = null;
+      payment.actualReceivedAmount = Number(options.actualReceivedAmount || payment.amount);
+      payment.receivedAt = options.receivedAt || paidAt;
+      payment.manualTransactionReference = String(options.manualTransactionReference || "").trim().toUpperCase();
+      payment.lateRecoveryId = options.lateRecoveryId || null;
+    }
     if (options.confirmedBy) {
       payment.confirmedBy = options.confirmedBy;
       payment.confirmedAt = options.confirmedAt || paidAt;
@@ -903,7 +1198,16 @@ export async function markPaymentSuccessful(id, options = {}) {
       eventKey: `payment:${payment._id}:${payment.status}:customer`
     }, { session });
     return payment._id;
-  });
+}
+
+export async function markPaymentSuccessfulInTransaction(id, options = {}, session = null) {
+  return markPaymentSuccessfulInSession(id, options, session);
+}
+
+export async function markPaymentSuccessful(id, options = {}) {
+  const paymentId = options.session
+    ? await markPaymentSuccessfulInSession(id, options, options.session)
+    : await runFinancialTransaction("xác nhận thanh toán", async (session) => markPaymentSuccessfulInSession(id, options, session));
   const populated = await populatePayment(paymentId);
   emitPaymentUpdated({ paymentId: populated?._id, orderId: populated?.orderId?._id, customerId: populated?.customerId?._id || populated?.customerId, status: populated?.status, paymentStatus: populated?.orderId?.paymentStatus, method: populated?.method });
   emitOrderUpdated({ orderId: populated?.orderId?._id, customerId: populated?.customerId?._id || populated?.customerId, status: populated?.orderId?.status, paymentStatus: populated?.orderId?.paymentStatus, reason: "payment_updated" });

@@ -10,6 +10,7 @@ export const NOTIFICATION_TYPES = [
   "penalty_payment_requested", "penalty_payment_confirmed", "payment_awaiting_confirmation",
   "payment_success", "payment_rejected", "payment_failed", "payment_canceled",
   "payment_expired", "payment_refunded", "rental_order_expired",
+  "late_payment_order_restored", "late_payment_schedule_conflict", "late_payment_refund_created",
   "payment_deposit_completed", "payment_full_completed", "payment_rental_balance_completed",
   "payment_penalty_completed", "payment_refund_completed", "refund_information_required", "settlement_penalty_required",
   "settlement_refund_pending", "settlement_completed", "chat_message", "system"

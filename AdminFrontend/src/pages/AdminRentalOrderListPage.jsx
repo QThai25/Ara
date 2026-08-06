@@ -2,11 +2,12 @@ import { CalendarClock, CheckCircle2, Eye, PackageCheck, Plus, Timer, XCircle } 
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { AdminDataTable, AdminFilterBar, AdminPageHeader, AdminSelectFilter, AdminStatCard, AdminStatusBadge } from "../components/common/AdminUI.jsx";
+import { ModalDatePicker } from "../components/common/AdminControls.jsx";
 import { OrderHoldCountdown } from "../components/common/OrderHoldCountdown.jsx";
 import { StateMessage } from "../components/common/StateMessage.jsx";
 import { useDebouncedValue } from "../hooks/useDebouncedValue.js";
 import { getAdminRentalOrders } from "../services/rentalOrderService.js";
-import { money } from "../utils/format.js";
+import { formatDate, money } from "../utils/format.js";
 import { orderStatusOptions } from "../utils/status.js";
 
 const pageSize = 10;
@@ -15,7 +16,7 @@ const idOf = (item) => item.id || item._id || "";
 const shortId = (item) => String(idOf(item)).slice(-6).toUpperCase();
 const customerName = (order) => order.customer?.name || order.customerId?.name || "Khách hàng";
 const customerPhone = (order) => order.customer?.phone || order.customerId?.phone || "";
-const dateText = (value) => value ? String(value).slice(0, 10) : "-";
+const dateText = (value) => value ? formatDate(value) : "-";
 
 export function AdminRentalOrderListPage() {
   const navigate = useNavigate();
@@ -122,7 +123,7 @@ export function AdminRentalOrderListPage() {
   };
 
   return (
-    <>
+    <div className="admin-rental-order-list-page">
       <AdminPageHeader title="Danh sách đơn thuê" description="Duyệt, lọc và theo dõi đơn thuê theo một bảng thống nhất." action={<button className="admin-create-order-link" onClick={() => navigate("/orders/create")}><Plus size={16}/>Tạo đơn tại quầy</button>} />
       {!loading && !error && <div className="admin-stat-grid">
         <AdminStatCard icon={<PackageCheck />} label="Tổng đơn" value={stats.total} />
@@ -134,12 +135,13 @@ export function AdminRentalOrderListPage() {
       <AdminFilterBar search={search} onSearch={(value) => { setSearch(value); setPage(1); }} searchPlaceholder="Tìm mã đơn, khách hàng, số điện thoại, trang phục..." onReset={() => { setSearch(""); setStatus(""); setDateValue(""); setExtraFilter(""); setPage(1); }}>
         <AdminSelectFilter value={status} onChange={(value) => { setStatus(value); setPage(1); }} options={orderStatusOptions} allLabel="Tất cả trạng thái" />
         <AdminSelectFilter value={dateField} onChange={(value) => { setDateField(value); setPage(1); }} options={[["pickup", "Ngày nhận"], ["main", "Ngày mặc chính"], ["return", "Ngày trả"]]} allLabel="Loại ngày" />
-        <label className="admin-order-date-filter"><span>Ngày lọc</span><input type="date" value={dateValue} onChange={(event) => { setDateValue(event.target.value); setPage(1); }} /></label>
+        <ModalDatePicker className="admin-order-date-filter" label="Ngày lọc" value={dateValue} placeholder="Chọn ngày" onChange={(value) => { setDateValue(value); setPage(1); }} />
         <AdminSelectFilter value={extraFilter} onChange={(value) => { setExtraFilter(value); setPage(1); }} options={[["yes", "Có ngày giữ thêm"], ["no", "Không giữ thêm"]]} allLabel="Tất cả gói thuê" />
       </AdminFilterBar>
-      {loading && <StateMessage text="Đang tải đơn thuê..." />}
+      {loading && !rows.length && <StateMessage text="Đang tải đơn thuê..." />}
+      {loading && rows.length > 0 && <div className="admin-inline-loading" role="status">Đang cập nhật danh sách đơn thuê...</div>}
       {error && <StateMessage text={error} tone="error" actionLabel="Thử lại" onAction={() => setReloadKey((key) => key + 1)} />}
-      {!loading && !error && (
+      {!error && (rows.length > 0 || !loading) && (
         <AdminDataTable
           mobileCards
           rows={rows}
@@ -162,6 +164,6 @@ export function AdminRentalOrderListPage() {
           ]}
         />
       )}
-    </>
+    </div>
   );
 }

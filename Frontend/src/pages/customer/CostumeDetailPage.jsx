@@ -14,6 +14,7 @@ import {
   ChevronRight,
   Clock3,
   Heart,
+  LoaderCircle,
   MapPin,
   Minus,
   Plus,
@@ -1257,46 +1258,44 @@ export function CostumeDetailPage({
         items: [{ costumeId: id, quantity: 1 }],
         deliveryAddress: pickupMethod === "home_delivery" ? addressInput : undefined,
       };
-      const prefetchedNearest = available === false
-        ? quoteRentalOrder(
-            { ...quotePayload, includeNearest: false, nearestOnly: true },
-            { signal: controller.signal, cache: true }
-          ).catch(() => null)
-        : null;
       let shouldFindNearest = false;
+      let nearestSuggestion = null;
       try {
         const quote = await quoteRentalOrder(
-          { ...quotePayload, includeNearest: false },
+          { ...quotePayload, includeNearest: true },
           { signal: controller.signal, cache: true }
         );
         setFulfillmentQuote(quote);
+        nearestSuggestion = quote?.nearestBookable || null;
+        if (nearestSuggestion) setNearestBookable(nearestSuggestion);
         // Hai API kiểm tra lịch có thể hoàn tất lệch nhau. Nếu kiểm tra tồn kho
         // đã xác nhận hết lịch thì vẫn phải tìm khung gần nhất, kể cả quote
         // giao nhận chưa kịp phản ánh trạng thái đó.
         shouldFindNearest = quote?.isBookable === false || available === false;
-        if (!shouldFindNearest) setNearestBookable(null);
+        if (!shouldFindNearest || !nearestSuggestion) setNearestBookable(nearestSuggestion);
         setFulfillmentError(quote?.isBookable === false ? "Khung giờ này đã có lịch thuê hoặc đã hết công suất giao nhận." : "");
       } catch (err) {
         if (err?.name !== "CanceledError" && err?.name !== "AbortError") {
           setFulfillmentQuote(null);
+          nearestSuggestion = err?.data?.nearestBookable || null;
+          if (nearestSuggestion) setNearestBookable(nearestSuggestion);
           shouldFindNearest = true;
           setFulfillmentError(err?.response?.data?.message || err.message || "Lịch giao nhận chưa phù hợp.");
         }
-      } finally {
-        if (!controller.signal.aborted) setCheckingFulfillment(false);
       }
-      if (shouldFindNearest && !controller.signal.aborted) {
+      if (shouldFindNearest && !nearestSuggestion && !controller.signal.aborted) {
         try {
-          const nearest = await (prefetchedNearest || quoteRentalOrder(
+          const nearest = await quoteRentalOrder(
             { ...quotePayload, includeNearest: false, nearestOnly: true },
             { signal: controller.signal, cache: true }
-          ));
+          );
           if (!controller.signal.aborted) setNearestBookable(nearest?.nearestBookable || null);
         } catch (err) {
           // Giữ gợi ý gần nhất hiện tại nếu request mới lỗi hoặc bị gián đoạn.
           // Kết quả hợp lệ tiếp theo sẽ thay thế hoặc xóa nó.
         }
       }
+      if (!controller.signal.aborted) setCheckingFulfillment(false);
     }, 300);
     return () => {
       window.clearTimeout(timer);
@@ -2318,6 +2317,12 @@ export function CostumeDetailPage({
               }}>
                 Chọn lịch này
               </button>
+            </div>
+          )}
+          {!nearestBookable?.requestedStartAt && (fulfillmentError || available === false) && checkingFulfillment && (
+            <div className="booking-nearest-slot booking-nearest-slot--loading" role="status" aria-live="polite">
+              <LoaderCircle size={20} />
+              <span><small>ĐANG TÌM LỊCH GẦN NHẤT</small><strong>ARA đang kiểm tra các khung giờ còn trống…</strong></span>
             </div>
           )}
           </div>

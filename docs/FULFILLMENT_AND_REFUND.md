@@ -65,3 +65,22 @@ node scripts/reconcile-refund-destinations.js --order-id=<id> --limit=100
 ```
 
 Script không tự lấy tài khoản mặc định hiện tại để gắn vào đơn cũ. Bản ghi thiếu snapshot cần khách xác nhận hoặc owner override có lý do và audit trail trước khi xử lý hoàn tiền.
+
+## Expired orders and received money
+
+Pending-order and active-payment expiration is lazy on relevant endpoints and is
+also run by the single Backend scheduler approximately once per minute. The
+scheduler releases held inventory/transport reservations but never deletes the
+order, items, payment proof, payment history, reservation history or audit
+history. Manual-review payments with submitted proof, successful payments and
+late-recovery results are excluded from stale expiration.
+
+When an Owner verifies a real transfer after an order expired, the system keeps
+financial truth separate from inventory truth. It rechecks every item, rental
+window, preparation/inspection/cleaning buffer and transport capacity while
+holding deterministic schedule locks. If the schedule is available, reservations
+are recreated atomically and the existing payment/order state transitions are
+used. If it is unavailable, the original order is not reopened or double-booked;
+the received payment is retained in the ledger and one source-linked
+late-payment refund/manual-resolution record is created. The Owner must then
+choose the existing refund or customer-contact resolution path.

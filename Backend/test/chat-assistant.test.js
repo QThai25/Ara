@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { classifyIntent, BOT_INTENTS } from "../src/services/chatBot.service.js";
-import { canAccess, chatIdentity } from "../src/services/chat.service.js";
+import { canAccess, chatIdentity, supportHandoffMessage } from "../src/services/chat.service.js";
 
 const read = path => fs.readFileSync(new URL(path, import.meta.url), "utf8");
 
@@ -17,6 +17,11 @@ test("intent routing sends sensitive actions to staff", () => {
 test("intent routing supports shopping and order lookup", () => {
   assert.equal(classifyIntent("Tìm váy dự tiệc cho mình").intent, "find_costume");
   assert.equal(classifyIntent("Kiểm tra đơn của tôi").intent, "track_order");
+});
+test("support handoff explains that staff are unavailable outside business hours", () => {
+  const message = supportHandoffMessage({ isOpen: false, openingTime: "08:00", closingTime: "22:00", timezone: "Asia/Ho_Chi_Minh" });
+  assert.match(message, /ngoài giờ làm việc/i);
+  assert.match(message, /08:00–22:00/);
 });
 test("guest identity requires a non-trivial opaque session", () => {
   assert.equal(chatIdentity(null, "1234567890abcdef").guestSessionId, "1234567890abcdef");
@@ -70,4 +75,15 @@ test("customer chat hides malformed action buttons from current and saved messag
   const bot = read("../src/services/chatBot.service.js");
   assert.match(widget, /typeof action==="object"[\s\S]*action\.label[\s\S]*action\.url/);
   assert.doesNotMatch(bot, /payload:\{products,actions:/);
+});
+test("customer chat clears unread state when an existing conversation is opened", () => {
+  const widget = read("../../Frontend/src/components/customer/AraChatWidget.jsx");
+  assert.match(widget, /if\(!open\|\|!conversationId\)return;void markChatRead\(conversationId\)/);
+  assert.match(widget, /if\(!openRef\.current\)onUnreadChange\?\.\(current=>Number\(current\|\|0\)\+1\);else void markChatRead/);
+});
+test("customer support handoff is gated by store business hours", () => {
+  const service = read("../src/services/chat.service.js");
+  const controller = read("../src/controllers/chat.controller.js");
+  assert.match(service, /const business\s*=\s*storeBusinessStatus\(\);[\s\S]*if \(!business\.isOpen\) return \{ conversation, handoffAccepted: false/);
+  assert.match(controller, /if \(!result\.handoffAccepted\)[\s\S]*supportHandoffMessage\(result\.business\)/);
 });

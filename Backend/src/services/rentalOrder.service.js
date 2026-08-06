@@ -24,13 +24,14 @@ import { quote as quoteShipping } from "./shipping.service.js";
 import { ensureRefund } from "./refund.service.js";
 import { addCalendarDays, buildStandardRentalSchedule, resolveStandardPackagePrice } from "./rentalSchedule.service.js";
 import { storeConfig } from "../config/store.config.js";
-import { quoteRentalTimeline } from "./rentalTimeline.service.js";
+import { computeStoreAwareExpiry, quoteRentalTimeline } from "./rentalTimeline.service.js";
 import { calculateRentalTransportTimeline } from "./transportTime.service.js";
 import { createRentalHold } from "./rentalAvailability.service.js";
 import { Reservation } from "../models/Reservation.js";
 import { TransportReservation } from "../models/TransportReservation.js";
 import { TransportTrip } from "../models/TransportTrip.js";
 import { DepositRefund } from "../models/DepositRefund.js";
+import { LatePaymentRecovery } from "../models/LatePaymentRecovery.js";
 import { getAllowedRentalOrderActions, getOrderFinancialSnapshot, canCompleteOrder, canDispatchHomeDelivery, canStartRental } from "./rentalOrderFinancialPolicy.service.js";
 import { releaseVoucherForOrder, reserveVoucherForOrder, voucherSnapshot } from "./voucher.service.js";
 
@@ -471,7 +472,7 @@ export async function withCostumeLocks(costumeIds, task) {
   }
 }
 
-async function acquireScheduleLocks(costumeIds, timeoutMs = 8000) {
+export async function acquireScheduleLocks(costumeIds, timeoutMs = 8000) {
   const token = new mongoose.Types.ObjectId().toString();
   const acquired = [];
   const deadline = Date.now() + timeoutMs;
@@ -502,7 +503,7 @@ async function acquireScheduleLocks(costumeIds, timeoutMs = 8000) {
   }
 }
 
-async function releaseScheduleLocks(lock) {
+export async function releaseScheduleLocks(lock) {
   if (lock?.token) await CostumeScheduleLock.deleteMany({ token: lock.token });
 }
 
@@ -538,6 +539,39 @@ export function populateOrder(query) {
     .populate({ path: "penaltyPaymentId", strictPopulate: false })
     .populate({ path: "refundPaymentId", strictPopulate: false })
     .populate({ path: "inspection", strictPopulate: false });
+}
+
+// The admin list only renders order/customer summary fields. Avoid loading
+// every item, costume, payment and inspection for each paginated row.
+export function populateOrderList(query) {
+  return query.populate({
+    path: "customerId",
+    select: "name phone email phoneNormalized",
+    strictPopulate: false
+  });
+}
+
+async function paginateAdminOrderList(query, { page = 1, limit = 10 } = {}) {
+  const safePage = Math.max(1, Number(page) || 1);
+  const safeLimit = Math.min(50, Math.max(1, Number(limit) || 10));
+  const filter = query.getFilter();
+  const [total, items] = await Promise.all([
+    query.model.countDocuments(filter),
+    populateOrderList(query
+      .skip((safePage - 1) * safeLimit)
+      .limit(safeLimit)
+    ).lean()
+  ]);
+
+  return {
+    items,
+    pagination: {
+      page: safePage,
+      limit: safeLimit,
+      total,
+      totalPages: Math.max(1, Math.ceil(total / safeLimit))
+    }
+  };
 }
 
 export async function expirePendingOrders({ orderId = null, customerId = null } = {}) {
@@ -592,13 +626,29 @@ export async function expirePendingOrders({ orderId = null, customerId = null } 
   return expiredCount;
 }
 
-export async function decorateOrder(orderId) {
+export async function decorateOrder(orderId, { actor = null } = {}) {
   await expirePendingOrders({ orderId });
   const document = await populateOrder(RentalOrder.findById(orderId));
   if (!document) return null;
   const order = document.toObject({ virtuals: true });
   const payments = Array.isArray(order.payments) ? order.payments : [];
-  const refunds = await DepositRefund.find({ orderId }).sort({ createdAt: -1 }).lean();
+  const refunds = await DepositRefund.find({ orderId, $or: [{ source: { $in: ["settlement", null] } }, { source: { $exists: false } }] }).sort({ createdAt: -1 }).lean();
+  const recovery = await LatePaymentRecovery.findOne({ orderId }).sort({ createdAt: -1 }).lean();
+  const manualRefund = await DepositRefund.findOne({ orderId, source: { $in: ["manual_refund", "late_payment_recovery"] } }).sort({ createdAt: -1 }).select("_id status paymentId").lean();
+  const [reservations, transportReservations] = await Promise.all([
+    Reservation.find({ orderId }).select("status").lean(),
+    TransportReservation.find({ orderId }).select("status").lean()
+  ]);
+  const { getLatePaymentRecoveryEligibility } = await import("./latePaymentRecovery.service.js");
+  const latePaymentRecoveryEligibility = getLatePaymentRecoveryEligibility({
+    order,
+    payment: order.latestPaymentId || payments.at(-1) || null,
+    recovery,
+    manualRefund,
+    actor,
+    reservations,
+    transportReservations
+  });
   const financialSnapshot = getOrderFinancialSnapshot(order, payments, refunds);
   const actionProjection = getAllowedRentalOrderActions({ order, financial: financialSnapshot });
   const successfulPayments = payments.filter((payment) => payment?.status === "success");
@@ -631,6 +681,15 @@ export async function decorateOrder(orderId) {
       status: refunds[0].status,
       amount: refunds[0].amount
     } : null,
+    latePaymentRecovery: recovery ? {
+      id: String(recovery._id),
+      status: recovery.status,
+      outcome: recovery.outcome,
+      receivedAt: recovery.receivedAt,
+      refundId: recovery.refundId ? String(recovery.refundId) : null,
+      conflicts: recovery.conflicts || []
+    } : null,
+    latePaymentRecoveryEligibility,
     financialSnapshot,
     ...actionProjection,
     legacyPaymentStatus: order.paymentStatus,
@@ -876,10 +935,7 @@ export async function createRentalOrder(userOrCustomerId, rawPayload) {
             });
           }
 
-          const holdMinutes = storeConfig.pendingPaymentMinutes;
-          const holdExpiresAt = new Date(
-            Date.now() + holdMinutes * 60 * 1000
-          );
+          const holdExpiresAt = computeStoreAwareExpiry(new Date(), storeConfig.pendingPaymentMinutes, storeConfig);
 
           const order = await createOrderWithUniqueCode(
               {
@@ -1220,7 +1276,7 @@ export async function listAdminOrders(params) {
     ];
   }
   const [result, statusRows] = await Promise.all([
-    paginate(RentalOrder.find(filter).sort({ createdAt: -1 }), params),
+    paginateAdminOrderList(RentalOrder.find(filter).sort({ createdAt: -1 }), params),
     RentalOrder.aggregate([
       { $match: filter },
       { $group: {
@@ -1328,7 +1384,7 @@ export async function approveOrder(orderId, adminId) {
         const performApprove = async (sessionArg = null) => {
           order = sessionArg ? await RentalOrder.findById(orderId).session(sessionArg) : await RentalOrder.findById(orderId);
           if (!order) throw new ApiError(404, "Không tìm thấy đơn thuê.");
-          if (order.status === "expired") throw new ApiError(409, "Đơn thuê đã hết thời gian giữ chỗ và không thể duyệt. Khách hàng cần tạo đơn mới.");
+          if (order.status === "expired") throw new ApiError(409, "Đơn thuê đã hết thời gian giữ chỗ. Hãy kiểm tra đối soát khoản chuyển muộn nếu thanh toán thủ công đã được nhận; nếu không đủ điều kiện, khách hàng có thể tạo đơn thuê mới.");
           if (!["pending_payment", ...canonicalStatuses(["pending"])].includes(order.status)) throw new ApiError(400, "Chỉ được duyệt đơn đang chờ xác nhận.");
           if (order.status === "pending_payment" && !(order.pickupMethod === "store_pickup" && order.paymentPreference === "cash")) throw new ApiError(409, "Đơn chưa có khoản thanh toán hợp lệ để xác nhận.");
           if (order.holdExpiresAt && order.holdExpiresAt <= new Date()) throw new ApiError(409, "Thời gian giữ chỗ của đơn đã hết hạn.");
@@ -1471,6 +1527,23 @@ export async function transitionOrder(orderId, action) {
     await notifyAdmins({ ...orderNotification("returned_admin", order), eventKey: `order:${order._id}:inspection_required:admin` });
   }
   return decorateOrder(order._id);
+}
+
+export async function restoreExpiredOrderInSession(orderId, { session = null, paidAt = new Date() } = {}) {
+  const query = RentalOrder.findById(orderId);
+  const order = session ? await query.session(session) : await query;
+  if (!order) throw new ApiError(404, "Không tìm thấy đơn thuê.");
+  if (order.status !== "expired") throw new ApiError(409, "Đơn thuê không còn ở trạng thái hết hạn để mở lại.");
+  if (!(["deposit_paid", "fully_paid"].includes(order.paymentStatus))) {
+    throw new ApiError(409, "Đơn chưa có trạng thái thanh toán hợp lệ để mở lại.");
+  }
+  order.status = "confirmed";
+  order.bookingStatus = "confirmed";
+  order.approvedAt ||= paidAt;
+  order.holdExpiresAt = null;
+  order.paymentExpiresAt = null;
+  await order.save(session ? { session } : {});
+  return order;
 }
 
 function fulfillmentPatch(body = {}) {

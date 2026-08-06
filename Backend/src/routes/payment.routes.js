@@ -11,12 +11,14 @@ import { uploadRefundProofImage } from "../middlewares/upload.middleware.js";
 import {
   confirmDirectPaymentValidation,
   createPaymentValidation,
+  replacementPaymentValidation,
   paymentQuoteValidation,
   paymentQuoteParamValidation,
   paymentIdValidation,
   listAdminPaymentsValidation,
   reportTransferValidation,
-  rejectPaymentValidation
+  rejectPaymentValidation,
+  latePaymentRecoveryValidation
 } from "../validations/payment.validation.js";
 
 export const paymentRoutes = Router();
@@ -62,6 +64,14 @@ paymentRoutes.get("/quote/:orderId", ...optionalPaymentAuth, paymentQuoteParamVa
   return controller.getPaymentQuote(req, res, next);
 });
 
+paymentRoutes.post(
+  "/:id/replace",
+  ...optionalPaymentAuth,
+  replacementPaymentValidation,
+  validate,
+  controller.replacePayment
+);
+
 /*
  * GET /api/payments/my
  *
@@ -106,6 +116,15 @@ adminPaymentRoutes.get(
   listAdminPaymentsValidation,
   validate,
   controller.listAdminPayments
+);
+
+adminPaymentRoutes.post(
+  "/:id/recover-expired-order",
+  auth,
+  adminOnly,
+  latePaymentRecoveryValidation,
+  validate,
+  controller.recoverExpiredOrderPayment
 );
 
 /*

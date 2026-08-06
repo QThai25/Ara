@@ -196,6 +196,14 @@ const paymentSchema = new mongoose.Schema(
       default: null
     },
 
+    actualReceivedAmount: { type: Number, min: 0, default: null },
+    receivedAt: { type: Date, default: null },
+    manualTransactionReference: { type: String, trim: true, default: "" },
+    receivedVerifiedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null, select: false },
+    receivedVerifiedAt: { type: Date, default: null, select: false },
+    resolutionType: { type: String, enum: ["refund_required", null], default: null, select: false },
+    lateRecoveryId: { type: mongoose.Schema.Types.ObjectId, ref: "LatePaymentRecovery", default: null, index: true },
+
     canceledAt: { type: Date, default: null },
     failedAt: { type: Date, default: null },
 
@@ -259,6 +267,14 @@ paymentSchema.index(
         $gt: ""
       }
     }
+  }
+);
+
+paymentSchema.index(
+  { manualTransactionReference: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { manualTransactionReference: { $type: "string", $gt: "" } }
   }
 );
 

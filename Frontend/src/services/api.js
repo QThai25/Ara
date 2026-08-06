@@ -47,6 +47,7 @@ api.interceptors.response.use(
     const apiError = new Error(message);
     apiError.status = status;
     apiError.code = error?.response?.data?.code || error?.code;
+    apiError.errorCode = error?.response?.data?.errorCode || apiError.code;
     apiError.data = error?.response?.data?.data;
     apiError.cause = error;
     return Promise.reject(apiError);

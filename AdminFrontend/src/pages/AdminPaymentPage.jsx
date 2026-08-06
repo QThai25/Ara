@@ -40,6 +40,7 @@ export function AdminPaymentPage() {
   const [status, setStatus] = useState(searchParams.get("status") || "");
   const [paymentType, setPaymentType] = useState(searchParams.get("paymentType") || "");
   const [method, setMethod] = useState(searchParams.get("method") || "");
+  const [reviewFilter, setReviewFilter] = useState(searchParams.get("review") || "");
   const [page, setPage] = useState(Math.max(1, Number(searchParams.get("page")) || 1));
   const [rows, setRows] = useState([]);
   const [pagination, setPagination] = useState({ page: 1, limit: pageSize, total: 0, totalPages: 1 });
@@ -57,15 +58,17 @@ export function AdminPaymentPage() {
     const nextStatus = searchParams.get("status") || "";
     const nextPaymentType = searchParams.get("paymentType") || "";
     const nextMethod = searchParams.get("method") || "";
+    const nextReviewFilter = searchParams.get("review") || "";
     const nextPage = Math.max(1, Number(searchParams.get("page") || 1));
     const changed = nextSearch !== search || nextStatus !== status || nextPaymentType !== paymentType
-      || nextMethod !== method || nextPage !== page;
+      || nextMethod !== method || nextReviewFilter !== reviewFilter || nextPage !== page;
     if (!changed) return;
     syncingFromUrlRef.current = true;
     setSearch(nextSearch);
     setStatus(nextStatus);
     setPaymentType(nextPaymentType);
     setMethod(nextMethod);
+    setReviewFilter(nextReviewFilter);
     setPage(nextPage);
   }, [searchParamsKey]);
 
@@ -84,10 +87,11 @@ export function AdminPaymentPage() {
     if (status) params.set("status", status);
     if (paymentType) params.set("paymentType", paymentType);
     if (method) params.set("method", method);
+    if (reviewFilter) params.set("review", reviewFilter);
     if (orderId) params.set("orderId", orderId);
     if (page > 1) params.set("page", String(page));
     if (params.toString() !== searchParams.toString()) setSearchParams(params, { replace: true });
-  }, [debouncedSearch, status, paymentType, method, orderId, page, searchParams, setSearchParams]);
+  }, [debouncedSearch, status, paymentType, method, reviewFilter, orderId, page, searchParams, setSearchParams]);
 
   useEffect(() => {
     const requestId = ++requestRef.current;
@@ -101,6 +105,8 @@ export function AdminPaymentPage() {
       status: status || undefined,
       paymentType: paymentType || undefined,
       method: method || undefined,
+      ...(reviewFilter === "late_transfer" ? { lateTransferReview: true } : {}),
+      ...(reviewFilter === "unresolved_money" ? { unresolvedReceivedMoney: true } : {}),
       orderId: orderId || undefined
     }, { signal: controller.signal })
       .then((data) => {
@@ -115,7 +121,7 @@ export function AdminPaymentPage() {
         if (requestRef.current === requestId) setLoading(false);
       });
     return () => controller.abort();
-  }, [debouncedSearch, status, paymentType, method, orderId, page, reloadKey]);
+  }, [debouncedSearch, status, paymentType, method, reviewFilter, orderId, page, reloadKey]);
 
   useEffect(() => {
     const refresh = () => setReloadKey((key) => key + 1);
@@ -133,6 +139,7 @@ export function AdminPaymentPage() {
     setStatus("");
     setPaymentType("");
     setMethod("");
+    setReviewFilter("");
     setPage(1);
   };
 
@@ -143,11 +150,13 @@ export function AdminPaymentPage() {
         <AdminSelectFilter value={status} onChange={(value) => { setStatus(value); setPage(1); }} options={paymentStatusOptions} allLabel="Tất cả trạng thái" />
         <AdminSelectFilter value={paymentType} onChange={(value) => { setPaymentType(value); setPage(1); }} options={paymentTypeOptions} allLabel="Tất cả loại" />
         <AdminSelectFilter value={method} onChange={(value) => { setMethod(value); setPage(1); }} options={methodOptions} allLabel="Tất cả phương thức" />
+        <AdminSelectFilter value={reviewFilter} onChange={(value) => { setReviewFilter(value); setPage(1); }} options={[["late_transfer", "Khoản chuyển muộn cần đối soát"], ["unresolved_money", "Tiền đã nhận chưa xử lý"]]} allLabel="Tất cả luồng đối soát" />
       </AdminFilterBar>
       {orderId && <p className="admin-filter-context">Đang lọc giao dịch của đơn đã chọn.</p>}
-      {loading && <LoadingState message="Đang tải giao dịch..." />}
+      {loading && !rows.length && <LoadingState message="Đang tải giao dịch..." />}
+      {loading && rows.length > 0 && <div className="admin-inline-loading" role="status">Đang cập nhật danh sách giao dịch...</div>}
       {!loading && error && <ErrorState message={error} onRetry={() => setReloadKey((key) => key + 1)} />}
-      {!loading && !error && <AdminDataTable
+      {!error && (rows.length > 0 || !loading) && <AdminDataTable
         mobileCards
         rows={rows}
         page={Math.min(page, totalPages)}

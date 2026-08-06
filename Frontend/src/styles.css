@@ -1,4 +1,5 @@
 @import "https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Lora:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap";
+.public-order-notice{margin:0;padding:16px 42px;border:1px solid #e3d2bd;border-top:0;background:#fff8ed;color:#684d39;font-size:14px;line-height:1.6}.public-order-notice.is-warning{background:#fff1e8;color:#8b3d2f}@media(max-width:780px){.public-order-notice{padding:15px 20px}}
 /*
  * ARA customer/admin stylesheet
  * Refactored to remove superseded declarations, centralize tokens,
@@ -17646,6 +17647,23 @@ button:disabled,
     inset 0 1px 0 rgba(255, 255, 255, 0.9);
   overflow: visible;
 }
+
+.ara-payment-method-change-confirmation {
+  display: grid;
+  gap: 10px;
+  margin: 16px 0;
+  padding: 16px;
+  border: 1px solid #d8a86a;
+  border-radius: 14px;
+  background: #fff7e8;
+  color: #53351f;
+}
+
+.ara-payment-method-change-confirmation p,
+.ara-payment-method-change-confirmation small {
+  margin: 0;
+  line-height: 1.5;
+}
 .cart-summary,
 .cart-summary input,
 .cart-summary button {
@@ -17844,6 +17862,27 @@ button:disabled,
   margin-top: 22px;
   color: #755a4d;
   cursor: pointer;
+}
+
+.booking-nearest-slot--loading {
+  grid-template-columns: 42px minmax(0, 1fr);
+  border-style: dashed;
+  background: linear-gradient(110deg, #fff8e9 25%, #fffdf8 50%, #fff8e9 75%);
+  background-size: 220% 100%;
+  animation: booking-nearest-loading 1.4s ease-in-out infinite;
+}
+
+.booking-nearest-slot--loading > svg {
+  animation: booking-nearest-spin 1s linear infinite;
+}
+
+@keyframes booking-nearest-loading {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
+}
+
+@keyframes booking-nearest-spin {
+  to { transform: rotate(360deg); }
 }
 .cart-checkout-option input {
   position: absolute;
@@ -20505,12 +20544,25 @@ a.mei-footer-contact__item:hover .mei-footer-contact__arrow {
 
 .ara-customer-payment-card{width:min(100%,780px);margin:24px auto 0;padding:24px;border:1px solid #e1ccb2;border-radius:20px;background:#fffdfa;box-shadow:0 16px 40px rgba(72,44,27,.07)}
 .ara-customer-payment-card__header{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;padding-bottom:18px;border-bottom:1px solid #ead8c2}.ara-customer-payment-card__header h3{margin:0;color:#332118;font:700 clamp(24px,3vw,32px) var(--ara-display-font)}.ara-customer-payment-card__header p{margin:6px 0 0;color:#7d6b60}.ara-customer-payment-card__header small{display:block;margin-top:6px;color:#976323;font-weight:750}.ara-customer-payment-status{flex:none;padding:7px 11px;border-radius:999px;background:#f2eadf;color:#69584d;font-size:12px;font-weight:850}.ara-customer-payment-status.is-unpaid,.ara-customer-payment-status.is-pending,.ara-customer-payment-status.is-awaiting_verification{background:#fff0cd;color:#815500}.ara-customer-payment-status.is-paid,.ara-customer-payment-status.is-fully_paid{background:#e6f4e9;color:#28653a}.ara-customer-payment-status.is-failed,.ara-customer-payment-status.is-expired{background:#f9e5df;color:#9a3828}
+.ara-order-status-group{display:grid;justify-items:end;gap:8px;flex:none}.ara-customer-hold-countdown{display:flex;align-items:center;gap:7px;padding:7px 10px;border:1px solid #d9bc82;border-radius:12px;background:#fff8e8;color:#79551f}.ara-customer-hold-countdown>span{display:grid;gap:2px}.ara-customer-hold-countdown small{color:#8b755d;font-size:10px;font-weight:800;line-height:1.1}.ara-customer-hold-countdown strong{font-size:11px;font-variant-numeric:tabular-nums;white-space:nowrap}.ara-customer-hold-countdown.is-urgent{border-color:#e5a56e;background:#fff0df;color:#a24b20}.ara-customer-hold-countdown.is-expired{border-color:#e1a49a;background:#fce8e3;color:#9a3828}
 .ara-customer-payment-total{display:grid;gap:6px;padding:24px 0 20px}.ara-customer-payment-total span{color:#766358;font-size:13px}.ara-customer-payment-total strong{color:#2e1c14;font:700 clamp(36px,6vw,50px) var(--ara-display-font)}
 .ara-customer-payment-breakdown{margin:0;padding:0 0 20px;border-bottom:1px solid #ead8c2}.ara-customer-payment-breakdown>div{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;padding:8px 0}.ara-customer-payment-breakdown dt{display:flex;align-items:center;gap:5px;color:#725f54}.ara-customer-payment-breakdown dd{margin:0;color:#37241b;font-weight:800}.ara-customer-payment-breakdown small{grid-column:1/-1;color:#806f64;line-height:1.45}.ara-payment-info{display:grid!important;place-items:center;min-width:24px!important;width:24px!important;min-height:24px!important;height:24px!important;padding:0!important;border:0!important;border-radius:50%;background:#f1e3cf!important;color:#76512f!important}.ara-payment-info:focus-visible{outline:3px solid rgba(168,112,52,.3);outline-offset:2px}
 .ara-refund-destination-summary,.ara-refund-destination-warning,.ara-customer-payment-method{display:flex;align-items:center;gap:13px;margin-top:18px;padding:16px;border-radius:15px}.ara-refund-destination-summary{border:1px solid #e5d2b9;background:#fff}.ara-refund-destination-summary__icon{display:grid;place-items:center;width:42px;height:42px;flex:none;border-radius:12px;background:#f3e2c9;color:#72492f}.ara-refund-destination-summary>div,.ara-customer-payment-method>div{display:grid;gap:3px;min-width:0;flex:1}.ara-refund-destination-summary small,.ara-customer-payment-method span{color:#7d685b;font-size:12px}.ara-refund-destination-summary strong,.ara-customer-payment-method strong{color:#38241a}.ara-refund-destination-summary span,.ara-customer-payment-method small{color:#75645a;overflow-wrap:anywhere}.ara-refund-destination-summary>button,.ara-refund-destination-warning>button,.ara-customer-payment-method>button{flex:none;border:1px solid #d5b68d;border-radius:999px;background:#fffaf2;padding:9px 14px;color:#593b2c;font-weight:800}.ara-refund-destination-warning{align-items:flex-start;border:1px solid #e5c57d;background:#fff6dc;color:#714b0e}.ara-refund-destination-warning>div{flex:1}.ara-refund-destination-warning p{margin:5px 0 0;line-height:1.5}.ara-customer-payment-method{padding-inline:0;background:transparent}
 .ara-customer-payment-actions{display:grid;grid-template-columns:1fr 1.25fr;gap:10px;margin-top:18px}.ara-customer-payment-actions button{display:flex;align-items:center;justify-content:center;gap:7px;min-height:49px;border:1px solid #c7a16d;border-radius:999px;background:#fffaf2;color:#422b20;font-weight:850}.ara-customer-payment-actions button.primary{border-color:#b58b50;background:#c8a45f;color:#24160f}.ara-customer-payment-actions button:disabled{cursor:not-allowed;opacity:.55}.ara-customer-payment-actions button:focus-visible,.ara-refund-destination-summary>button:focus-visible,.ara-refund-destination-warning>button:focus-visible,.ara-customer-payment-method>button:focus-visible{outline:3px solid rgba(168,112,52,.3);outline-offset:2px}
 .ara-refund-choice-dialog{position:relative;width:min(560px,calc(100% - 24px));padding:30px;border:1px solid #dcc2a2;border-radius:22px;background:#fffdfa;box-shadow:0 28px 70px rgba(0,0,0,.25)}.ara-refund-choice-dialog h2{margin:0 48px 7px 0;font:700 30px var(--ara-display-font)}.ara-refund-choice-dialog>p{margin:0;color:#7b685d;line-height:1.5}.ara-refund-choice-dialog>div{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:22px}.ara-refund-choice-dialog>div>button{display:flex;align-items:flex-start;gap:11px;padding:17px;border:1px solid #dec7a9;border-radius:15px;background:#fffaf3;color:#432c21;text-align:left}.ara-refund-choice-dialog>div span{display:grid;gap:4px}.ara-refund-choice-dialog>div small{color:#806d61;line-height:1.4}
+.ara-refund-choice-dialog>.ara-refund-saved-choices{display:block;margin-top:20px;padding:14px;border:2px solid #d4ad61;border-radius:16px;background:#fff4d9}
+.ara-refund-choice-dialog>.ara-refund-saved-choices::before{display:block;margin:0 4px 9px;color:#8b6525;content:"TÀI KHOẢN ĐÃ LƯU";font-size:11px;font-weight:900;letter-spacing:.08em}
+.ara-refund-choice-dialog>.ara-refund-saved-choices>button{width:100%;padding:12px;border:0;background:transparent;color:#432c21}
+.ara-refund-choice-dialog>.ara-refund-saved-choices>button:hover{background:rgba(255,255,255,.65);box-shadow:none;transform:none}
+.ara-refund-choice-dialog>.ara-refund-saved-choices+div{position:relative;padding-top:20px}
+.ara-refund-choice-dialog>.ara-refund-saved-choices+div::before,.ara-refund-choice-dialog>p+div:not(.ara-refund-saved-choices)::before{grid-column:1/-1;color:#8b7769;content:"THÊM TÀI KHOẢN MỚI";font-size:11px;font-weight:900;letter-spacing:.08em}
+.ara-refund-choice-dialog>.ara-refund-saved-choices+div::after{position:absolute;top:0;right:0;left:0;border-top:1px solid #ead9c3;content:""}
+.ara-refund-choice-dialog>p+div:not(.ara-refund-saved-choices){margin-top:22px}
+.ara-refund-choice-dialog>p+div:not(.ara-refund-saved-choices)>button{background:#fffdfa}
+.ara-refund-choice-dialog>p+div:not(.ara-refund-saved-choices)>button:hover{background:#fff7e8}
 @media(max-width:650px){.ara-customer-payment-card{padding:18px;border-radius:17px}.ara-customer-payment-card__header{display:grid;gap:12px}.ara-customer-payment-status{justify-self:start}.ara-refund-destination-summary,.ara-refund-destination-warning{align-items:flex-start;flex-wrap:wrap}.ara-refund-destination-summary>button,.ara-refund-destination-warning>button{width:100%}.ara-customer-payment-actions{grid-template-columns:1fr}.ara-customer-payment-actions button{width:100%}.ara-refund-choice-dialog{padding:24px 18px}.ara-refund-choice-dialog>div{grid-template-columns:1fr}}
+
+@media(max-width:650px){.ara-order-status-group{justify-items:start}}
 
 /* Refund destination: customer-facing fields only, bounded modal and accessible controls. */
 .ara-refund-destination-dialog{width:min(760px,calc(100% - 28px));max-height:calc(100dvh - 32px);overflow:auto;overscroll-behavior:contain}

@@ -5,8 +5,7 @@ import { BotSessionContext } from "../models/BotSessionContext.js";
 import { RentalOrder } from "../models/RentalOrder.js";
 import { quote as quoteShipping } from "./shipping.service.js";
 import { quoteAndCheck } from "./rentalAvailability.service.js";
-import { storeBusinessStatus } from "../config/store.config.js";
-import { saveMessage, requestStaff } from "./chat.service.js";
+import { saveMessage, requestStaff, supportHandoffMessage } from "./chat.service.js";
 import { ApiError } from "../utils/ApiError.js";
 
 export const BOT_INTENTS = [
@@ -73,8 +72,8 @@ export async function createBotQuote(user, body) {
 
 export async function respondToCustomer(conversation, customerMessage, user = null, guestSessionId = "") {
   if (String(process.env.CHAT_BOT_ENABLED || "true").toLowerCase() === "false") {
-    await requestStaff(conversation._id,user,guestSessionId,customerMessage.content);
-    return saveMessage(conversation,{clientMessageId:`bot-disabled:${customerMessage._id}`,senderType:"system",type:"system_event",content:"Tin nhắn đã được chuyển đến nhân viên ARA."});
+    const handoff = await requestStaff(conversation._id,user,guestSessionId,customerMessage.content);
+    return saveMessage(conversation,{clientMessageId:`bot-disabled:${customerMessage._id}`,senderType:"bot",type:"text",content:supportHandoffMessage(handoff.business)});
   }
   if (!conversation.botEnabled || conversation.status === "admin_active") return null;
   const classification = classifyIntent(customerMessage.content);
@@ -85,13 +84,10 @@ export async function respondToCustomer(conversation, customerMessage, user = nu
   );
   let response;
   if (["talk_to_staff","cancel_order_help","late_return_help","damage_help"].includes(classification.intent)) {
-    await requestStaff(conversation._id,user,guestSessionId,customerMessage.content);
-    const business = storeBusinessStatus();
+    const handoff = await requestStaff(conversation._id,user,guestSessionId,customerMessage.content);
     response = {
       type:"text",
-      content:business.isOpen
-        ?"Mình đã chuyển cuộc trò chuyện cho nhân viên ARA. Bạn chờ một chút nhé."
-        :`Hiện cửa hàng đang ngoài giờ hỗ trợ trực tiếp (${business.openingTime}–${business.closingTime}). Tin nhắn đã được ghi nhận và nhân viên sẽ phản hồi khi cửa hàng hoạt động.`
+      content:supportHandoffMessage(handoff.business)
     };
   } else if (classification.intent === "find_costume") {
     const products = await productCards(customerMessage.content);

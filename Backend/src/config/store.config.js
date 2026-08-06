@@ -3,6 +3,10 @@ const positiveMinutes = (name, fallback) => {
   const value = Number(process.env[name]);
   return Number.isFinite(value) && value > 0 ? value : fallback;
 };
+const boundedMilliseconds = (name, fallback, minimum) => {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) && value >= minimum ? value : fallback;
+};
 
 export const storeConfig = {
   timezone: text("STORE_TIMEZONE", "Asia/Ho_Chi_Minh"),
@@ -26,6 +30,7 @@ export const storeConfig = {
   walkInHoldMinutes: positiveMinutes("WALK_IN_HOLD_MINUTES", 5),
   transportCapacityPerSlot: positiveMinutes("TRANSPORT_CAPACITY_PER_SLOT", 3),
   pendingPaymentMinutes: positiveMinutes("PENDING_PAYMENT_MINUTES", 30),
+  expirationIntervalMs: boundedMilliseconds("RENTAL_EXPIRATION_INTERVAL_MS", 60_000, 60_000),
   enablePayos: text("PAYOS_ENABLED", "false").toLowerCase() === "true",
   enableManualBankTransfer: text("ENABLE_MANUAL_BANK_TRANSFER", "true").toLowerCase() !== "false"
 };

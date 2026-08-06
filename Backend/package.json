@@ -29,6 +29,10 @@
     "seed:costume-taxonomy": "node scripts/seed-style-occasion.js",
     "seed:chat-knowledge": "node scripts/seed-chat-knowledge.js",
     "seed:test-costumes": "node scripts/seed-test-costumes.js",
+    "seed:late-payment-recovery": "node scripts/seed-late-payment-recovery-fixtures.js",
+    "seed:late-payment-recovery:cleanup": "node scripts/seed-late-payment-recovery-fixtures.js --cleanup",
+    "cleanup:late-payment-recovery": "node scripts/seed-late-payment-recovery-fixtures.js --cleanup",
+    "repair:late-payment-refunds": "node scripts/repair-late-payment-refund-status.js",
     "migrate:costume-classifications": "node scripts/migrate-costume-classifications.js",
     "payos:webhook": "node src/scripts/registerPayosWebhook.js"
   },
