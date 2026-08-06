@@ -89,6 +89,7 @@ export function AdminRoutes({ toast, notify }) {
       <Route path="/inspections/:orderId" element={<ProtectedPage toast={toast} permission={P.INSPECTIONS_CREATE}><AdminReturnInspectionDetailPage notify={notify} /></ProtectedPage>} />
       <Route path="/notifications" element={<ProtectedPage toast={toast} permission={P.NOTIFICATIONS_SEND_ORDER}><AdminNotificationPage notify={notify} /></ProtectedPage>} />
       <Route path="/contact-requests" element={<ProtectedPage toast={toast} permission={P.CUSTOMERS_VIEW_OPERATIONAL}><AdminContactRequestPage notify={notify} /></ProtectedPage>} />
+      <Route path="/contact-requests/:conversationId" element={<ProtectedPage toast={toast} permission={P.CUSTOMERS_VIEW_OPERATIONAL}><AdminContactRequestPage notify={notify} /></ProtectedPage>} />
       <Route path="/deposit-refunds" element={<ProtectedPage toast={toast} permission={P.REFUNDS_VIEW_SENSITIVE}><AdminFulfillmentRefundPage notify={notify} /></ProtectedPage>} />
       <Route path="/deposit-refunds/:id" element={<ProtectedPage toast={toast} permission={P.REFUNDS_VIEW_SENSITIVE}><AdminRefundDetailPage notify={notify} /></ProtectedPage>} />
       <Route path="/refund-transactions" element={<ProtectedPage toast={toast} permission={P.REFUNDS_VIEW_STATUS}><AdminRefundTransactionPage notify={notify} /></ProtectedPage>} />

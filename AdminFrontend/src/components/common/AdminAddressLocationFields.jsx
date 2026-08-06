@@ -1,7 +1,10 @@
 import React, { useEffect, useState } from "react";
+import { ModalCombobox } from "./AdminControls.jsx";
 import { listCommunes, listDistricts, listProvinces } from "../../services/locationService.js";
 
 const itemsFrom = (result) => result.data?.items || [];
+const optionLabel = (item) => item.displayName || item.name;
+const optionsFrom = (items) => items.map((item) => [String(item.code), optionLabel(item)]);
 
 export function AdminAddressLocationFields({ provinceCode, districtCode, communeCode, allowedProvinceCodes = [], onChange }) {
   const [provinces, setProvinces] = useState([]);
@@ -64,39 +67,25 @@ export function AdminAddressLocationFields({ provinceCode, districtCode, commune
     return () => { active = false; };
   }, [provinceCode, districtCode]);
 
-  const optionLabel = (item) => item.displayName || item.name;
+  const selectProvince = (value) => {
+    const selected = provinces.find((item) => String(item.code) === String(value));
+    onChange({ provinceCode: value, provinceName: selected ? optionLabel(selected) : "", districtCode: "", districtName: "", communeCode: "", communeName: "", wardName: "" });
+  };
+
+  const selectDistrict = (value) => {
+    const selected = districts.find((item) => String(item.code) === String(value));
+    onChange({ districtCode: value, districtName: selected ? optionLabel(selected) : "", communeCode: "", communeName: "", wardName: "" });
+  };
+
+  const selectCommune = (value) => {
+    const selected = communes.find((item) => String(item.code) === String(value));
+    onChange({ communeCode: value, communeName: selected ? optionLabel(selected) : "", wardName: selected ? optionLabel(selected) : "" });
+  };
 
   return <>
-    <label>Tỉnh/thành phố
-      <select required value={provinceCode || ""} onChange={(event) => {
-        const value = event.target.value;
-        const selected = provinces.find((item) => String(item.code) === value);
-        onChange({ provinceCode: value, provinceName: selected ? optionLabel(selected) : "", districtCode: "", districtName: "", communeCode: "", communeName: "", wardName: "" });
-      }}>
-        <option value="">Chọn tỉnh/thành phố</option>
-        {provinces.map((item) => <option key={item.code} value={item.code}>{optionLabel(item)}</option>)}
-      </select>
-    </label>
-    <label>Quận/huyện
-      <select required value={districtCode || ""} disabled={!provinceCode} onChange={(event) => {
-        const value = event.target.value;
-        const selected = districts.find((item) => String(item.code) === value);
-        onChange({ districtCode: value, districtName: selected ? optionLabel(selected) : "", communeCode: "", communeName: "", wardName: "" });
-      }}>
-        <option value="">{provinceCode ? "Chọn quận/huyện" : "Chọn tỉnh/thành phố trước"}</option>
-        {districts.map((item) => <option key={item.code} value={item.code}>{optionLabel(item)}</option>)}
-      </select>
-    </label>
-    <label>Phường/xã
-      <select required value={communeCode || ""} disabled={!districtCode} onChange={(event) => {
-        const value = event.target.value;
-        const selected = communes.find((item) => String(item.code) === value);
-        onChange({ communeCode: value, communeName: selected ? optionLabel(selected) : "", wardName: selected ? optionLabel(selected) : "" });
-      }}>
-        <option value="">{districtCode ? "Chọn phường/xã" : "Chọn quận/huyện trước"}</option>
-        {communes.map((item) => <option key={item.code} value={item.code}>{optionLabel(item)}</option>)}
-      </select>
-    </label>
+    <ModalCombobox label="Tỉnh/thành phố" value={provinceCode || ""} onChange={selectProvince} placeholder="Chọn tỉnh/thành phố" searchPlaceholder="Tìm tỉnh/thành phố..." options={optionsFrom(provinces)} />
+    <ModalCombobox label="Quận/huyện" value={districtCode || ""} onChange={selectDistrict} placeholder={provinceCode ? "Chọn quận/huyện" : "Chọn tỉnh/thành phố trước"} searchPlaceholder="Tìm quận/huyện..." options={optionsFrom(districts)} disabled={!provinceCode} />
+    <ModalCombobox label="Phường/xã" value={communeCode || ""} onChange={selectCommune} placeholder={districtCode ? "Chọn phường/xã" : "Chọn quận/huyện trước"} searchPlaceholder="Tìm phường/xã..." options={optionsFrom(communes)} disabled={!districtCode} />
     {error && <small>{error}</small>}
   </>;
 }

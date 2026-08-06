@@ -47,7 +47,9 @@ export function AdminPaymentDetailPage({ notify }) {
 
   const payment = state.payment;
   const order = payment?.orderId || payment?.order || {};
-  const customer = payment?.customerId || payment?.customer || order.customerId || {};
+  const customer = [payment?.customerId, payment?.customer, order.customerId]
+    .find((value) => value && typeof value === "object") || {};
+  const customerName = customer.name || customer.fullName || order.customerInfo?.fullName || "Chưa cập nhật";
   const canReview = can(P.PAYMENTS_CONFIRM_BANK_TRANSFER) && payment?.status === "awaiting_confirmation";
   const recovery = payment?.latePaymentRecovery;
   const lateRecoveryEligibility = payment?.latePaymentRecoveryEligibility || {};
@@ -66,7 +68,7 @@ export function AdminPaymentDetailPage({ notify }) {
         <div><dt>Phương thức</dt><dd>{methodLabels[payment.method] || payment.method}</dd></div>
         <div><dt>Mã đơn thuê</dt><dd>{order.orderCode || String(order._id || "—")}</dd></div>
         <div><dt>Nội dung chuyển khoản</dt><dd className="admin-payment-reference-value">{payment.paymentReference || "—"}</dd></div>
-        <div><dt>Khách hàng</dt><dd>{customer.name || customer.email || customer.phone || "—"}</dd></div>
+        <div><dt>Khách hàng</dt><dd>{customerName}</dd></div>
         <div><dt>Provider</dt><dd>{payment.provider || "manual"}</dd></div>
         <div><dt>Ngày tạo</dt><dd>{formatDateTime(payment.createdAt)}</dd></div>
         <div><dt>Ngày xác nhận</dt><dd>{formatDateTime(payment.confirmedAt || payment.paidAt)}</dd></div>
