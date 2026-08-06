@@ -5787,10 +5787,12 @@ html,body,#root,button,input,textarea,select,option,table,th,td,h1,h2,h3,h4,h5,h
 
 @media (max-width: 768px) {
   .admin-main-content > .admin-chat-page {
-    display: grid;
+    display: flex;
+    flex-direction: column;
     width: 100%;
     max-width: none;
     min-width: 0;
+    min-height: calc(100dvh - 68px);
     margin: 0;
     padding: 0 0 24px;
     gap: 8px;
@@ -5848,7 +5850,9 @@ html,body,#root,button,input,textarea,select,option,table,th,td,h1,h2,h3,h4,h5,h
   .admin-chat-tab-label-mobile { display: inline; }
 
   .admin-chat-shell {
-    display: block;
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
     width: 100%;
     height: auto;
     min-height: 0;
@@ -5858,17 +5862,20 @@ html,body,#root,button,input,textarea,select,option,table,th,td,h1,h2,h3,h4,h5,h
     border-left: 0;
     box-shadow: none;
   }
-  .admin-chat-shell > * { min-width: 0; min-height: 0; }
+  .admin-chat-shell > * { width: 100%; min-width: 0; min-height: 0; height: auto; }
   .admin-chat-shell.list-only .admin-chat-thread,
   .admin-chat-shell.list-only .admin-chat-context,
   .admin-chat-shell.has-selection .admin-chat-list,
   .admin-chat-shell.has-selection .admin-chat-context { display: none; }
   .admin-chat-list {
     display: flex;
+    flex: 1 1 auto;
     width: 100%;
     height: auto;
+    max-height: none;
     min-width: 0;
-    overflow: visible;
+    overflow-x: hidden;
+    overflow-y: auto;
     border-right: 0;
     border-bottom: 0;
   }
@@ -5876,7 +5883,7 @@ html,body,#root,button,input,textarea,select,option,table,th,td,h1,h2,h3,h4,h5,h
   .admin-chat-search {
     width: 100%;
     min-width: 0;
-    height: 50px;
+    height: auto;
     min-height: 50px;
     flex: 0 0 auto;
     margin: 0 0 12px;
@@ -5897,13 +5904,15 @@ html,body,#root,button,input,textarea,select,option,table,th,td,h1,h2,h3,h4,h5,h
     align-items: center;
     width: 100%;
     min-width: 0;
-    min-height: 44px;
+    height: auto;
+    min-height: 0;
     flex: 0 0 auto;
     gap: 8px;
+    position: static;
     margin: 0;
     padding: 0 0 10px;
     overflow-x: auto;
-    overflow-y: hidden;
+    overflow-y: visible;
     scrollbar-width: thin;
     scrollbar-color: #c8a96a transparent;
     white-space: nowrap;
@@ -5927,6 +5936,7 @@ html,body,#root,button,input,textarea,select,option,table,th,td,h1,h2,h3,h4,h5,h
     width: 100%;
     min-width: 0;
     min-height: 0;
+    height: auto;
     flex: 0 0 auto;
     overflow: visible;
   }
@@ -5936,23 +5946,30 @@ html,body,#root,button,input,textarea,select,option,table,th,td,h1,h2,h3,h4,h5,h
     min-height: 80px;
     height: auto;
     grid-template-columns: 44px minmax(0, 1fr) auto;
+    align-items: start;
     gap: 11px;
     padding: 10px 0;
-    overflow: hidden;
+    overflow: visible;
   }
   .admin-chat-conversations > button.active { padding-left: 9px; border-left: 3px solid #cba967; background: #fff5e5; }
   .admin-chat-conversations > button > .admin-chat-avatar { width: 44px; height: 44px; font-size: 18px; }
-  .admin-chat-conversations > button > div,
+  .admin-chat-conversations > button > div {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    overflow: visible;
+  }
   .admin-chat-conversations strong,
   .admin-chat-conversations p,
   .admin-chat-conversations small { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .admin-chat-conversations strong { font-size: 14px; }
-  .admin-chat-conversations p { margin: 4px 0 3px; font-size: 12px; }
-  .admin-chat-conversations small { font-size: 10px; }
+  .admin-chat-conversations strong { font-size: 14px; line-height: 1.25; }
+  .admin-chat-conversations p { margin: 0; font-size: 12px; line-height: 1.35; }
+  .admin-chat-conversations small { position: static; margin: 0; font-size: 10px; line-height: 1.4; }
   .admin-chat-conversations b { min-width: 22px; height: 22px; font-size: 10px; }
   .admin-chat-list-empty { min-height: 180px; padding: 24px; }
 
   .admin-chat-page.is-detail-view {
+    display: block;
     width: calc(100% + 24px);
     height: calc(100dvh - 68px);
     min-height: 0;
