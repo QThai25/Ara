@@ -1,4 +1,20 @@
 User-agent: *
 Allow: /
 
+Disallow: /api/
+Disallow: /admin
+Disallow: /account
+Disallow: /login
+Disallow: /register
+Disallow: /forgot-password
+Disallow: /rental-cart
+Disallow: /cart
+Disallow: /wishlist
+Disallow: /offers
+Disallow: /my-rentals
+Disallow: /my-payments
+Disallow: /notifications
+Disallow: /payment/
+Disallow: /rental-orders/
+
 Sitemap: https://aradress.com/sitemap.xml

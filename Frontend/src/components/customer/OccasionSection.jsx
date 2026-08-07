@@ -126,6 +126,7 @@ export function OccasionSection() {
   const handlePointerDown = (event) => {
     if (
       (event.pointerType === "mouse" && event.button !== 0) ||
+      (event.pointerType !== "mouse" && event.pointerType !== "touch" && event.pointerType !== "pen") ||
       event.target?.closest?.("a, button")
     ) {
       return;

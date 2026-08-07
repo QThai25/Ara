@@ -1,14 +1,14 @@
 import React from "react";
-import { paths, views } from "../../routes/views.js";
+import { Link } from "react-router-dom";
 
 export function Breadcrumb({ current, setView }) {
   return (
-    <div className="breadcrumb-bar">
+    <nav className="breadcrumb-bar" aria-label="Breadcrumb">
       <div>
-        <button onClick={() => setView(views.home, paths.home)}>Trang chủ</button>
+        <Link to="/">Trang chủ</Link>
         <span>/</span>
         <strong>{current}</strong>
       </div>
-    </div>
+    </nav>
   );
 }

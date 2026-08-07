@@ -1,9 +1,11 @@
 import React from "react";
 import { ArrowUpRight, Heart } from "lucide-react";
+import { Link } from "react-router-dom";
 import { money } from "../../utils/format.js";
 import { fallbackImages, memberPrice, productMaterial } from "../../utils/catalogData.js";
 import { StatusBadge } from "../common/StatusBadge.jsx";
 import { CostumeImageCarousel } from "./CostumeImageCarousel.jsx";
+import { paths } from "../../routes/views.js";
 
 export function ProductCard({
   product,
@@ -34,6 +36,7 @@ export function ProductCard({
   const displaySize = product.size || "Free size";
   const displayMaterial = material || "Chất liệu cao cấp";
   const displayColor = product.color || "Tông màu sang trọng";
+  const detailPath = paths.detail(product.id || product._id);
 
   const open = () => {
     onOpenFeedback?.(product);
@@ -88,14 +91,14 @@ export function ProductCard({
           />
         </button>
 
-        <button
-          type="button"
+        <Link
           className="mei-product-card-quick-view"
-          onClick={open}
+          to={detailPath}
+          onClick={() => onOpenFeedback?.(product)}
         >
           Xem thiết kế
           <ArrowUpRight size={15} strokeWidth={1.7} />
-        </button>
+        </Link>
       </div>
 
 
@@ -112,13 +115,13 @@ export function ProductCard({
           <small>{displaySize}</small>
         </div>
 
-        <button
-          type="button"
+        <Link
           className="mei-product-card-title"
-          onClick={open}
+          to={detailPath}
+          onClick={() => onOpenFeedback?.(product)}
         >
           {displayName}
-        </button>
+        </Link>
 
         <div className="mei-product-card-meta">
           <span>{displayMaterial}</span>
@@ -164,15 +167,15 @@ export function ProductCard({
             <strong>{money(estimatedRetailPrice)}</strong>
           </div>
 
-          <button
-            type="button"
+          <Link
             className="card-link"
-            onClick={open}
+            to={detailPath}
+            onClick={() => onOpenFeedback?.(product)}
             aria-label={`Xem chi tiết ${displayName}`}
           >
             Chi tiết
             <ArrowUpRight size={14} strokeWidth={1.8} />
-          </button>
+          </Link>
         </div>
       </div>
     </article>

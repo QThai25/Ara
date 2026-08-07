@@ -84,7 +84,7 @@ export function HeroSection({
       ? [...banners].sort((left, right) => Number(Boolean(right.isPrimary)) - Number(Boolean(left.isPrimary)) || Number(left.sortOrder || 0) - Number(right.sortOrder || 0))
       : [banner].filter(Boolean);
 
-    const baseSlides = activeBanners;
+    const baseSlides = activeBanners.length ? activeBanners : [DEFAULT_BANNER];
 
     return baseSlides.map((item, index) => {
       const bannerImages = normalizeImageList(item.images, item.image, 6);
@@ -331,7 +331,7 @@ export function HeroSection({
                       Ara dress collection
                     </span>
 
-                    <h1>
+                    <h2>
                       <span>
                         {titleParts.first}
                       </span>
@@ -341,7 +341,7 @@ export function HeroSection({
                           {titleParts.highlight}
                         </em>
                       )}
-                    </h1>
+                    </h2>
 
                     <p>
                       {slide.subtitle ||
@@ -429,6 +429,9 @@ export function HeroSection({
                               item.name ||
                               slide.title
                             }
+                            width="1600"
+                            height="900"
+                            fetchpriority={imageIndex === 0 ? "high" : "auto"}
                             draggable="false"
                             loading={imageIndex === 0 ? "eager" : "lazy"}
                             onDragStart={(event) =>

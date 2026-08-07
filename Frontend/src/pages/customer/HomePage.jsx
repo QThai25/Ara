@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { BenefitSection } from "../../components/customer/BenefitSection.jsx";
 import { HeroSection, HeroSectionSkeleton } from "../../components/customer/HeroSection.jsx";
 import { OccasionSection } from "../../components/customer/OccasionSection.jsx";
@@ -18,11 +19,17 @@ export function HomePage({ setView, user, notify }) {
   useEffect(() => {
     let mounted = true;
 
-    getActiveBanners("hero").then((items) => {
-      if (!mounted) return;
-      setBanners(items);
-      setBannersLoading(false);
-    });
+    getActiveBanners("hero")
+      .then((items) => {
+        if (!mounted) return;
+        setBanners(items);
+      })
+      .catch(() => {
+        if (mounted) setBanners([]);
+      })
+      .finally(() => {
+        if (mounted) setBannersLoading(false);
+      });
 
     return () => {
       mounted = false;
@@ -48,6 +55,20 @@ export function HomePage({ setView, user, notify }) {
   return (
     <>
       {bannersLoading ? <HeroSectionSkeleton /> : <HeroSection products={products} banners={banners} setView={setView} />}
+      {!bannersLoading && !loading && (
+        <section className="ara-home-seo-intro" aria-labelledby="home-seo-title">
+          <div className="ara-home-seo-intro__content">
+            <span className="ara-home-seo-intro__eyebrow">ARA DRESS · THUÊ TRANG PHỤC</span>
+            <h1 id="home-seo-title">Cho thuê trang phục &amp; váy thiết kế</h1>
+            <p>
+              Từ váy đi tiệc đến những thiết kế cho buổi chụp ảnh hay dịp đặc biệt, Ara Dress mang đến lựa chọn trang phục thuê phù hợp với từng phong cách.
+            </p>
+            <Link className="ara-home-seo-intro__link" to={paths.catalog}>
+              Khám phá bộ sưu tập
+            </Link>
+          </div>
+        </section>
+      )}
       <BenefitSection user={user} notify={notify} />
       <OccasionSection />
       <StyleSection />

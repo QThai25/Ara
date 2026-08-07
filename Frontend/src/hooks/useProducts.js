@@ -12,7 +12,7 @@ export function useProducts(query = "") {
     requestRef.current = requestId;
     const controller = new AbortController();
     const load = async () => {
-      setLoading((current) => (products.length ? current : true));
+      setLoading(true);
       setError("");
       try {
         const items = await getCostumes(query, { signal: controller.signal });

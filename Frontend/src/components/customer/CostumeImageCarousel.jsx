@@ -321,11 +321,7 @@ export function CostumeImageCarousel({
               width={variant === "detail" ? 1200 : 720}
               height={variant === "detail" ? 1500 : 900}
               fetchpriority={variant === "detail" && imageIndex === 0 ? "high" : "auto"}
-              loading={
-                imageIndex === 0
-                  ? "eager"
-                  : "lazy"
-              }
+              loading={variant === "detail" && imageIndex === 0 ? "eager" : "lazy"}
               draggable={false}
               onDragStart={(event) =>
                 event.preventDefault()

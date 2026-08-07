@@ -92,7 +92,7 @@ export function Footer() {
               <Link to="/about">Giới thiệu</Link>
               <Link to="/costumes">Bộ sưu tập</Link>
               <Link to="/brands">Thương hiệu</Link>
-              <Link to="/register">Chính sách thuê đồ</Link>
+              <Link to="/rental-policy">Chính sách thuê đồ</Link>
             </div>
           </nav>
 

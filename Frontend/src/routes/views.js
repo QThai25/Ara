@@ -62,6 +62,7 @@ export const paths = {
   orderDetail: (id) => `/my-rentals/${id}`,
   payments: "/my-payments",
   paymentDetail: (id) => `/my-payments/${id}`,
+  category: (slug) => `/collections/${encodeURIComponent(slug)}`,
   detail: (id) => `/costumes/${id}`
   ,rentalOrderSuccess: code => `/rental-orders/success/${encodeURIComponent(code)}`
   ,rentalOrderLookup: "/rental-orders/lookup"

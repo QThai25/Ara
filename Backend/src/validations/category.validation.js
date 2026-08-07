@@ -15,6 +15,9 @@ export const createCategoryValidation = [
   body("name").notEmpty().withMessage("Vui lòng nhập tên danh mục."),
   body("slug").optional().isString().trim(),
   body("description").optional().isString().trim(),
+  body("seoTitle").optional().isString().trim().isLength({ max: 70 }),
+  body("seoDescription").optional().isString().trim().isLength({ max: 160 }),
+  body("seoIntro").optional().isString().trim().isLength({ max: 500 }),
   body("icon").optional().isString().trim(),
   ...defaultOptionValidations,
   body("status").optional().isIn(["active", "inactive", "hidden"]).withMessage("Trạng thái danh mục không hợp lệ.")
@@ -24,6 +27,9 @@ export const updateCategoryValidation = [
   body("name").optional().notEmpty().withMessage("Tên danh mục không được để trống."),
   body("slug").optional().isString().trim(),
   body("description").optional().isString().trim(),
+  body("seoTitle").optional().isString().trim().isLength({ max: 70 }),
+  body("seoDescription").optional().isString().trim().isLength({ max: 160 }),
+  body("seoIntro").optional().isString().trim().isLength({ max: 500 }),
   body("icon").optional().isString().trim(),
   ...defaultOptionValidations,
   body("status").optional().isIn(["active", "inactive", "hidden"]).withMessage("Trạng thái danh mục không hợp lệ.")

@@ -1714,6 +1714,8 @@ export function CostumeFormModal({
   const empty = {
     name: "",
     description: "",
+    seoTitle: "",
+    seoDescription: "",
     brandSlug: "",
     categoryId: "",
     size: "M",
@@ -1920,8 +1922,30 @@ export function CostumeFormModal({
               onChange={(event) =>
                 update("description", event.target.value)
               }
-            />
-          </label>
+              />
+            </label>
+
+          <fieldset className="form-section">
+            <legend>SEO (Tùy chọn)</legend>
+            <label>
+              <span>SEO title</span>
+              <input
+                maxLength={70}
+                value={form.seoTitle}
+                onChange={(event) => update("seoTitle", event.target.value)}
+                placeholder="Mặc định dùng: Thuê + tên trang phục"
+              />
+            </label>
+            <label>
+              <span>Meta description</span>
+              <textarea
+                maxLength={160}
+                value={form.seoDescription}
+                onChange={(event) => update("seoDescription", event.target.value)}
+                placeholder="Để trống để dùng mô tả trang phục."
+              />
+            </label>
+          </fieldset>
         </fieldset>
 
         <fieldset className="form-section">
@@ -2217,12 +2241,12 @@ function TaxonomyManager({ title, noun, items, notify, reload, createItem, updat
           )}
         />
       </div>
-      {modal && <TaxonomyForm title={modal.item ? `Sửa ${noun}` : `Thêm ${noun}`} initial={modal.item} showIcon={showIcon} defaultOptions={defaultOptions} onClose={() => setModal(null)} onSave={save} />}
+      {modal && <TaxonomyForm title={modal.item ? `Sửa ${noun}` : `Thêm ${noun}`} initial={modal.item} showIcon={showIcon} defaultOptions={defaultOptions} seoEnabled={noun === "danh mục"} onClose={() => setModal(null)} onSave={save} />}
     </>
   );
 }
 
-function TaxonomyForm({ title, initial, showIcon, defaultOptions, onClose, onSave }) {
+function TaxonomyForm({ title, initial, showIcon, defaultOptions, seoEnabled = false, onClose, onSave }) {
   const initialDefaultIds = (type) => {
     const values = asArray(initial?.[`default${type}Ids`]).map((item) => itemId(item) || item).filter(Boolean);
     if (values.length) return values;
@@ -2231,7 +2255,7 @@ function TaxonomyForm({ title, initial, showIcon, defaultOptions, onClose, onSav
     const match = options.find((item) => item.slug === legacySlug);
     return match ? [itemId(match)] : [];
   };
-  const [form, setForm] = useState({ name: initial?.name || "", slug: initial?.slug || "", description: initial?.description || "", icon: initial?.icon || "", status: initial?.status || "active", defaultOccasionIds: initialDefaultIds("Occasion"), defaultStyleIds: initialDefaultIds("Style") });
+  const [form, setForm] = useState({ name: initial?.name || "", slug: initial?.slug || "", description: initial?.description || "", seoTitle: initial?.seoTitle || "", seoDescription: initial?.seoDescription || "", seoIntro: initial?.seoIntro || "", icon: initial?.icon || "", status: initial?.status || "active", defaultOccasionIds: initialDefaultIds("Occasion"), defaultStyleIds: initialDefaultIds("Style") });
   const update = (field, value) => setForm((current) => ({ ...current, [field]: value }));
   return (
     <AdminModal title={title} onClose={onClose} className="taxonomy-form-modal">
@@ -2245,6 +2269,12 @@ function TaxonomyForm({ title, initial, showIcon, defaultOptions, onClose, onSav
           <ModalSelect label="Trạng thái" value={form.status} onChange={(value) => update("status", value)} options={[["active", "Đang hiển thị"], ["inactive", "Đã ẩn"]]} />
         </div>
         <label>Mô tả<textarea value={form.description} onChange={(e) => update("description", e.target.value)} /></label>
+        {seoEnabled && <fieldset className="form-section">
+          <legend>SEO (Tùy chọn)</legend>
+          <label>SEO title<input maxLength={70} value={form.seoTitle} onChange={(e) => update("seoTitle", e.target.value)} placeholder="Mặc định dùng: Thuê + tên danh mục" /></label>
+          <label>Meta description<textarea maxLength={160} value={form.seoDescription} onChange={(e) => update("seoDescription", e.target.value)} placeholder="Để trống để dùng mô tả danh mục." /></label>
+          <label>SEO intro<textarea maxLength={500} value={form.seoIntro} onChange={(e) => update("seoIntro", e.target.value)} placeholder="Đoạn giới thiệu hiển thị trên trang category." /></label>
+        </fieldset>}
         <div className="modal-actions"><AdminButton type="button" onClick={onClose}>Hủy</AdminButton><AdminButton type="submit" variant="primary">Lưu</AdminButton></div>
       </form>
     </AdminModal>
