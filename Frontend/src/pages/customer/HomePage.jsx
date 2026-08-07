@@ -55,6 +55,7 @@ export function HomePage({ setView, user, notify }) {
   return (
     <>
       {bannersLoading ? <HeroSectionSkeleton /> : <HeroSection products={products} banners={banners} setView={setView} />}
+      <ProductSection products={products} loading={loading} error={error} onOpen={openProduct} onWishlist={toggle} isWishlisted={(id) => isWishlisted(id, user?.id || user?._id)} />
       {!bannersLoading && !loading && (
         <section className="ara-home-seo-intro" aria-labelledby="home-seo-title">
           <div className="ara-home-seo-intro__content">
@@ -72,7 +73,6 @@ export function HomePage({ setView, user, notify }) {
       <BenefitSection user={user} notify={notify} />
       <OccasionSection />
       <StyleSection />
-      <ProductSection products={products} loading={loading} error={error} onOpen={openProduct} onWishlist={toggle} isWishlisted={(id) => isWishlisted(id, user?.id || user?._id)} />
     </>
   );
 }

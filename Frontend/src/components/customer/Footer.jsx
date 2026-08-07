@@ -1,14 +1,61 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   ArrowUpRight,
   Clock3,
+  ChevronDown,
   Facebook,
   Instagram,
   MapPin,
   Phone,
   Sparkles
 } from "lucide-react";
+
+function FooterLinkColumn({ id, label, children }) {
+  const [isOpen, setIsOpen] = useState(true);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(max-width: 900px)");
+    setIsOpen(!mediaQuery.matches);
+    const handleViewportChange = (event) => {
+      setIsOpen(!event.matches);
+    };
+
+    mediaQuery.addEventListener?.("change", handleViewportChange);
+
+    return () => {
+      mediaQuery.removeEventListener?.("change", handleViewportChange);
+    };
+  }, []);
+
+  return (
+    <nav
+      className={`mei-footer-column mei-footer-collapsible ${isOpen ? "is-open" : ""}`}
+      aria-label={label}
+    >
+      <h3>
+        <button
+          className="mei-footer-column__toggle"
+          type="button"
+          aria-expanded={isOpen}
+          aria-controls={id}
+          onClick={() => setIsOpen((current) => !current)}
+        >
+          <span>{label}</span>
+          <ChevronDown size={18} aria-hidden="true" />
+        </button>
+      </h3>
+
+      <div
+        className="mei-footer-column__collapse"
+        id={id}
+        aria-hidden={!isOpen}
+      >
+        <div className="mei-footer-links">{children}</div>
+      </div>
+    </nav>
+  );
+}
 
 export function Footer() {
   const currentYear = new Date().getFullYear();
@@ -85,28 +132,20 @@ export function Footer() {
             </div>
           </div>
 
-          <nav className="mei-footer-column" aria-label="Về ARA">
-            <h3>Về ARA</h3>
+          <FooterLinkColumn id="footer-links-about" label="Về ARA">
+            <Link to="/about">Giới thiệu</Link>
+            <Link to="/costumes">Bộ sưu tập</Link>
+            <Link to="/brands">Thương hiệu</Link>
+            <Link to="/rental-policy">Chính sách thuê đồ</Link>
+          </FooterLinkColumn>
 
-            <div className="mei-footer-links">
-              <Link to="/about">Giới thiệu</Link>
-              <Link to="/costumes">Bộ sưu tập</Link>
-              <Link to="/brands">Thương hiệu</Link>
-              <Link to="/rental-policy">Chính sách thuê đồ</Link>
-            </div>
-          </nav>
-
-          <nav className="mei-footer-column" aria-label="Hỗ trợ khách hàng">
-            <h3>Hỗ trợ khách hàng</h3>
-
-            <div className="mei-footer-links">
-              <Link to="/rental-policy">Chính sách thuê đồ</Link>
-              <Link to="/rental-policy?section=01">Chính sách đặt cọc</Link>
-              <Link to="/rental-policy?section=07">Chính sách hoàn cọc</Link>
-              <Link to="/rental-orders/lookup">Tra cứu đơn thuê</Link>
-              <Link to="/contact">Câu hỏi thường gặp</Link>
-            </div>
-          </nav>
+          <FooterLinkColumn id="footer-links-support" label="Hỗ trợ khách hàng">
+            <Link to="/rental-policy">Chính sách thuê đồ</Link>
+            <Link to="/rental-policy?section=01">Chính sách đặt cọc</Link>
+            <Link to="/rental-policy?section=07">Chính sách hoàn cọc</Link>
+            <Link to="/rental-orders/lookup">Tra cứu đơn thuê</Link>
+            <Link to="/contact">Câu hỏi thường gặp</Link>
+          </FooterLinkColumn>
 
           <div className="mei-footer-column mei-footer-contact">
             <h3>Liên hệ ARA</h3>
