@@ -16,7 +16,7 @@ import { normalizeImageList, resolveImageUrl } from "../../utils/format.js";
 
 const DEFAULT_BANNER = {
   id: "default-hero",
-  title: "Chọn váy xinh nào!",
+  title: "Khám phá thiết kế dành riêng cho bạn",
   subtitle:
     "Khám phá những thiết kế thanh lịch, tinh tế dành riêng cho từng khoảnh khắc của bạn.",
   buttonText: "Thuê ngay",
@@ -46,7 +46,7 @@ export function HeroSectionSkeleton() {
 }
 
 function splitHeroTitle(title = "") {
-  const words = title.trim().split(/\s+/);
+  const words = title.trim().split(/\s+/).filter(Boolean);
 
   if (words.length <= 2) {
     return {
@@ -55,9 +55,31 @@ function splitHeroTitle(title = "") {
     };
   }
 
+  const highlightCount =
+    words.length >= 6 ? 3 :
+      words.length >= 4 ? 2 :
+        1;
+
   return {
-    first: words.slice(0, -1).join(" "),
-    highlight: words.at(-1)
+    first: words.slice(0, -highlightCount).join(" "),
+    highlight: words.slice(-highlightCount).join(" ")
+  };
+}
+
+function getHeroCopy(slide) {
+  const title = String(slide.title || "").trim();
+  const subtitle = String(slide.subtitle || "").trim();
+  const isNewCustomerPromotion = title.toLocaleLowerCase() === "khuyến mãi khách hàng mới";
+  const isLegacyPromotionSubtitle = /khuyến mãi 10% cho đơn đầu tiên/i.test(subtitle);
+
+  return {
+    title: isNewCustomerPromotion ? "Ưu đãi dành cho khách hàng mới" : title || DEFAULT_BANNER.title,
+    subtitle: isLegacyPromotionSubtitle
+      ? "Nhận ưu đãi 10% cho đơn thuê đầu tiên khi đăng ký tài khoản tại Ara Dress."
+      : subtitle || DEFAULT_BANNER.subtitle,
+    buttonText: isNewCustomerPromotion
+      ? "Đăng ký nhận ưu đãi"
+      : String(slide.buttonText || "").replace(/đăng kí/gi, "đăng ký") || "Thuê ngay"
   };
 }
 
@@ -301,27 +323,28 @@ export function HeroSection({
         onPointerCancel={handlePointerCancel}
       >
         <div
-          className={`ara-hero-track ${
-            isDragging ? "is-dragging" : ""
-          }`}
+          className={`ara-hero-track ${isDragging ? "is-dragging" : ""
+            }`}
           style={{
-            transform: `translate3d(calc(-${
-              page * 100
-            }% + ${dragOffset}px), 0, 0)`
+            transform: `translate3d(calc(-${page * 100
+              }% + ${dragOffset}px), 0, 0)`
           }}
         >
           {slides.map((slide, index) => {
-            const titleParts = splitHeroTitle(
-              slide.title
-            );
+            const copy = getHeroCopy(slide);
+            const titleParts = splitHeroTitle(copy.title);
+            const secondaryActionLink =
+              slide.buttonLink || slide.link;
+            const hasSecondaryAction =
+              secondaryActionLink &&
+              secondaryActionLink !== paths.catalog;
 
             const isActive = index === page;
 
             return (
               <article
-                className={`ara-hero-slide ${
-                  isActive ? "is-active" : ""
-                }`}
+                className={`ara-hero-slide ${isActive ? "is-active" : ""
+                  }`}
                 key={slide.id}
                 aria-hidden={!isActive}
               >
@@ -331,47 +354,26 @@ export function HeroSection({
                       Ara dress collection
                     </span>
 
-                    <h2>
-                      <span>
-                        {titleParts.first}
-                      </span>
+                    <h2 className="ara-hero-title">
+                      <span>{titleParts.first}</span>
 
                       {titleParts.highlight && (
-                        <em>
-                          {titleParts.highlight}
-                        </em>
+                        <em>{titleParts.highlight}</em>
                       )}
                     </h2>
 
-                    <p>
-                      {slide.subtitle ||
-                        DEFAULT_BANNER.subtitle}
+                    <p className="ara-hero-description">
+                      {copy.subtitle}
                     </p>
 
-                    <div className="ara-hero-actions">
+                    <div
+                      className={`ara-hero-actions ${
+                        hasSecondaryAction ? "" : "is-single"
+                      }`}
+                    >
                       <button
                         type="button"
                         className="ara-hero-primary"
-                        tabIndex={isActive ? 0 : -1}
-                        onClick={() =>
-                          handleOpenCatalog(
-                            slide.buttonLink ||
-                              slide.link
-                          )
-                        }
-                      >
-                        {slide.buttonText ||
-                          "Thuê ngay"}
-
-                        <ArrowUpRight
-                          size={16}
-                          strokeWidth={1.8}
-                        />
-                      </button>
-
-                      <button
-                        type="button"
-                        className="ara-hero-secondary"
                         tabIndex={isActive ? 0 : -1}
                         onClick={() =>
                           handleOpenCatalog(
@@ -380,27 +382,30 @@ export function HeroSection({
                         }
                       >
                         Xem bộ sưu tập
+
+                        <ArrowUpRight
+                          size={16}
+                          strokeWidth={1.8}
+                        />
                       </button>
+
+                      {hasSecondaryAction && (
+                        <button
+                          type="button"
+                          className="ara-hero-secondary"
+                          tabIndex={isActive ? 0 : -1}
+                          onClick={() =>
+                            handleOpenCatalog(
+                              secondaryActionLink
+                            )
+                          }
+                        >
+                          {copy.buttonText}
+                        </button>
+                      )}
                     </div>
                   </div>
 
-                  <div className="ara-hero-slide-index">
-                    <strong>
-                      {String(index + 1).padStart(
-                        2,
-                        "0"
-                      )}
-                    </strong>
-
-                    <span />
-
-                    <small>
-                      {String(slideCount).padStart(
-                        2,
-                        "0"
-                      )}
-                    </small>
-                  </div>
                 </div>
 
                 <div className={`ara-hero-gallery ara-hero-gallery--${Math.min(slide.gallery.length, 6)}`}>
@@ -412,9 +417,8 @@ export function HeroSection({
 
                       return (
                         <div
-                          className={`ara-hero-image ara-hero-image-${
-                            imageIndex + 1
-                          }`}
+                          className={`ara-hero-image ara-hero-image-${imageIndex + 1
+                            }`}
                           key={
                             item.id ||
                             item._id ||

@@ -2,7 +2,9 @@ import React from "react";
 import {
   Facebook,
   Instagram,
-  Phone
+  MessageCircleMore,
+  Phone,
+  X
 } from "lucide-react";
 import { AriBunny } from "../petAra/AriBunny.jsx";
 import { useAriMascot } from "../../context/AriMascotContext.jsx";
@@ -98,6 +100,7 @@ export function FloatingContact({ interaction, message, user }) {
   const [chatOpen,setChatOpen]=React.useState(()=>new URLSearchParams(window.location.search).has("chat"));
   const [unread,setUnread]=React.useState(0);
   const [formFocused, setFormFocused] = React.useState(false);
+  const [contactMenuOpen, setContactMenuOpen] = React.useState(false);
   React.useEffect(() => {
     const isFormControl = (target) => target instanceof Element && Boolean(target.closest("input, textarea, select, [contenteditable='true']"));
     const onFocusIn = (event) => { if (isFormControl(event.target)) setFormFocused(true); };
@@ -112,7 +115,7 @@ export function FloatingContact({ interaction, message, user }) {
   return (
     <>
     <aside
-      className={`floating-contact ${formFocused ? "is-form-focused" : ""}`}
+      className={`floating-contact ${formFocused ? "is-form-focused" : ""} ${contactMenuOpen ? "is-expanded" : ""}`}
       aria-label="Liên hệ nhanh"
     >
       <div className="ara-mascot-slot">
@@ -125,31 +128,59 @@ export function FloatingContact({ interaction, message, user }) {
         <span className="ara-chat-online-dot" aria-hidden="true"/>
       </div>
 
-      <ContactLink
-        type="phone"
-        href="tel:0364019798"
-        label="Gọi hotline Ara"
+      <button
+        className="floating-contact__toggle"
+        type="button"
+        aria-expanded={contactMenuOpen}
+        aria-controls="floating-contact-menu"
+        aria-label={contactMenuOpen ? "Đóng liên hệ nhanh" : "Mở liên hệ nhanh"}
+        onClick={() => setContactMenuOpen((open) => !open)}
       >
-        <Phone size={18} />
-      </ContactLink>
+        {contactMenuOpen ? <X size={20} /> : <Phone size={20} />}
+      </button>
 
-      <ContactLink
-        type="instagram"
-        href="https://www.instagram.com/ara.thuedosg?utm_source=ig_web_button_share_sheet&igsh=ZDNlZDc0MzIxNw=="
-        label="Instagram Ara"
-        external
-      >
-        <Instagram size={18} />
-      </ContactLink>
+      <div className="floating-contact__menu" id="floating-contact-menu">
+        <button
+          className="floating-contact__chat"
+          type="button"
+          onClick={() => {
+            setChatOpen(true);
+            setContactMenuOpen(false);
+          }}
+        >
+          <MessageCircleMore size={18} />
+          <span>Chat cùng Ara</span>
+        </button>
 
-      <ContactLink
-        type="facebook"
-        href="https://www.facebook.com/share/1L3WXUML8x/?mibextid=wwXIfr"
-        label="Facebook Ara"
-        external
-      >
-        <Facebook size={18} />
-      </ContactLink>
+        <ContactLink
+          type="phone"
+          href="tel:0364019798"
+          label="Gọi hotline Ara"
+        >
+          <Phone size={18} />
+          <span className="floating-contact__label">Gọi hotline</span>
+        </ContactLink>
+
+        <ContactLink
+          type="instagram"
+          href="https://www.instagram.com/ara.thuedosg?utm_source=ig_web_button_share_sheet&igsh=ZDNlZDc0MzIxNw=="
+          label="Instagram Ara"
+          external
+        >
+          <Instagram size={18} />
+          <span className="floating-contact__label">Instagram</span>
+        </ContactLink>
+
+        <ContactLink
+          type="facebook"
+          href="https://www.facebook.com/share/1L3WXUML8x/?mibextid=wwXIfr"
+          label="Facebook Ara"
+          external
+        >
+          <Facebook size={18} />
+          <span className="floating-contact__label">Facebook</span>
+        </ContactLink>
+      </div>
     </aside>
     <AraChatWidget open={chatOpen} onOpenChange={setChatOpen} user={user} unread={unread} onUnreadChange={setUnread}/>
     </>

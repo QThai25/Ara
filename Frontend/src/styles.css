@@ -959,17 +959,17 @@ main {
 }
 
 .ara-home-seo-intro {
-  width: min(1160px, calc(100% - 40px));
+  width: min(1240px, calc(100% - 40px));
   margin: 0 auto;
-  padding: 54px 0 20px;
+  padding: 22px 0 30px;
 }
 
 .ara-home-seo-intro__content {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(220px, 0.55fr);
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 0.62fr);
   align-items: end;
-  gap: 10px 44px;
-  padding: 32px 0 28px;
+  gap: 12px 52px;
+  padding: 30px 0 26px;
   border-top: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
 }
@@ -986,7 +986,7 @@ main {
   margin: 0;
   color: var(--ink);
   font-family: "Cormorant Garamond", Georgia, serif;
-  font-size: clamp(38px, 5vw, 64px);
+  font-size: clamp(38px, 4.2vw, 54px);
   font-weight: 600;
   line-height: 0.98;
 }
@@ -995,8 +995,8 @@ main {
   max-width: 500px;
   margin: 0;
   color: var(--muted);
-  font-size: 14px;
-  line-height: 1.75;
+  font-size: 16px;
+  line-height: 1.65;
 }
 
 .ara-home-seo-intro__link {
@@ -1004,7 +1004,7 @@ main {
   justify-self: start;
   margin-top: 8px;
   color: var(--turquoise-dark);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 800;
   text-decoration: none;
   text-underline-offset: 4px;
@@ -2013,6 +2013,19 @@ tbody tr:hover td {
   display: grid;
   justify-items: end;
   gap: 8px;
+}
+
+.floating-contact__menu {
+  display: contents;
+}
+
+.floating-contact__toggle,
+.floating-contact__chat {
+  display: none;
+}
+
+.floating-contact__label {
+  display: none;
 }
 
 .floating-contact .ara-mascot-slot {
@@ -8198,8 +8211,8 @@ button:disabled,
   max-width: 590px;
   margin: 16px 0 0;
   color: #705e55;
-  font-size: 13px;
-  line-height: 1.75;
+  font-size: 15px;
+  line-height: 1.65;
 }
 
 .ara-benefit-grid {
@@ -8307,6 +8320,19 @@ button:disabled,
   align-items: flex-start !important;
   justify-content: flex-start !important;
   text-align: left !important;
+}
+
+@media (min-width: 640px) and (max-width: 900px) {
+  .ara-benefits {
+    width: calc(100% - 32px);
+    margin: 64px auto;
+    padding: 42px;
+  }
+
+  .ara-benefit-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+  }
 }
 
 /* LUXURY FILTER SIDEBAR */
@@ -15924,11 +15950,11 @@ button:disabled,
 
 .mei-hero.ara-hero {
   position: relative !important;
-  width: min(1600px, calc(100% - 48px)) !important;
+  width: min(1440px, calc(100% - 48px)) !important;
   height: auto !important;
   min-height: 0 !important;
   max-height: none !important;
-  margin: 24px auto 48px !important;
+  margin: 20px auto 36px !important;
   padding: 0 !important;
   overflow: visible !important;
   border: 0 !important;
@@ -15946,13 +15972,12 @@ button:disabled,
   min-height: 0 !important;
   max-height: none !important;
   overflow: hidden !important;
-  border: 1px solid rgba(145, 103, 67, 0.22) !important;
-  border-radius: 32px !important;
-  background: radial-gradient(circle at 10% 2%,
-      rgba(191, 151, 111, 0.12),
-      transparent 28%),
-    linear-gradient(135deg, #fffdf9, #f6eee4) !important;
-  box-shadow: 0 28px 80px rgba(72, 47, 31, 0.1) !important;
+  border: 1px solid rgba(145, 103, 67, 0.18) !important;
+  border-radius: 30px !important;
+  background:
+    radial-gradient(circle at 9% 12%, rgba(211, 171, 132, 0.2), transparent 30%),
+    linear-gradient(122deg, #fffdf9 0%, #f8efe5 57%, #f2e5d8 100%) !important;
+  box-shadow: 0 24px 68px rgba(72, 47, 31, 0.09) !important;
 }
 
 /* Track tự cao theo slide hiện tại */
@@ -15972,23 +15997,127 @@ button:disabled,
   display: grid !important;
   width: 100% !important;
   min-width: 100% !important;
+  margin: 0 !important;
   height: auto !important;
   min-height: 0 !important;
   max-height: none !important;
-  grid-template-columns: minmax(320px, 0.78fr) minmax(0, 1.22fr) !important;
+  grid-template-columns: minmax(0, 0.84fr) minmax(0, 1.16fr) !important;
   align-items: center !important;
-  gap: clamp(34px, 4vw, 70px) !important;
-  padding: clamp(34px, 3.8vw, 58px) !important;
+  gap: clamp(28px, 3.6vw, 56px) !important;
+  padding: clamp(34px, 4vw, 60px) clamp(28px, 5vw, 72px) !important;
   overflow: visible !important;
 }
 
 /* Copy không kéo chiều cao slide */
 
-.mei-hero.ara-hero .ara-hero-copy,
-.mei-hero.ara-hero .ara-hero-copy-inner {
+.mei-hero.ara-hero .ara-hero-copy {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  padding: 0 !important;
   height: auto !important;
   min-height: 0 !important;
   max-height: none !important;
+}
+
+.mei-hero.ara-hero .ara-hero-copy-inner {
+  display: block !important;
+  width: 100% !important;
+  max-width: 510px !important;
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  margin: 0 !important;
+}
+
+.mei-hero.ara-hero .ara-hero-eyebrow {
+  margin: 0 0 16px !important;
+  color: #936646 !important;
+  font-size: 11px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.22em !important;
+  line-height: 1.4 !important;
+}
+
+.mei-hero.ara-hero .ara-hero-eyebrow::before {
+  width: 32px !important;
+  background: #b58a5a !important;
+}
+
+.mei-hero.ara-hero .ara-hero-title {
+  max-width: 520px !important;
+  margin: 0 !important;
+  color: #2e211c !important;
+  font-family: "Cormorant Garamond", Georgia, serif !important;
+  font-size: clamp(54px, 4.8vw, 76px) !important;
+  font-weight: 600 !important;
+  letter-spacing: -0.045em !important;
+  line-height: 0.96 !important;
+  text-wrap: balance;
+}
+
+.mei-hero.ara-hero .ara-hero-title span,
+.mei-hero.ara-hero .ara-hero-title em {
+  display: block !important;
+}
+
+.mei-hero.ara-hero .ara-hero-title em {
+  margin-top: 6px !important;
+  color: #a66e49 !important;
+  font-style: normal !important;
+  font-weight: 600 !important;
+  white-space: nowrap;
+}
+
+.mei-hero.ara-hero .ara-hero-description {
+  max-width: 460px !important;
+  margin: 22px 0 0 !important;
+  color: #624f45 !important;
+  font-size: 18px !important;
+  line-height: 1.62 !important;
+}
+
+.mei-hero.ara-hero .ara-hero-actions {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 12px !important;
+  margin-top: 28px !important;
+}
+
+.mei-hero.ara-hero .ara-hero-primary,
+.mei-hero.ara-hero .ara-hero-secondary {
+  min-height: 52px !important;
+  padding: 0 22px !important;
+  border-radius: 999px !important;
+  font-size: 12px !important;
+  letter-spacing: 0.08em !important;
+  line-height: 1 !important;
+  transition: transform 180ms ease, box-shadow 180ms ease, background 180ms ease !important;
+}
+
+.mei-hero.ara-hero .ara-hero-primary {
+  background: #3d2b22 !important;
+  box-shadow: 0 12px 24px rgba(61, 43, 34, 0.16) !important;
+}
+
+.mei-hero.ara-hero .ara-hero-primary:hover,
+.mei-hero.ara-hero .ara-hero-primary:focus-visible {
+  background: #51392d !important;
+  box-shadow: 0 15px 28px rgba(61, 43, 34, 0.22) !important;
+  transform: translateY(-2px) !important;
+}
+
+.mei-hero.ara-hero .ara-hero-secondary {
+  border-color: rgba(145, 103, 67, 0.3) !important;
+  background: rgba(255, 253, 249, 0.62) !important;
+  color: #4a362d !important;
+}
+
+.mei-hero.ara-hero .ara-hero-secondary:hover,
+.mei-hero.ara-hero .ara-hero-secondary:focus-visible {
+  border-color: rgba(145, 103, 67, 0.48) !important;
+  background: #fffdf9 !important;
+  transform: translateY(-2px) !important;
 }
 
 /* Gallery đổi sang aspect ratio. Không dùng height clamp cũ nữa. */
@@ -15998,9 +16127,15 @@ button:disabled,
   height: auto !important;
   min-height: 0 !important;
   max-height: none !important;
-  aspect-ratio: 16 / 10 !important;
+  max-width: 680px !important;
+  aspect-ratio: 16 / 9 !important;
   align-self: center !important;
   overflow: hidden !important;
+  padding: 8px !important;
+  border: 1px solid rgba(145, 103, 67, 0.16) !important;
+  border-radius: 26px !important;
+  background: rgba(235, 222, 208, 0.72) !important;
+  box-shadow: 0 20px 44px rgba(62, 42, 29, 0.1) !important;
 }
 
 /* Ảnh không làm gallery tăng chiều cao */
@@ -16008,6 +16143,8 @@ button:disabled,
 .mei-hero.ara-hero .ara-hero-image {
   min-height: 0 !important;
   max-height: none !important;
+  border-radius: 18px !important;
+  box-shadow: none !important;
 }
 
 .mei-hero.ara-hero .ara-hero-image img {
@@ -16018,6 +16155,11 @@ button:disabled,
   object-fit: cover !important;
 }
 
+.mei-hero.ara-hero .ara-hero-gallery--1 .ara-hero-image img {
+  object-fit: contain !important;
+  background: #f8efe5 !important;
+}
+
 /* Điều hướng không tham gia chiều cao layout */
 
 .mei-hero.ara-hero .ara-hero-navigation {
@@ -16025,43 +16167,134 @@ button:disabled,
   bottom: 28px !important;
 }
 
+.mei-hero.ara-hero .ara-hero-dots {
+  gap: 8px !important;
+  margin-top: 13px !important;
+}
+
+.mei-hero.ara-hero .ara-hero-dots button {
+  width: 6px !important;
+  height: 6px !important;
+  background: rgba(145, 103, 67, 0.24) !important;
+}
+
+.mei-hero.ara-hero .ara-hero-dots button.active {
+  width: 24px !important;
+  background: #a66e49 !important;
+}
+
 /* Tablet */
 
 @media (max-width: 1100px) {
   .mei-hero.ara-hero {
-    width: min(100% - 32px, 980px) !important;
+    width: min(100% - 32px, 1080px) !important;
   }
 
   .mei-hero.ara-hero .ara-hero-slide {
-    grid-template-columns: 1fr !important;
-    gap: 28px !important;
-    padding: 38px !important;
+    grid-template-columns: minmax(0, 0.88fr) minmax(0, 1.12fr) !important;
+    gap: 30px !important;
+    padding: 40px !important;
   }
 
-  .mei-hero.ara-hero .ara-hero-gallery {
-    aspect-ratio: 16 / 9 !important;
+  .mei-hero.ara-hero .ara-hero-copy-inner {
+    max-width: 450px !important;
+  }
+
+  .mei-hero.ara-hero .ara-hero-title {
+    font-size: clamp(50px, 5.3vw, 60px) !important;
   }
 }
 
-/* Mobile */
+/* Tablet portrait and mobile */
 
-@media (max-width: 700px) {
+@media (max-width: 820px) {
   .mei-hero.ara-hero {
-    width: calc(100% - 24px) !important;
-    margin: 14px auto 32px !important;
+    width: min(calc(100vw - 24px), 820px) !important;
+    max-width: calc(100vw - 24px) !important;
+    margin: 14px auto 28px !important;
   }
 
   .mei-hero.ara-hero .ara-hero-viewport {
+    max-width: 100% !important;
     border-radius: 22px !important;
   }
 
   .mei-hero.ara-hero .ara-hero-slide {
-    gap: 22px !important;
-    padding: 26px 18px 20px !important;
+    grid-template-columns: 1fr !important;
+    gap: 24px !important;
+    padding: 30px 20px 22px !important;
+    min-width: 0 !important;
+  }
+
+  .mei-hero.ara-hero .ara-hero-copy,
+  .mei-hero.ara-hero .ara-hero-copy-inner {
+    min-width: 0 !important;
+    max-width: 680px !important;
+  }
+
+  .mei-hero.ara-hero .ara-hero-eyebrow {
+    margin-bottom: 14px !important;
+    font-size: 10px !important;
+    letter-spacing: 0.19em !important;
+  }
+
+  .mei-hero.ara-hero .ara-hero-title {
+    width: 100% !important;
+    max-width: 100% !important;
+    font-size: clamp(40px, 10vw, 48px) !important;
+    line-height: 1 !important;
+    overflow-wrap: anywhere;
+  }
+
+  .mei-hero.ara-hero .ara-hero-title span,
+  .mei-hero.ara-hero .ara-hero-title em {
+    width: 100% !important;
+    max-width: 100% !important;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .mei-hero.ara-hero .ara-hero-title em {
+    margin-top: 4px !important;
+  }
+
+  .mei-hero.ara-hero .ara-hero-description {
+    margin-top: 16px !important;
+    font-size: 16px !important;
+    line-height: 1.6 !important;
+  }
+
+  .mei-hero.ara-hero .ara-hero-actions {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+    margin-top: 22px !important;
+  }
+
+  .mei-hero.ara-hero .ara-hero-primary,
+  .mei-hero.ara-hero .ara-hero-secondary {
+    width: 100% !important;
+    min-height: 52px !important;
+    font-size: 12px !important;
   }
 
   .mei-hero.ara-hero .ara-hero-gallery {
-    aspect-ratio: 4 / 5 !important;
+    max-width: none !important;
+    aspect-ratio: 16 / 9 !important;
+    padding: 7px !important;
+    border-radius: 20px !important;
+  }
+
+  .mei-hero.ara-hero .ara-hero-image {
+    border-radius: 14px !important;
+  }
+
+  .mei-hero.ara-hero .ara-hero-navigation {
+    display: none !important;
+  }
+
+  .mei-hero.ara-hero .ara-hero-dots {
+    margin-top: 10px !important;
   }
 }
 
@@ -16836,28 +17069,105 @@ button:disabled,
 
   .floating-contact {
     right: max(8px, env(safe-area-inset-right));
-    bottom: calc(72px + env(safe-area-inset-bottom));
-    gap: 8px;
+    bottom: max(14px, env(safe-area-inset-bottom));
+    display: grid;
+    justify-items: end;
+    gap: 0;
   }
 
   .floating-contact .ara-mascot-slot {
-    transform: scale(0.88);
-    transform-origin: right bottom;
+    position: relative;
+    display: grid;
+    width: 62px;
+    height: 62px;
+    flex: 0 0 62px;
+    align-items: end;
+    justify-items: end;
   }
 
-  .floating-contact a.floating-contact__link {
-    width: 44px;
-    height: 44px;
+  .floating-contact__toggle {
+    display: inline-flex;
+    width: 52px;
+    height: 52px;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 1px solid rgba(145, 103, 67, 0.3);
+    border-radius: 50%;
+    background: #3d2b22;
+    color: #fffaf5;
+    box-shadow: 0 12px 28px rgba(61, 43, 34, 0.22);
   }
 
-  .floating-contact.is-form-focused .ara-mascot-slot,
-  .floating-contact.is-form-focused .floating-contact__link--instagram,
-  .floating-contact.is-form-focused .floating-contact__link--facebook {
+  .floating-contact__menu {
+    position: absolute;
+    right: 0;
+    bottom: 62px;
+    display: none;
+    width: min(228px, calc(100vw - 28px));
+    gap: 7px;
+    padding: 9px;
+    border: 1px solid rgba(145, 103, 67, 0.18);
+    border-radius: 16px;
+    background: rgba(255, 253, 249, 0.96);
+    box-shadow: 0 18px 40px rgba(61, 43, 34, 0.18);
+    backdrop-filter: blur(14px);
+  }
+
+  .floating-contact.is-expanded .floating-contact__menu {
+    display: grid;
+  }
+
+  .floating-contact__chat,
+  .floating-contact__menu a.floating-contact__link {
+    display: flex;
+    width: 100%;
+    min-height: 46px;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 10px;
+    padding: 0 13px;
+    border: 1px solid rgba(145, 103, 67, 0.16);
+    border-radius: 11px;
+    background: #fffdf9;
+    box-shadow: none;
+    color: #4a362d;
+    font-size: 13px;
+    font-weight: 750;
+    text-decoration: none;
+  }
+
+  .floating-contact__chat {
+    border-color: #3d2b22;
+    background: #3d2b22;
+    color: #fffaf5;
+  }
+
+  .floating-contact__menu a.floating-contact__link:hover,
+  .floating-contact__menu a.floating-contact__link:focus-visible,
+  .floating-contact__chat:hover,
+  .floating-contact__chat:focus-visible {
+    outline: 0;
+    transform: none;
+  }
+
+  .floating-contact__menu a.floating-contact__link:focus-visible,
+  .floating-contact__chat:focus-visible,
+  .floating-contact__toggle:focus-visible {
+    outline: 3px solid rgba(181, 138, 90, 0.42);
+    outline-offset: 3px;
+  }
+
+  .floating-contact__label {
+    display: inline;
+  }
+
+  .floating-contact.is-form-focused .floating-contact__menu {
     display: none;
   }
 
   .floating-contact.is-form-focused {
-    bottom: calc(12px + env(safe-area-inset-bottom));
+    bottom: max(14px, env(safe-area-inset-bottom));
   }
 
   .ari-bunny-message {
@@ -19737,6 +20047,57 @@ button:disabled,
   background: var(--footer-gold);
 }
 
+.mei-footer-column__toggle {
+  position: relative;
+  display: flex;
+  width: 100%;
+  align-items: flex-start;
+  justify-content: flex-start;
+  margin: 8px 0 24px;
+  padding: 0 0 15px;
+  color: var(--footer-white);
+  font-family: var(--ara-display-font), Georgia, "Times New Roman", serif;
+  font-size: 1.03rem;
+  font-weight: 400;
+  line-height: 1.3;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.mei-footer-collapsible > h3 {
+  margin: 0;
+  padding: 0;
+}
+
+.mei-footer-collapsible > h3::after {
+  display: none;
+}
+
+.mei-footer-column__toggle::after {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 34px;
+  height: 1px;
+  content: "";
+  background: var(--footer-gold);
+}
+
+.mei-footer-column__toggle svg {
+  display: none;
+}
+
+.mei-footer-column__collapse {
+  display: block;
+}
+
+.mei-footer-column__toggle:focus-visible {
+  outline: 2px solid var(--footer-gold-light);
+  outline-offset: 5px;
+}
+
 .mei-footer-links {
   display: grid;
   gap: 14px;
@@ -19905,6 +20266,66 @@ a.mei-footer-contact__item:hover .mei-footer-contact__arrow {
   }
 }
 
+@media (max-width: 900px) {
+  .mei-footer-collapsible .mei-footer-column__toggle {
+    align-items: center;
+    justify-content: space-between;
+    min-height: 52px;
+    margin: 0;
+    padding: 0 4px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .mei-footer-collapsible .mei-footer-column__toggle::after {
+    display: none;
+  }
+
+  .mei-footer-collapsible .mei-footer-column__toggle svg {
+    display: block;
+    flex: 0 0 auto;
+    color: var(--footer-gold-light);
+    transition: transform 180ms ease;
+  }
+
+  .mei-footer-column__collapse {
+    display: grid;
+    grid-template-rows: 0fr;
+    opacity: 0;
+    transition:
+      grid-template-rows 220ms ease,
+      opacity 180ms ease,
+      margin 220ms ease;
+  }
+
+  .mei-footer-column__collapse > .mei-footer-links {
+    min-height: 0;
+    padding: 0 4px;
+    overflow: hidden;
+    visibility: hidden;
+    opacity: 0;
+    transition:
+      visibility 0s linear 220ms,
+      opacity 160ms ease;
+  }
+
+  .mei-footer-collapsible.is-open .mei-footer-column__collapse {
+    grid-template-rows: 1fr;
+    margin: 12px 0 4px;
+    opacity: 1;
+  }
+
+  .mei-footer-collapsible.is-open .mei-footer-column__collapse > .mei-footer-links {
+    visibility: visible;
+    opacity: 1;
+    transition-delay: 0s;
+  }
+
+  .mei-footer-collapsible.is-open .mei-footer-column__toggle svg {
+    transform: rotate(180deg);
+  }
+}
+
 @media (max-width: 760px) {
   .mei-footer::before {
     inset: 10px;
@@ -19945,6 +20366,18 @@ a.mei-footer-contact__item:hover .mei-footer-contact__arrow {
     align-items: flex-start;
     flex-direction: column;
   }
+
+  .mei-footer-collapsible .mei-footer-links a {
+    font-size: 0.82rem;
+  }
+
+  .mei-footer-contact__content small {
+    font-size: 0.73rem;
+  }
+
+  .mei-footer-contact__content strong {
+    font-size: 0.88rem;
+  }
 }
 
 @media (max-width: 480px) {
@@ -19968,6 +20401,12 @@ a.mei-footer-contact__item:hover .mei-footer-contact__arrow {
 
   .mei-footer-column h3 {
     margin-top: 0;
+  }
+
+  .mei-footer-column__toggle {
+    font-size: 0.95rem;
+    line-height: 1.2;
+    letter-spacing: 0;
   }
 
   .mei-footer-bottom__links {
@@ -20281,8 +20720,8 @@ a.mei-footer-contact__item:hover .mei-footer-contact__arrow {
 
   .ara-benefit-heading p {
     margin-top: 12px;
-    font-size: 12.5px;
-    line-height: 1.65;
+    font-size: 15px;
+    line-height: 1.6;
   }
 
   .ara-benefit-grid {
@@ -20302,7 +20741,7 @@ a.mei-footer-contact__item:hover .mei-footer-contact__arrow {
   }
 
   .ara-benefit-item {
-    flex: 0 0 min(78vw, 300px);
+    flex: 0 0 min(84vw, 320px);
     scroll-snap-align: start;
   }
 
@@ -20316,7 +20755,8 @@ a.mei-footer-contact__item:hover .mei-footer-contact__arrow {
   }
 
   .ara-benefit-item :is(p, small, .icon-card-description) {
-    font-size: 12px;
+    font-size: 13.5px;
+    line-height: 1.55;
   }
 
   .ara-occasion-section {
@@ -20346,10 +20786,6 @@ a.mei-footer-contact__item:hover .mei-footer-contact__arrow {
 }
 
 @media (max-width: 390px) {
-  .ara-benefit-item {
-    flex-basis: 82vw;
-  }
-
   .ara-occasion-item,
   .ara-occasion-item:nth-child(n) {
     flex-basis: 72vw;
@@ -20562,32 +20998,22 @@ a.mei-footer-contact__item:hover .mei-footer-contact__arrow {
   padding-top: 16px;
   border-top: 1px solid #ead8c1;
 }
-/* Product carousel uses the same large ARA section card as the service block. */
+/* Homepage products stay editorial and open, so the merchandise remains the focal point. */
 .product-carousel.mei-products-section {
   position: relative;
   width: min(calc(100% - 40px), 1240px);
-  margin: 82px auto;
-  padding: clamp(38px, 5vw, 58px);
+  margin: 56px auto 72px;
+  padding: 0;
   box-sizing: border-box;
-  overflow: hidden;
-  border: 1px solid rgba(148, 105, 75, 0.15);
-  border-radius: 28px;
-  background: radial-gradient(circle at 5% 10%, rgba(207, 168, 128, 0.12), transparent 32%), linear-gradient(135deg, #fffdfa 0%, #f7efe5 100%);
-  box-shadow: 0 22px 60px rgba(75, 50, 35, 0.08);
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .product-carousel.mei-products-section::before {
-  content: "ARA";
-  position: absolute;
-  right: -24px;
-  bottom: -55px;
-  color: rgba(122, 82, 56, 0.025);
-  font-family: "Cormorant Garamond", Georgia, serif;
-  font-size: clamp(140px, 20vw, 270px);
-  font-weight: 600;
-  line-height: 1;
-  pointer-events: none;
-  user-select: none;
+  display: none;
 }
 
 .product-carousel.mei-products-section > * {
@@ -20603,15 +21029,21 @@ a.mei-footer-contact__item:hover .mei-footer-contact__arrow {
 @media (max-width: 760px) {
   .product-carousel.mei-products-section {
     width: calc(100% - 24px);
-    margin: 42px auto;
-    padding: 28px 16px 32px;
-    border-radius: 22px;
+    margin: 42px auto 56px;
+    padding: 0;
   }
 }
 
 .product-carousel-grid.is-sparse {
-  grid-template-columns: repeat(var(--carousel-columns, 1), minmax(220px, 280px)) !important;
-  justify-content: center;
+  grid-template-columns: minmax(280px, 360px) !important;
+  justify-content: start;
+}
+
+@media (max-width: 760px) {
+  .product-carousel-grid.is-sparse {
+    grid-template-columns: minmax(0, min(82vw, 320px)) !important;
+    justify-content: start;
+  }
 }
 
 .ara-customer-payment-card{width:min(100%,780px);margin:24px auto 0;padding:24px;border:1px solid #e1ccb2;border-radius:20px;background:#fffdfa;box-shadow:0 16px 40px rgba(72,44,27,.07)}
@@ -20658,8 +21090,8 @@ a.mei-footer-contact__item:hover .mei-footer-contact__arrow {
 /* Two recommendation cards fit comfortably on modern mobile viewports. */
 @media (min-width: 390px) and (max-width: 639px) {
   .product-carousel.mei-products-section {
-    width: calc(100% - 16px);
-    padding: 24px 12px 28px;
+    width: calc(100% - 24px);
+    padding: 0;
   }
 
   .product-carousel-heading {
@@ -20669,8 +21101,8 @@ a.mei-footer-contact__item:hover .mei-footer-contact__arrow {
   }
 
   .product-carousel-title-row h2 {
-    font-size: clamp(27px, 7.2vw, 31px);
-    line-height: 0.98;
+    font-size: clamp(34px, 8.8vw, 40px);
+    line-height: 1;
   }
 
   .product-carousel-navigation {
@@ -20690,7 +21122,7 @@ a.mei-footer-contact__item:hover .mei-footer-contact__arrow {
   }
 
   .product-carousel-grid.is-sparse {
-    grid-template-columns: minmax(0, 210px) !important;
+    grid-template-columns: minmax(0, min(82vw, 320px)) !important;
   }
 
   .product-carousel-item :is(.mei-product-card, .product-card) {
@@ -20720,7 +21152,7 @@ a.mei-footer-contact__item:hover .mei-footer-contact__arrow {
     min-height: 34px;
     gap: 4px;
     padding: 0 8px;
-    font-size: 8px;
+    font-size: 10px;
     letter-spacing: 0.06em;
   }
 
@@ -20750,8 +21182,8 @@ a.mei-footer-contact__item:hover .mei-footer-contact__arrow {
 
   .product-carousel .mei-product-card-topline > span,
   .product-carousel .mei-product-card-topline > small {
-    font-size: 7px;
-    letter-spacing: 0.09em;
+    font-size: 10px;
+    letter-spacing: 0.06em;
   }
 
   .product-carousel .mei-product-card-title {
@@ -20763,7 +21195,7 @@ a.mei-footer-contact__item:hover .mei-footer-contact__arrow {
   .product-carousel .mei-product-card-meta {
     gap: 4px;
     margin-top: 7px;
-    font-size: 8px;
+    font-size: 12px;
     line-height: 1.35;
   }
 
@@ -20792,7 +21224,7 @@ a.mei-footer-contact__item:hover .mei-footer-contact__arrow {
 
   .product-carousel .mei-product-card .mei-product-card-price-label {
     margin-bottom: 5px;
-    font-size: 7px;
+    font-size: 9px;
     letter-spacing: 0.07em;
   }
 
@@ -20804,7 +21236,7 @@ a.mei-footer-contact__item:hover .mei-footer-contact__arrow {
 
   .product-carousel .mei-product-card .mei-product-card-price-unit {
     margin-top: 4px;
-    font-size: 7px;
+    font-size: 9px;
   }
 
   .product-carousel .mei-product-card .mei-product-card-footer {
@@ -20814,16 +21246,16 @@ a.mei-footer-contact__item:hover .mei-footer-contact__arrow {
   }
 
   .product-carousel .mei-product-card .mei-product-card-retail > span {
-    font-size: 7px;
+    font-size: 9px;
   }
 
   .product-carousel .mei-product-card .mei-product-card-retail > strong {
-    font-size: 9px;
+    font-size: 11px;
   }
 
   .product-carousel .mei-product-card .card-link {
     gap: 2px;
-    font-size: 9px;
+    font-size: 10px;
   }
 
   .product-carousel .mei-product-card .card-link svg {
@@ -21201,13 +21633,23 @@ a.mei-footer-contact__item:hover .mei-footer-contact__arrow {
 @media (max-width: 768px) {
   .ara-home-seo-intro {
     width: calc(100% - 24px);
-    padding-top: 34px;
+    padding: 18px 0 26px;
   }
 
   .ara-home-seo-intro__content {
     grid-template-columns: 1fr;
-    gap: 12px;
-    padding: 26px 0 22px;
+    gap: 14px;
+    padding: 24px 0 22px;
+  }
+
+  .ara-home-seo-intro h1 {
+    font-size: clamp(36px, 10vw, 44px);
+    line-height: 1.02;
+  }
+
+  .ara-home-seo-intro p {
+    font-size: 16px;
+    line-height: 1.62;
   }
 
   .ara-home-seo-intro__link {
