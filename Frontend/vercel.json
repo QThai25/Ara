@@ -1,4 +1,45 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+  "trailingSlash": false,
+  "functions": {
+    "api/seo/product.js": { "includeFiles": "dist/index.html" },
+    "api/seo/category.js": { "includeFiles": "dist/index.html" }
+  },
+  "redirects": [
+    {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "www.aradress.com" }],
+      "destination": "https://aradress.com/:path*",
+      "permanent": true
+    }
+  ],
+  "headers": [
+    {
+      "source": "/costumes",
+      "has": [{ "type": "query", "key": "category" }],
+      "headers": [{ "key": "X-Robots-Tag", "value": "noindex, follow" }]
+    },
+    {
+      "source": "/admin/:path*",
+      "headers": [{ "key": "X-Robots-Tag", "value": "noindex, nofollow" }]
+    },
+    {
+      "source": "/account/:path*",
+      "headers": [{ "key": "X-Robots-Tag", "value": "noindex, nofollow" }]
+    },
+    {
+      "source": "/(login|register|forgot-password|rental-cart|cart|wishlist|favorites|offers|notifications)",
+      "headers": [{ "key": "X-Robots-Tag", "value": "noindex, nofollow" }]
+    },
+    {
+      "source": "/(my-rentals|my-payments|payment|rental-orders)/:path*",
+      "headers": [{ "key": "X-Robots-Tag", "value": "noindex, nofollow" }]
+    }
+  ],
+  "rewrites": [
+    { "source": "/sitemap.xml", "destination": "/api/sitemap" },
+    { "source": "/collections/:slug", "destination": "/api/seo/category?slug=:slug" },
+    { "source": "/costumes/:id", "destination": "/api/seo/product?id=:id" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
 }

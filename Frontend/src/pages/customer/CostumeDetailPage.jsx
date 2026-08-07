@@ -21,16 +21,19 @@ import {
   ShoppingBag
 } from "lucide-react";
 import {
+  Link,
   useNavigate,
   useParams
 } from "react-router-dom";
+import { paths } from "../../routes/views.js";
 
 import { CostumeImageCarousel } from "../../components/customer/CostumeImageCarousel.jsx";
 import { AddressLocationFields } from "../../components/customer/AddressLocationFields.jsx";
 import { StateMessage } from "../../components/common/StateMessage.jsx";
 import { StatusBadge } from "../../components/common/StatusBadge.jsx";
+import { DEFAULT_OG_IMAGE, Seo, absoluteSiteUrl } from "../../components/common/Seo.jsx";
+import { ProductCarousel } from "../../components/customer/ProductCarousel.jsx";
 
-const ProductCarousel = lazy(() => import("../../components/customer/ProductCarousel.jsx").then((module) => ({ default: module.ProductCarousel })));
 const CostumeBookingGrid = lazy(() => import("../../components/customer/CostumeBookingGrid.jsx").then((module) => ({ default: module.CostumeBookingGrid })));
 const CostumeAvailabilityCalendar = lazy(() => import("../../components/customer/CostumeAvailabilityCalendar.jsx").then((module) => ({ default: module.CostumeAvailabilityCalendar })));
 
@@ -118,8 +121,6 @@ function DetailItem({
 }
 
 const LUXURY_PRODUCT_INFO_STYLES = `
-  @import url("https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap");
-
   /* Gallery chi tiết: một khung ảnh cố định, không xếp ảnh dọc. */
   .mei-detail-page:has(.luxury-product-panel) {
     align-items: start !important;
@@ -1853,6 +1854,7 @@ export function CostumeDetailPage({
     product.image || fallbackImages[0],
     10
   );
+  const productSeoImages = normalizeImageList(product.images, product.image, 10);
 
   const safeActiveImageIndex = Math.max(
     0,
@@ -1880,9 +1882,66 @@ export function CostumeDetailPage({
   const estimatedRentalAmount = Number(estimatedPricing?.totalRentalAmount ?? product.rentalPricePerDay ?? 0);
   const estimatedDeposit = Number(product.depositAmount || 0);
   const estimatedTotal = estimatedRentalAmount + estimatedDeposit;
+  const productId = product.id || product._id || id;
+  const productPath = `/costumes/${encodeURIComponent(productId)}`;
+  const productName = String(product.name || "Trang phục Ara Dress").trim();
+  const productDescription = String(product.description || "").trim();
+  const productSeoTitle = String(product.seoTitle || "").trim();
+  const productSeoDescription = String(product.seoDescription || "").trim();
+  const productMetaDescription = [
+    productDescription,
+    product.categoryName,
+    product.styleName,
+    "Ara Dress"
+  ].filter(Boolean).join(" · ").slice(0, 160);
+  const productSchema = {
+    "@type": "Product",
+    name: productName,
+    ...(productSeoImages.length ? { image: productSeoImages.map((item) => absoluteSiteUrl(resolveImageUrl(item))) } : {}),
+    ...(productDescription ? { description: productDescription } : {}),
+    ...(product.skuCode ? { sku: product.skuCode } : {}),
+    ...(product.brandName ? { brand: { "@type": "Brand", name: product.brandName } } : {}),
+    ...(Number(product.rentalPricePerDay) > 0 ? {
+      offers: {
+        "@type": "Offer",
+        url: absoluteSiteUrl(productPath),
+        price: Number(product.rentalPricePerDay),
+        priceCurrency: "VND",
+        businessFunction: "http://purl.org/goodrelations/v1#LeaseOut",
+        priceSpecification: {
+          "@type": "UnitPriceSpecification",
+          price: Number(product.rentalPricePerDay),
+          priceCurrency: "VND",
+          unitCode: "DAY"
+        }
+      }
+    } : {})
+  };
+  const productStructuredData = {
+    "@context": "https://schema.org",
+    "@graph": [
+      productSchema,
+      {
+        "@type": "BreadcrumbList",
+        itemListElement: [
+          { "@type": "ListItem", position: 1, name: "Trang chủ", item: absoluteSiteUrl("/") },
+          { "@type": "ListItem", position: 2, name: product.categoryName || "Danh mục sản phẩm", item: absoluteSiteUrl(product.categorySlug ? paths.category(product.categorySlug) : "/costumes") },
+          { "@type": "ListItem", position: 3, name: productName, item: absoluteSiteUrl(productPath) }
+        ]
+      }
+    ]
+  };
 
   return (
     <>
+      <Seo
+        title={productSeoTitle || `Thuê ${productName} | Ara Dress`}
+        description={productSeoDescription || productMetaDescription || `Khám phá ${productName} tại Ara Dress và kiểm tra lịch thuê phù hợp.`}
+        canonicalPath={productPath}
+        type="product"
+        image={productSeoImages[0] || DEFAULT_OG_IMAGE}
+        structuredData={productStructuredData}
+      />
       <style>{LUXURY_PRODUCT_INFO_STYLES}</style>
 
       <section className="mei-detail-page">
@@ -1961,6 +2020,8 @@ export function CostumeDetailPage({
             </div>
 
             <h1>{product.name}</h1>
+
+            {product.categorySlug && <Link className="luxury-product-category-link" to={paths.category(product.categorySlug)}>{product.categoryName || "Xem danh mục"}</Link>}
 
             <p className="luxury-product-description">
               {product.description ||

@@ -7,9 +7,6 @@
     <loc>https://aradress.com/costumes</loc>
   </url>
   <url>
-    <loc>https://aradress.com/brands</loc>
-  </url>
-  <url>
     <loc>https://aradress.com/about</loc>
   </url>
   <url>
@@ -17,11 +14,5 @@
   </url>
   <url>
     <loc>https://aradress.com/rental-policy</loc>
-  </url>
-  <url>
-    <loc>https://aradress.com/terms</loc>
-  </url>
-  <url>
-    <loc>https://aradress.com/privacy</loc>
   </url>
 </urlset>

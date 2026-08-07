@@ -192,7 +192,7 @@ export function RentalPolicyPage() {
     ) || rentalPolicies[0];
 
   return (
-    <main className="info-page rental-policy-page">
+    <section className="info-page rental-policy-page">
       <div className="rental-policy-container">
         <header className="rental-policy-header">
           <span className="rental-policy-eyebrow">
@@ -310,6 +310,6 @@ export function RentalPolicyPage() {
           </p>
         </footer>
       </div>
-    </main>
+    </section>
   );
 }

@@ -42,10 +42,17 @@ const optionalTextFields = [
   "material",
   "accessories",
   "conditionNote",
-  "skuCode"
+  "skuCode",
+  "seoTitle",
+  "seoDescription"
 ];
 
 const optionalTextValidations = optionalTextFields.map((field) => body(field).optional().isString().trim());
+
+const seoValidations = [
+  body("seoTitle").optional().isLength({ max: 70 }).withMessage("SEO title khÃ´ng Ä‘Æ°á»£c vÆ°á»£t quÃ¡ 70 kÃ½ tá»±."),
+  body("seoDescription").optional().isLength({ max: 160 }).withMessage("SEO description khÃ´ng Ä‘Æ°á»£c vÆ°á»£t quÃ¡ 160 kÃ½ tá»±.")
+];
 
 export const createCostumeValidation = [
   body("name").notEmpty().withMessage("Vui lòng nhập tên trang phục."),
@@ -57,6 +64,7 @@ export const createCostumeValidation = [
   body("occasionIds").optional().isArray().withMessage("Danh sách dịp mặc không hợp lệ."),
   body("occasionIds.*").optional().isMongoId().withMessage("Dịp mặc không hợp lệ."),
   ...optionalTextValidations,
+  ...seoValidations,
   body("images").optional().isArray().withMessage("Danh sách ảnh không hợp lệ."),
   body("images").optional().isArray({ max: 10 }).withMessage("Trang phục được sử dụng tối đa 10 ảnh."),
   body("imageAssets").optional().isArray({ max: 10 }).withMessage("Trang phục được sử dụng tối đa 10 ảnh."),
@@ -81,6 +89,7 @@ export const updateCostumeValidation = [
   body("occasionIds").optional().isArray().withMessage("Danh sách dịp mặc không hợp lệ."),
   body("occasionIds.*").optional().isMongoId().withMessage("Dịp mặc không hợp lệ."),
   ...optionalTextValidations,
+  ...seoValidations,
   body("images").optional().isArray().withMessage("Danh sách ảnh không hợp lệ."),
   body("images").optional().isArray({ max: 10 }).withMessage("Trang phục được sử dụng tối đa 10 ảnh."),
   body("imageAssets").optional().isArray({ max: 10 }).withMessage("Trang phục được sử dụng tối đa 10 ảnh."),

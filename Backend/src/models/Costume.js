@@ -11,6 +11,8 @@ const costumeSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true },
     description: { type: String, required: true },
+    seoTitle: { type: String, default: "", trim: true, maxlength: 70 },
+    seoDescription: { type: String, default: "", trim: true, maxlength: 160 },
     categoryId: { type: mongoose.Schema.Types.ObjectId, ref: "Category", required: true },
     brandId: { type: mongoose.Schema.Types.ObjectId, ref: "Brand", default: null },
     brandName: { type: String, default: "", trim: true },
