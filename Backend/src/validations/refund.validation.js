@@ -29,5 +29,10 @@ export const manualRefundCreate = [
   body("verificationAcknowledged").custom((value) => value === true || value === "true"),
   body("idempotencyKey").optional().trim().isLength({ min: 8, max: 160 })
 ];
+export const cancellationRefundCreate = [
+  body("orderId").isMongoId().withMessage("Đơn thuê không hợp lệ."),
+  body("reason").isString().trim().isLength({ min: 3, max: 500 }).withMessage("Lý do hủy phải từ 3 đến 500 ký tự."),
+  body("idempotencyKey").optional().trim().isLength({ min: 8, max: 160 })
+];
 export const manualRefundSearch = [query("search").optional().trim().isLength({ max: 100 })];
 export const manualRefundContext = [query("orderId").optional({ checkFalsy: true }).isMongoId(), query("paymentId").optional({ checkFalsy: true }).isMongoId()];

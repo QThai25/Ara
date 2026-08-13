@@ -3,7 +3,7 @@ import { env } from "../src/config/env.js";
 import { AdministrativeUnit } from "../src/models/AdministrativeUnit.js";
 import { communes, districts, provinces } from "../src/services/locationCatalog.service.js";
 
-await mongoose.connect(env.mongoUri);
+await mongoose.connect(env.mongodbUri);
 try {
   const units = [...provinces, ...districts.map(({ communeCodes, displayName, legacyProvinceName, ...district }) => ({ ...district, type: "district" })), ...communes];
   await AdministrativeUnit.bulkWrite(units.map((unit) => ({

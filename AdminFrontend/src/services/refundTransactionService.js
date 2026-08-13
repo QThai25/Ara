@@ -5,6 +5,7 @@ export const listRefundTransactions = (params, config = {}) => api.get(base, { .
 export const searchRefundTransactions = (params) => api.get(`${base}/search`, { params });
 export const getRefundTransactionContext = (params) => api.get(`${base}/context`, { params });
 export const createRefundTransaction = (body) => api.post(base, body);
+export const createCancellationRefund = (body) => api.post(`${base}/cancellation`, body);
 export const getRefundTransaction = (id) => api.get(`${base}/${id}`);
 export const startRefundTransaction = (id) => api.patch(`${base}/${id}/start`);
 export const completeRefundTransaction = (id, body) => api.patch(`${base}/${id}/complete`, body);

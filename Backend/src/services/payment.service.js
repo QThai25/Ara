@@ -1316,9 +1316,9 @@ export async function rejectPayment(id, adminId, reason = "") {
   return populatePayment(paymentId);
 }
 
-export async function cancelActivePaymentsForOrder(order, session, reason = "Đơn thuê đã bị hủy.") {
+export async function cancelActivePaymentsForOrder(order, session, reason = "Đơn thuê đã bị hủy.", { allowSuccessful = false } = {}) {
   const successful = await getSuccessfulPayments(order._id, session);
-  if (successful.length) {
+  if (successful.length && !allowSuccessful) {
     throw new ApiError(409, "Đơn đã nhận tiền và phải xử lý hoàn tiền trước khi hủy.");
   }
 
@@ -1337,7 +1337,7 @@ export async function cancelActivePaymentsForOrder(order, session, reason = "Đ�
     },
     session ? { session } : {}
   );
-  order.paymentStatus = "unpaid";
+  if (!successful.length) order.paymentStatus = "unpaid";
 }
 
 export async function confirmOnlinePayment() {

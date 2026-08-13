@@ -239,10 +239,10 @@ export function AdminPage({ activeTab, notify, costumeEditor = null }) {
 
   if (activeTab === adminTabs.dashboard) return chrome(<Dashboard summary={summary} stats={dashboardStats} orders={orders} costumes={costumes} />);
   if (activeTab === adminTabs.costumes) return chrome(<AdminCostumes costumes={costumes} categories={categories} brands={brands} occasions={occasions} styles={styles} notify={notify} reload={() => load(selectedOrderId, { silent: true })} canManageCatalog={can(P.CATALOG_MANAGE)} canOperateInventory={can(P.INVENTORY_OPERATE)} editor={costumeEditor} />);
-  if (activeTab === adminTabs.brands) return chrome(<TaxonomyManager title="Quản lý thương hiệu" noun="thương hiệu" items={brands} notify={notify} reload={load} createItem={createBrand} updateItem={updateBrand} deleteItem={deleteBrand} toggleItem={toggleBrandStatus} />);
-  if (activeTab === adminTabs.categories) return chrome(<TaxonomyManager title="Quản lý danh mục" noun="danh mục" items={categories} notify={notify} reload={load} createItem={createCategory} updateItem={updateCategory} deleteItem={deleteCategory} toggleItem={toggleCategoryStatus} showIcon defaultOptions={{ occasions, styles }} />);
-  if (activeTab === adminTabs.occasions) return chrome(<TaxonomyManager title="Quản lý dịp mặc" noun="dịp mặc" items={occasions} notify={notify} reload={load} createItem={createOccasion} updateItem={updateOccasion} deleteItem={deleteOccasion} toggleItem={toggleOccasionStatus} showIcon />);
-  if (activeTab === adminTabs.styles) return chrome(<TaxonomyManager title="Quản lý phong cách" noun="phong cách" items={styles} notify={notify} reload={load} createItem={createStyle} updateItem={updateStyle} deleteItem={deleteStyle} toggleItem={toggleStyleStatus} showIcon />);
+  if (activeTab === adminTabs.brands) return chrome(<TaxonomyManager title="Quản lý thương hiệu" noun="thương hiệu" items={brands} notify={notify} reload={load} createItem={createBrand} updateItem={updateBrand} deleteItem={deleteBrand} toggleItem={toggleBrandStatus} canManage={can(P.CATALOG_MANAGE)} />);
+  if (activeTab === adminTabs.categories) return chrome(<TaxonomyManager title="Quản lý danh mục" noun="danh mục" items={categories} notify={notify} reload={load} createItem={createCategory} updateItem={updateCategory} deleteItem={deleteCategory} toggleItem={toggleCategoryStatus} canManage={can(P.CATALOG_MANAGE)} showIcon defaultOptions={{ occasions, styles }} />);
+  if (activeTab === adminTabs.occasions) return chrome(<TaxonomyManager title="Quản lý dịp mặc" noun="dịp mặc" items={occasions} notify={notify} reload={load} createItem={createOccasion} updateItem={updateOccasion} deleteItem={deleteOccasion} toggleItem={toggleOccasionStatus} canManage={can(P.CATALOG_MANAGE)} showIcon />);
+  if (activeTab === adminTabs.styles) return chrome(<TaxonomyManager title="Quản lý phong cách" noun="phong cách" items={styles} notify={notify} reload={load} createItem={createStyle} updateItem={updateStyle} deleteItem={deleteStyle} toggleItem={toggleStyleStatus} canManage={can(P.CATALOG_MANAGE)} showIcon />);
   if (activeTab === adminTabs.orders) return chrome(<AdminOrders orders={orders} selected={selectedOrder} selectedOrderId={selectedOrderId} setSelectedOrderId={setSelectedOrderId} notify={notify} reload={load} />);
   if (activeTab === adminTabs.inspections) return chrome(<AdminOrders orders={orders.filter((order) => ["renting", "returned", "overdue"].includes(order.status))} selected={selectedOrder} selectedOrderId={selectedOrderId} setSelectedOrderId={setSelectedOrderId} notify={notify} reload={load} inspectionOnly />);
   if (activeTab === adminTabs.payments) return chrome(<PaymentManager rows={payments} notify={notify} reload={load} canConfirm={can(P.PAYMENTS_CONFIRM_BANK_TRANSFER)} />);
@@ -2188,7 +2188,7 @@ function CostumeDetailModal({ item, onClose }) {
   );
 }
 
-function TaxonomyManager({ title, noun, items, notify, reload, createItem, updateItem, deleteItem, toggleItem, showIcon = false, defaultOptions = null }) {
+function TaxonomyManager({ title, noun, items, notify, reload, createItem, updateItem, deleteItem, toggleItem, canManage = false, showIcon = false, defaultOptions = null }) {
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebouncedValue(search, 600);
   const [modal, setModal] = useState(null);
@@ -2214,7 +2214,7 @@ function TaxonomyManager({ title, noun, items, notify, reload, createItem, updat
 
   return (
     <>
-      <PageHeader title={title} subtitle={`Quản lý danh sách ${noun}, trạng thái hiển thị và dữ liệu dùng cho trang phục.`} action={<AdminButton variant="primary" onClick={() => setModal({})}><Plus size={16} /> Thêm mới</AdminButton>} />
+      <PageHeader title={title} subtitle={`Quản lý danh sách ${noun}, trạng thái hiển thị và dữ liệu dùng cho trang phục.`} action={canManage ? <AdminButton variant="primary" onClick={() => setModal({})}><Plus size={16} /> Thêm mới</AdminButton> : null} />
       <div className="admin-card">
         <div className="admin-toolbar admin-toolbar--search-only">
           <input
@@ -2232,13 +2232,13 @@ function TaxonomyManager({ title, noun, items, notify, reload, createItem, updat
             defaultOccasionIds: (value, row) => asArray(value).map((item) => item.name).filter(Boolean).join(", ") || row.defaultOccasionName || "-",
             defaultStyleIds: (value, row) => asArray(value).map((item) => item.name).filter(Boolean).join(", ") || row.defaultStyleName || "-"
           }}
-          actions={(row) => (
+          actions={canManage ? (row) => (
             <>
               <AdminButton onClick={() => setModal({ item: row })}><Pencil size={14} /> Sửa</AdminButton>
               <AdminButton onClick={() => toggle(row)}>{row.status === "active" ? "Ẩn" : "Hiện"}</AdminButton>
               <AdminButton variant="danger" onClick={() => remove(row)}><Trash2 size={14} /> Xóa</AdminButton>
             </>
-          )}
+          ) : undefined}
         />
       </div>
       {modal && <TaxonomyForm title={modal.item ? `Sửa ${noun}` : `Thêm ${noun}`} initial={modal.item} showIcon={showIcon} defaultOptions={defaultOptions} seoEnabled={noun === "danh mục"} onClose={() => setModal(null)} onSave={save} />}

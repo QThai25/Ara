@@ -3,7 +3,7 @@ import { auth } from "../middlewares/auth.middleware.js";
 import { adminOnly } from "../middlewares/admin.middleware.js";
 import * as c from "../controllers/refund.controller.js";
 import { validate } from "../middlewares/validate.middleware.js";
-import { manualRefundContext, manualRefundCreate, manualRefundSearch, orderRefundDestination, refundComplete, refundContact, refundDestinationInput, refundId, refundOverride, refundReason } from "../validations/refund.validation.js";
+import { cancellationRefundCreate, manualRefundContext, manualRefundCreate, manualRefundSearch, orderRefundDestination, refundComplete, refundContact, refundDestinationInput, refundId, refundOverride, refundReason } from "../validations/refund.validation.js";
 import { optionalPaymentAuth } from "../middlewares/paymentAccess.middleware.js";
 import { uploadRefundProofImage } from "../middlewares/upload.middleware.js";
 export const refundRoutes = Router();
@@ -31,6 +31,7 @@ adminRefundTransactionRoutes.get("/search", manualRefundSearch, validate, c.manu
 adminRefundTransactionRoutes.get("/context", manualRefundContext, validate, c.manualContext);
 adminRefundTransactionRoutes.get("/", c.manualList);
 adminRefundTransactionRoutes.post("/", manualRefundCreate, validate, c.manualCreate);
+adminRefundTransactionRoutes.post("/cancellation", cancellationRefundCreate, validate, c.cancellationCreate);
 adminRefundTransactionRoutes.get("/:id", refundId, validate, c.manualDetail);
 adminRefundTransactionRoutes.patch("/:id/start", refundId, validate, c.start);
 adminRefundTransactionRoutes.post("/:id/request-information", refundId, validate, c.requestInformation);

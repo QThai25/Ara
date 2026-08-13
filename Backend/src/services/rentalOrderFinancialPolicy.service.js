@@ -139,7 +139,7 @@ export function getAllowedRentalOrderActions({ order, financial }) {
     canSettle: actions.collectOutstanding || actions.refundDeposit,
     canProcessRefund: actions.refundDeposit,
     canComplete: actions.completeOrder,
-    canCancel: ["pending_payment", "confirmed"].includes(order.status) && !financial.hasRelevantPendingPayment
+    canCancel: ["pending_payment", "confirmed"].includes(order.status) && !financial.hasRelevantPendingPayment && !order.cancellationRequestedAt
   });
   return {
     allowedActions: actions,

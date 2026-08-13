@@ -31,7 +31,7 @@ export function resolveAdminRoutePermission(basePath, req) {
       if (pathMatches(req, /\/recover-expired-order$/)) return P.PAYMENTS_CONFIRM_BANK_TRANSFER;
       return isRead(req) ? P.PAYMENTS_VIEW_STATUS : P.PAYMENTS_CONFIRM_BANK_TRANSFER;
     case "/admin/refunds":
-      if (isRead(req)) return P.REFUNDS_VIEW_SENSITIVE;
+      if (isRead(req)) return P.REFUNDS_VIEW_STATUS;
       if (pathMatches(req, /\/complete$/)) return P.REFUNDS_COMPLETE;
       return P.REFUNDS_PROCESS;
     case "/admin/refund-transactions":

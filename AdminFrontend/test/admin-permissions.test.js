@@ -35,6 +35,19 @@ test("sidebar derives desktop and mobile visibility from one permission-aware so
   assert.equal((layout.match(/const navItems =/g) || []).length, 1);
 });
 
+test("taxonomy pages are visible to inventory viewers but mutation controls require catalog management", () => {
+  const layout = read("src/layouts/AdminLayout.jsx");
+  const routes = read("src/routes/AdminRoutes.jsx");
+  const page = read("src/pages/AdminPage.jsx");
+  for (const path of ["brands", "categories", "occasions", "styles"]) {
+    assert.equal(layout.includes('to: "/' + path + '",'), true);
+    assert.equal(routes.includes('path="/' + path + '" element={<ProtectedPage toast={toast} permission={P.INVENTORY_VIEW}>'), true);
+  }
+  assert.equal(page.includes("canManage={can(P.CATALOG_MANAGE)}"), true);
+  assert.equal(page.includes("action={canManage ?"), true);
+  assert.equal(page.includes("actions={canManage ?"), true);
+});
+
 test("admin selects use portal positioning and keyboard navigation without native select forks", () => {
   const controls = read("src/components/common/AdminControls.jsx");
   assert.match(controls, /createPortal/);

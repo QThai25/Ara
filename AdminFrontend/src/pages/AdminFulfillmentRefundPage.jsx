@@ -4,6 +4,8 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { AdminDataTable, AdminPageHeader, AdminSelectFilter, AdminStatCard } from "../components/common/AdminUI.jsx";
 import { StateMessage } from "../components/common/StateMessage.jsx";
 import { useDebouncedValue } from "../hooks/useDebouncedValue.js";
+import { useAdminAuth } from "../context/AdminAuthContext.jsx";
+import { ADMIN_PERMISSIONS as P } from "../constants/adminPermissions.js";
 import { listRefunds } from "../services/fulfillmentRefundService.js";
 
 const PAGE_SIZE = 15;
@@ -38,6 +40,8 @@ function ActionLabel({ refund }) {
 }
 
 export function AdminFulfillmentRefundPage({ notify, embedded = false, source = "settlement" }) {
+  const { can } = useAdminAuth();
+  const canViewSensitive = can(P.REFUNDS_VIEW_SENSITIVE);
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const [search, setSearch] = useState(params.get("search") || "");
@@ -99,7 +103,7 @@ export function AdminFulfillmentRefundPage({ notify, embedded = false, source = 
     />}
 
     <section className="refund-summary" aria-label="Tổng hợp trạng thái hoàn cọc">
-      {summaryCards.map(([key, label, Icon]) => <AdminStatCard key={key} icon={<Icon size={19}/>} label={label} value={data.summary?.[key]?.count || 0} hint={money(data.summary?.[key]?.amount || 0)}/>) }
+      {summaryCards.map(([key, label, Icon]) => <AdminStatCard key={key} icon={<Icon size={19}/>} label={label} value={data.summary?.[key]?.count || 0} hint={canViewSensitive ? money(data.summary?.[key]?.amount || 0) : "—"}/>) }
     </section>
 
     <section className="refund-workspace">
@@ -121,7 +125,7 @@ export function AdminFulfillmentRefundPage({ notify, embedded = false, source = 
             columns={[
               { key: "code", label: "Mã hoàn cọc", render: (row) => <strong>{row.refundCode}</strong> },
               { key: "order", label: "Mã đơn thuê", render: (row) => <button className="refund-order-link" onClick={() => navigate(`/orders/${idOf(row.orderId)}`)}>{orderCode(row)}</button> },
-              { key: "customer", label: "Khách hàng", render: (row) => <span className="refund-customer"><strong>{customer(row).name || "Khách hàng"}</strong><small>{customer(row).phone || "Chưa có số điện thoại"}</small></span> },
+              { key: "customer", label: "Khách hàng", render: (row) => <span className="refund-customer"><strong>{customer(row).name || "Khách hàng"}</strong>{canViewSensitive && <small>{customer(row).phone || "Chưa có số điện thoại"}</small>}</span> },
               { key: "amount", label: "Số tiền", className: "money-cell", render: (row) => money(row.amount) },
               { key: "status", label: "Trạng thái", render: (row) => <StatusBadge type="refund" value={row.status}/> },
               { key: "date", label: "Ngày tạo / cập nhật", render: (row) => <span className="refund-date">{dateTime(row.createdAt)}<small>Cập nhật {dateTime(row.updatedAt)}</small></span> },

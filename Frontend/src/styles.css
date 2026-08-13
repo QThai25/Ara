@@ -21034,9 +21034,12 @@ a.mei-footer-contact__item:hover .mei-footer-contact__arrow {
   }
 }
 
-.product-carousel-grid.is-sparse {
-  grid-template-columns: minmax(280px, 360px) !important;
-  justify-content: start;
+@media (min-width: 761px) {
+  .product-carousel-grid.is-sparse {
+    grid-template-columns:
+      repeat(var(--carousel-columns, 1), minmax(260px, 290px)) !important;
+    justify-content: start;
+  }
 }
 
 @media (max-width: 760px) {

@@ -305,7 +305,7 @@ export function AdminRentalOrderDetailPage({ notify }) {
 
       await reloadOrder();
 
-      return true;
+      return response?.data || true;
     } catch (err) {
       console.error(`${label} error:`, err?.response?.data || err);
 
@@ -372,14 +372,16 @@ export function AdminRentalOrderDetailPage({ notify }) {
 
     setRejectError("");
 
-    const success = await runAction(
+    const result = await runAction(
       "Từ chối đơn",
       () => rejectRentalOrder(id, reason)
     );
 
-    if (success) {
+    if (result) {
       setRejectModalOpen(false);
       setRejectReason("");
+      const refundId = result?.cancellationRefund?.id || result?.cancellationRefundId;
+      if (refundId) navigate(`/refund-transactions/${refundId}`);
     }
   };
 
@@ -392,6 +394,7 @@ export function AdminRentalOrderDetailPage({ notify }) {
   const inspections = getInspections(order);
   const inspection = getLatestInspection(order);
   const latestPaymentStatus = order?.latestPaymentId?.status;
+  const paidOrder = latestPaymentStatus === "success" || Number(order?.pricing?.paidAmount || 0) > 0 || ["paid", "fully_paid", "deposit_paid", "deposited"].includes(order?.legacyPaymentStatus || order?.paymentStatus);
   const bankTransferUnpaid = order?.paymentPreference === "bank_transfer"
     && !["success", "paid", "fully_paid", "deposit_paid", "deposited"].includes(latestPaymentStatus)
     && !["paid", "fully_paid", "deposit_paid", "deposited"].includes(order?.paymentStatus);
@@ -441,6 +444,14 @@ export function AdminRentalOrderDetailPage({ notify }) {
     const result = [];
 
     const latestPayment = order.latestPaymentId || {};
+    if (order.cancellationPending && order.cancellationRefund?.id) {
+      result.push({
+        label: "Tiếp tục xử lý hoàn tiền",
+        tone: "warning",
+        onClick: () => navigate(`/refund-transactions/${order.cancellationRefund.id}`)
+      });
+      return result;
+    }
     if (order.latePaymentRecoveryEligibility?.eligible === true) {
       result.push({
         label: "Tạo yêu cầu hoàn tiền",
@@ -587,6 +598,7 @@ export function AdminRentalOrderDetailPage({ notify }) {
     inspectionExists,
     normalizedStatus,
     bankTransferUnpaid,
+    paidOrder,
     canInspectReturn,
     canOverrideOrder,
     canProcessRefund,
@@ -1230,11 +1242,12 @@ export function AdminRentalOrderDetailPage({ notify }) {
             role="dialog"
             aria-modal="true"
           >
-            <h2>Từ chối đơn thuê</h2>
+            <h2>{paidOrder ? "Yêu cầu hủy và hoàn tiền" : "Từ chối đơn thuê"}</h2>
 
             <p>
-              Nhập lý do từ chối để cửa hàng
-              lưu lại thông tin xử lý.
+              {paidOrder
+                ? "Đơn đã nhận thanh toán. Hủy đơn sẽ tạo yêu cầu hoàn tiền cho khách; đơn chỉ chuyển sang đã hủy sau khi hoàn tiền hoàn tất."
+                : "Nhập lý do từ chối để cửa hàng lưu lại thông tin xử lý."}
             </p>
 
             <label className="admin-reject-field">
@@ -1279,7 +1292,7 @@ export function AdminRentalOrderDetailPage({ notify }) {
               >
                 {actionLoading
                   ? "Đang xử lý..."
-                  : "Xác nhận từ chối"}
+                  : paidOrder ? "Tiếp tục xử lý hoàn tiền" : "Xác nhận từ chối"}
               </button>
             </div>
           </div>
