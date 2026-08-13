@@ -2246,6 +2246,16 @@ function TaxonomyManager({ title, noun, items, notify, reload, createItem, updat
   );
 }
 
+function SeoFieldHint({ value, limit, recommendation }) {
+  const length = String(value || "").length;
+  const recommendedLimit = recommendation === "≤ ~60 ký tự" ? 60 : limit;
+  return (
+    <small className={`seo-field-hint ${length > recommendedLimit ? "is-over-recommendation" : ""}`}>
+      {length}/{limit} ký tự · Khuyến nghị {recommendation}
+    </small>
+  );
+}
+
 function TaxonomyForm({ title, initial, showIcon, defaultOptions, seoEnabled = false, onClose, onSave }) {
   const initialDefaultIds = (type) => {
     const values = asArray(initial?.[`default${type}Ids`]).map((item) => itemId(item) || item).filter(Boolean);
@@ -2271,9 +2281,21 @@ function TaxonomyForm({ title, initial, showIcon, defaultOptions, seoEnabled = f
         <label>Mô tả<textarea value={form.description} onChange={(e) => update("description", e.target.value)} /></label>
         {seoEnabled && <fieldset className="form-section">
           <legend>SEO (Tùy chọn)</legend>
-          <label>SEO title<input maxLength={70} value={form.seoTitle} onChange={(e) => update("seoTitle", e.target.value)} placeholder="Mặc định dùng: Thuê + tên danh mục" /></label>
-          <label>Meta description<textarea maxLength={160} value={form.seoDescription} onChange={(e) => update("seoDescription", e.target.value)} placeholder="Để trống để dùng mô tả danh mục." /></label>
-          <label>SEO intro<textarea maxLength={500} value={form.seoIntro} onChange={(e) => update("seoIntro", e.target.value)} placeholder="Đoạn giới thiệu hiển thị trên trang category." /></label>
+          <label>
+            SEO title
+            <input maxLength={70} value={form.seoTitle} onChange={(e) => update("seoTitle", e.target.value)} placeholder="Mặc định dùng: Thuê + tên danh mục" />
+            <SeoFieldHint value={form.seoTitle} limit={70} recommendation="≤ ~60 ký tự" />
+          </label>
+          <label>
+            Meta description
+            <textarea maxLength={160} value={form.seoDescription} onChange={(e) => update("seoDescription", e.target.value)} placeholder="Để trống để dùng mô tả danh mục." />
+            <SeoFieldHint value={form.seoDescription} limit={160} recommendation="~140–160 ký tự" />
+          </label>
+          <label>
+            SEO intro
+            <textarea maxLength={500} value={form.seoIntro} onChange={(e) => update("seoIntro", e.target.value)} placeholder="Đoạn giới thiệu hiển thị trên trang category." />
+            <SeoFieldHint value={form.seoIntro} limit={500} recommendation="1–2 câu tự nhiên" />
+          </label>
         </fieldset>}
         <div className="modal-actions"><AdminButton type="button" onClick={onClose}>Hủy</AdminButton><AdminButton type="submit" variant="primary">Lưu</AdminButton></div>
       </form>

@@ -16,5 +16,6 @@ Disallow: /my-payments
 Disallow: /notifications
 Disallow: /payment/
 Disallow: /rental-orders/
+Disallow: /checkout
 
 Sitemap: https://aradress.com/sitemap.xml

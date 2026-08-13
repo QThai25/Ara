@@ -26,6 +26,7 @@ import {
   useParams
 } from "react-router-dom";
 import { paths } from "../../routes/views.js";
+import { productMetaDescription } from "../../utils/seo.js";
 
 import { CostumeImageCarousel } from "../../components/customer/CostumeImageCarousel.jsx";
 import { AddressLocationFields } from "../../components/customer/AddressLocationFields.jsx";
@@ -1896,17 +1897,17 @@ export function CostumeDetailPage({
   const productDescription = String(product.description || "").trim();
   const productSeoTitle = String(product.seoTitle || "").trim();
   const productSeoDescription = String(product.seoDescription || "").trim();
-  const productMetaDescription = [
-    productDescription,
-    product.categoryName,
-    product.styleName,
-    "Ara Dress"
-  ].filter(Boolean).join(" · ").slice(0, 160);
+  const productMeta = productMetaDescription(product);
+  const productAvailability = product.acceptsFutureBookings === true
+    || product.operationalStatus === "active"
+    || product.status === "available"
+    ? "https://schema.org/InStock"
+    : "";
   const productSchema = {
     "@type": "Product",
     name: productName,
     ...(productSeoImages.length ? { image: productSeoImages.map((item) => absoluteSiteUrl(resolveImageUrl(item))) } : {}),
-    ...(productDescription ? { description: productDescription } : {}),
+    ...((productDescription || productSeoDescription || productMeta) ? { description: productDescription || productSeoDescription || productMeta } : {}),
     ...(product.skuCode ? { sku: product.skuCode } : {}),
     ...(product.brandName ? { brand: { "@type": "Brand", name: product.brandName } } : {}),
     ...(Number(product.rentalPricePerDay) > 0 ? {
@@ -1916,6 +1917,7 @@ export function CostumeDetailPage({
         price: Number(product.rentalPricePerDay),
         priceCurrency: "VND",
         businessFunction: "http://purl.org/goodrelations/v1#LeaseOut",
+        ...(productAvailability ? { availability: productAvailability } : {}),
         priceSpecification: {
           "@type": "UnitPriceSpecification",
           price: Number(product.rentalPricePerDay),
@@ -1944,7 +1946,7 @@ export function CostumeDetailPage({
     <>
       <Seo
         title={productSeoTitle || `Thuê ${productName} | Ara Dress`}
-        description={productSeoDescription || productMetaDescription || `Khám phá ${productName} tại Ara Dress và kiểm tra lịch thuê phù hợp.`}
+        description={productSeoDescription || productMeta || `Khám phá ${productName} tại Ara Dress và kiểm tra lịch thuê phù hợp.`}
         canonicalPath={productPath}
         type="product"
         image={productSeoImages[0] || DEFAULT_OG_IMAGE}

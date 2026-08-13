@@ -7,6 +7,7 @@ import {
   ChevronDown,
   RotateCcw
 } from "lucide-react";
+import { Link } from "react-router-dom";
 
 import { getActiveBrands } from "../../services/brandService.js";
 
@@ -193,9 +194,14 @@ export function BrandFilterGrid({
                           .toUpperCase() || "A"}
                       </span>
 
-                      <span className="brand-filter-name">
+                      <Link
+                        className="brand-filter-name"
+                        to={`/costumes?brand=${encodeURIComponent(brand.slug)}`}
+                        onClick={(event) => event.stopPropagation()}
+                        aria-label={`Xem trang thương hiệu ${brand.name}`}
+                      >
                         {brand.name}
-                      </span>
+                      </Link>
                     </label>
                   );
                 })}

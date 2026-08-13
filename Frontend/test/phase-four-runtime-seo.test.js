@@ -2,7 +2,16 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createSitemapHandler } from "../api/sitemap.js";
-import { createSeoHandler, createSeoRuntime } from "../server/seoRuntime.js";
+import {
+  createSeoHandler,
+  createSeoRuntime
+} from "../server/seoRuntime.js";
+import {
+  productDescription,
+  productStructuredData,
+  renderDocument,
+  renderRobots
+} from "../scripts/generate-sitemap.mjs";
 
 const template = `<!doctype html><html lang="vi"><head><title>Ara Dress</title><meta name="description" content="default" /><meta name="robots" content="index,follow" /></head><body><div id="root"><p>client app</p></div><script type="module" src="/assets/index.js"></script></body></html>`;
 
@@ -163,7 +172,7 @@ test("category runtime SEO only serves active categories and supports SEO fields
   await handler(categoryRequest("evening-dresses"), response);
   assert.equal(response.statusCode, 200);
   assert.match(response.body, /<title>Evening SEO<\/title>/);
-  assert.match(response.body, /<h1>Evening Dresses<\/h1>/);
+  assert.match(response.body, /<h1>Thuê Evening Dresses<\/h1>/);
 
   for (const slug of ["hidden-dresses", "deleted-dresses", "does-not-exist"]) {
     response = responseRecorder();
@@ -232,4 +241,47 @@ test("runtime sitemap falls back to static public URLs when the API is unavailab
   assert.match(response.body, /https:\/\/aradress\.com\/about/);
   assert.doesNotMatch(response.body, /\/collections\//);
   assert.doesNotMatch(response.body, /\/costumes\/dress-/);
+});
+
+test("product SEO metadata uses real product details without fake review data", () => {
+  const product = productFixture({
+    name: "Váy Lụa Dạ Hội",
+    description: "Thiết kế mềm mại cho buổi tiệc và sự kiện.",
+    categoryName: "Váy thiết kế",
+    size: "M",
+    rentalPricePerDay: 450000,
+    acceptsFutureBookings: true
+  });
+  const description = productDescription(product);
+  assert.match(description, /Váy Lụa Dạ Hội/);
+  assert.match(description, /450\.000/);
+  assert.match(description, /Váy thiết kế/);
+  assert.match(description, /size M/);
+
+  const schema = productStructuredData(product, "https://aradress.com/costumes/dress-1", "https://aradress.com/collections/vay-thiet-ke", []);
+  const offer = schema["@graph"][0].offers;
+  assert.equal(offer.availability, "https://schema.org/InStock");
+  assert.equal("aggregateRating" in schema["@graph"][0], false);
+  assert.equal("review" in schema["@graph"][0], false);
+});
+
+test("robots output follows the configured production site URL", () => {
+  const robots = renderRobots("https://shop.example");
+  assert.match(robots, /Disallow: \/api\//);
+  assert.match(robots, /Sitemap: https:\/\/shop\.example\/sitemap\.xml/);
+});
+
+test("homepage prerender contains crawlable metadata and a single SEO H1", () => {
+  const html = renderDocument("<!doctype html><html><head><title>Default</title></head><body><div id=\"root\">client</div></body></html>", {
+    title: "Cho Thuê Trang Phục & Váy Thiết Kế Giá Tốt | Ara Dress",
+    description: "Ara Dress chuyên cho thuê trang phục nữ, váy thiết kế và váy dự tiệc với giá thuê hợp lý.",
+    canonicalPath: "/",
+    structuredData: { "@context": "https://schema.org", "@type": "WebSite", name: "Ara Dress" },
+    rootHtml: "<main><h1>Cho thuê trang phục &amp; váy thiết kế</h1><p>Giới thiệu Ara Dress</p></main>"
+  });
+  assert.match(html, /<title>Cho Thuê Trang Phục &amp; Váy Thiết Kế Giá Tốt \| Ara Dress<\/title>/);
+  assert.match(html, /<link rel="canonical" href="https:\/\/aradress\.com\/" \/>/);
+  assert.equal((html.match(/<h1>/g) || []).length, 1);
+  assert.match(html, /application\/ld\+json/);
+  assert.doesNotMatch(html, /<\/div><\/div>/);
 });
