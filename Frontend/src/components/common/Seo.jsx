@@ -1,8 +1,8 @@
 import React, { useEffect } from "react";
 
-export const SITE_URL = "https://aradress.com";
-export const DEFAULT_TITLE = "Ara Dress - Cho Thuê Trang Phục & Váy Thiết Kế";
-export const DEFAULT_DESCRIPTION = "Ara Dress cho thuê trang phục, váy thiết kế và váy đi tiệc cho nhiều dịp. Khám phá các mẫu thời trang được tuyển chọn, dễ tìm size và đặt lịch thuê.";
+export const SITE_URL = String(import.meta.env.VITE_SITE_URL || "https://aradress.com").replace(/\/+$/, "");
+export const DEFAULT_TITLE = "Cho Thuê Trang Phục & Váy Thiết Kế Giá Tốt | Ara Dress";
+export const DEFAULT_DESCRIPTION = "Ara Dress chuyên cho thuê trang phục nữ, váy thiết kế và váy dự tiệc với giá thuê hợp lý. Xem size, lịch trống và đặt thuê online cho tiệc, chụp ảnh, sự kiện.";
 export const DEFAULT_OG_IMAGE = "/apple-touch-icon.png";
 
 function absoluteUrl(value = "/") {

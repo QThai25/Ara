@@ -20,6 +20,71 @@
       "headers": [{ "key": "X-Robots-Tag", "value": "noindex, follow" }]
     },
     {
+      "source": "/costumes",
+      "has": [{ "type": "query", "key": "categorySlug" }],
+      "headers": [{ "key": "X-Robots-Tag", "value": "noindex, follow" }]
+    },
+    {
+      "source": "/costumes",
+      "has": [{ "type": "query", "key": "categoryId" }],
+      "headers": [{ "key": "X-Robots-Tag", "value": "noindex, follow" }]
+    },
+    {
+      "source": "/costumes",
+      "has": [{ "type": "query", "key": "occasion" }],
+      "headers": [{ "key": "X-Robots-Tag", "value": "noindex, follow" }]
+    },
+    {
+      "source": "/costumes",
+      "has": [{ "type": "query", "key": "style" }],
+      "headers": [{ "key": "X-Robots-Tag", "value": "noindex, follow" }]
+    },
+    {
+      "source": "/costumes",
+      "has": [{ "type": "query", "key": "size" }],
+      "headers": [{ "key": "X-Robots-Tag", "value": "noindex, follow" }]
+    },
+    {
+      "source": "/costumes",
+      "has": [{ "type": "query", "key": "color" }],
+      "headers": [{ "key": "X-Robots-Tag", "value": "noindex, follow" }]
+    },
+    {
+      "source": "/costumes",
+      "has": [{ "type": "query", "key": "sort" }],
+      "headers": [{ "key": "X-Robots-Tag", "value": "noindex, follow" }]
+    },
+    {
+      "source": "/costumes",
+      "has": [{ "type": "query", "key": "search" }],
+      "headers": [{ "key": "X-Robots-Tag", "value": "noindex, follow" }]
+    },
+    {
+      "source": "/costumes",
+      "has": [{ "type": "query", "key": "brand" }],
+      "headers": [{ "key": "X-Robots-Tag", "value": "noindex, follow" }]
+    },
+    {
+      "source": "/costumes",
+      "has": [{ "type": "query", "key": "minPrice" }],
+      "headers": [{ "key": "X-Robots-Tag", "value": "noindex, follow" }]
+    },
+    {
+      "source": "/costumes",
+      "has": [{ "type": "query", "key": "maxPrice" }],
+      "headers": [{ "key": "X-Robots-Tag", "value": "noindex, follow" }]
+    },
+    {
+      "source": "/costumes",
+      "has": [{ "type": "query", "key": "status" }],
+      "headers": [{ "key": "X-Robots-Tag", "value": "noindex, follow" }]
+    },
+    {
+      "source": "/costumes",
+      "has": [{ "type": "query", "key": "page" }],
+      "headers": [{ "key": "X-Robots-Tag", "value": "noindex, follow" }]
+    },
+    {
       "source": "/admin/:path*",
       "headers": [{ "key": "X-Robots-Tag", "value": "noindex, nofollow" }]
     },

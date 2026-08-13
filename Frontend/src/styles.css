@@ -1015,12 +1015,46 @@ main {
   text-decoration: underline;
 }
 
+.ara-home-collection-links {
+  grid-column: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: center;
+}
+
+.ara-home-collection-links .ara-home-seo-intro__link {
+  margin-top: 0;
+}
+
 .catalog-seo-intro {
   max-width: 680px;
   margin: 8px 0 0;
   color: var(--muted);
   font-size: 14px;
   line-height: 1.65;
+}
+
+.catalog-collection-links {
+  display: flex;
+  flex: 0 0 100%;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin-top: 2px;
+}
+
+.catalog-collection-links a {
+  color: var(--color-primary-dark);
+  font-size: 12px;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.catalog-collection-links a:hover,
+.catalog-collection-links a:focus-visible {
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .catalog-two-column {
@@ -9184,12 +9218,21 @@ button:disabled,
 .brand-filter-name {
   min-width: 0;
   overflow: hidden;
+  color: inherit;
   font-size: 10px;
   font-weight: 600;
   line-height: 1.3;
   letter-spacing: 0.015em;
+  text-decoration: none;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.brand-filter-name:hover,
+.brand-filter-name:focus-visible {
+  color: #8d6044;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .brand-filter-message {
@@ -16986,6 +17029,10 @@ button:disabled,
     line-height: 0.98;
   }
 
+  .catalog-collection-links {
+    grid-column: 1 / -1;
+  }
+
   .catalog-title-block button {
     min-height: 36px;
     padding: 8px 12px;
@@ -21659,10 +21706,14 @@ a.mei-footer-contact__item:hover .mei-footer-contact__arrow {
     grid-column: 1;
   }
 
+  .ara-home-collection-links {
+    grid-column: 1;
+  }
+
   input,
   textarea,
   select {
     font-size: 16px !important;
   }
 }
-.catalog-category-links{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}.catalog-category-links a{display:inline-flex;align-items:center;min-height:32px;padding:0 12px;border:1px solid #d9c2a5;border-radius:999px;color:#624535;text-decoration:none;font-size:12px;font-weight:700}.catalog-category-links a:hover,.catalog-category-links a:focus-visible{border-color:#a77a42;background:#fff8ed;outline:0}.luxury-product-category-link{display:inline-flex;margin-top:8px;color:#9a6a31;font-size:12px;font-weight:800;letter-spacing:.04em;text-decoration:none}.luxury-product-category-link:hover,.luxury-product-category-link:focus-visible{text-decoration:underline;outline:0}
+.luxury-product-category-link{display:inline-flex;margin-top:8px;color:#9a6a31;font-size:12px;font-weight:800;letter-spacing:.04em;text-decoration:none}.luxury-product-category-link:hover,.luxury-product-category-link:focus-visible{text-decoration:underline;outline:0}

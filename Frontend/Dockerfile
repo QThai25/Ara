@@ -9,9 +9,11 @@ FROM dependencies AS build
 
 ARG VITE_API_BASE_URL=http://localhost:4000/api
 ARG VITE_ADMIN_URL=http://localhost:5174
+ARG VITE_SITE_URL=https://aradress.com
 
 ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
 ENV VITE_ADMIN_URL=${VITE_ADMIN_URL}
+ENV VITE_SITE_URL=${VITE_SITE_URL}
 
 COPY . .
 RUN npm run build

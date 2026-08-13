@@ -15,6 +15,7 @@ import {
   renderDocument,
   categoryPath
 } from "../scripts/generate-sitemap.mjs";
+import { rentalCategoryHeading } from "../src/utils/seo.js";
 
 const API_TIMEOUT_MS = 8_000;
 const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -243,7 +244,8 @@ export function createSeoRuntime({
         || plainText(category.description)
         || `Khám phá danh mục ${name} tại Ara Dress và chọn mẫu phù hợp với lịch thuê của bạn.`;
       const intro = plainText(category.seoIntro) || plainText(category.description);
-      const title = plainText(category.seoTitle) || `Thuê ${name} | Ara Dress`;
+      const heading = rentalCategoryHeading(name);
+      const title = plainText(category.seoTitle) || `${heading} | Ara Dress`;
       const robots = hasUnexpectedQuery(request, "slug") ? "noindex,follow" : "index,follow";
 
       return {
@@ -254,7 +256,7 @@ export function createSeoRuntime({
           canonicalPath: pathname,
           robots,
           structuredData: breadcrumbData(name, pathname),
-          rootHtml: `<main class="seo-prerender"><h1>${htmlEscape(name)}</h1>${intro ? `<p>${htmlEscape(intro)}</p>` : ""}</main>`
+          rootHtml: `<main class="seo-prerender"><h1>${htmlEscape(heading)}</h1>${intro ? `<p>${htmlEscape(intro)}</p>` : ""}</main>`
         })
       };
     });

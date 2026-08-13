@@ -33,12 +33,13 @@ For a production Compose run, provide public values before building:
 
 ```powershell
 $env:DOCKER_NODE_ENV = "production"
-$env:DOCKER_CORS_ORIGINS = "https://www.example.com,https://admin.example.com"
-$env:DOCKER_FRONTEND_URL = "https://www.example.com"
-$env:DOCKER_BACKEND_URL = "https://api.example.com"
-$env:VITE_API_BASE_URL = "https://api.example.com/api"
-$env:VITE_ADMIN_URL = "https://admin.example.com"
-$env:VITE_CUSTOMER_URL = "https://www.example.com"
+$env:DOCKER_CORS_ORIGINS = "https://aradress.com,https://www.aradress.com,https://admin.aradress.com"
+$env:DOCKER_FRONTEND_URL = "https://aradress.com"
+$env:DOCKER_BACKEND_URL = "https://api.aradress.com"
+$env:VITE_API_BASE_URL = "https://api.aradress.com/api"
+$env:VITE_ADMIN_URL = "https://admin.aradress.com"
+$env:VITE_CUSTOMER_URL = "https://aradress.com"
+$env:VITE_SITE_URL = "https://aradress.com"
 docker compose up --build -d
 ```
 
@@ -51,15 +52,16 @@ Customer and AdminFrontend remain independent Vite projects and do not depend on
 Customer variables:
 
 ```text
-VITE_API_BASE_URL=https://api.example.com/api
-VITE_ADMIN_URL=https://admin.example.com
+VITE_API_BASE_URL=https://api.aradress.com/api
+VITE_ADMIN_URL=https://admin.aradress.com
+VITE_SITE_URL=https://aradress.com
 ```
 
 Admin variables:
 
 ```text
-VITE_API_BASE_URL=https://api.example.com/api
-VITE_CUSTOMER_URL=https://www.example.com
+VITE_API_BASE_URL=https://api.aradress.com/api
+VITE_CUSTOMER_URL=https://aradress.com
 ```
 
 Each SPA already has a `vercel.json` rewrite to `/index.html`. Backend remains a regular Node/Express service and is not configured as a Vercel serverless deployment.

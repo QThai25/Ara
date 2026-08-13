@@ -2210,6 +2210,8 @@ html, body, #root { width: 100%; max-width: 100%; overflow-x: hidden !important;
 .admin-modal .admin-form { display: grid; gap: 20px; min-width: 0; }
 .admin-modal .form-section { display: grid; min-width: 0; gap: 17px; margin: 0; padding: 20px; border: 1px solid var(--ara-admin-border); border-radius: 15px; background: rgba(255, 255, 255, 0.68); }
 .admin-modal .form-section legend { padding: 0 9px; color: var(--ara-admin-accent-dark); font-size: 12px; font-weight: 900; letter-spacing: 0.055em; text-transform: uppercase; }
+.seo-field-hint { color: var(--ara-admin-muted, #84786c); font-size: 11px; font-weight: 650; line-height: 1.4; }
+.seo-field-hint.is-over-recommendation { color: #9a6a31; }
 .admin-modal .form-grid, .taxonomy-form-grid, .banner-form-grid, .voucher-form-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; min-width: 0; }
 .admin-modal label, .admin-money-input-field, .admin-number-input-field, .modal-select-field, .modal-date-field { display: grid; min-width: 0; gap: 8px; }
 .admin-modal label > span, .admin-money-input-field > span, .admin-number-input-field > span, .modal-select-label, .modal-date-label { display: block; color: #504437; font-size: 12px; font-weight: 900; line-height: 1.35; }

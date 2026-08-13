@@ -1,8 +1,9 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { productMetaDescription } from "../src/utils/seo.js";
 
-export const SITE_URL = "https://aradress.com";
+export const SITE_URL = String(process.env.SITE_URL || process.env.VITE_SITE_URL || "https://aradress.com").replace(/\/+$/, "");
 const DIST_DIR = path.resolve(process.cwd(), "dist");
 const STATIC_PATHS = ["/", "/costumes", "/about", "/contact", "/rental-policy"];
 export const DEFAULT_OG_IMAGE = "/apple-touch-icon.png";
@@ -13,6 +14,8 @@ export const NON_PUBLIC_COSTUME_STATUSES = new Set([
   "draft",
   "hidden",
   "inactive",
+  "maintenance",
+  "repairing",
   "private",
   "unavailable"
 ]);
@@ -68,6 +71,34 @@ export function categoryPath(slug) {
   return `/collections/${encodeURIComponent(slug)}`;
 }
 
+export function renderRobots(siteUrl = SITE_URL) {
+  const baseUrl = String(siteUrl).replace(/\/+$/, "");
+  return [
+    "User-agent: *",
+    "Allow: /",
+    "",
+    "Disallow: /api/",
+    "Disallow: /admin",
+    "Disallow: /account",
+    "Disallow: /login",
+    "Disallow: /register",
+    "Disallow: /forgot-password",
+    "Disallow: /rental-cart",
+    "Disallow: /cart",
+    "Disallow: /wishlist",
+    "Disallow: /offers",
+    "Disallow: /my-rentals",
+    "Disallow: /my-payments",
+    "Disallow: /notifications",
+    "Disallow: /payment/",
+    "Disallow: /rental-orders/",
+    "Disallow: /checkout",
+    "",
+    `Sitemap: ${new URL("/sitemap.xml", `${baseUrl}/`).toString()}`,
+    ""
+  ].join("\n");
+}
+
 function validLastmod(value) {
   if (!value) return "";
   const date = new Date(value);
@@ -118,6 +149,30 @@ function replaceJsonLd(html, jsonLd) {
   return pattern.test(html) ? html.replace(pattern, tag) : html.replace("</head>", `${tag}\n</head>`);
 }
 
+function replaceRoot(html, rootHtml) {
+  const rootPattern = /<div\s+id=["']root["'][^>]*>/i;
+  const rootMatch = rootPattern.exec(html);
+  if (!rootMatch) return html;
+
+  const divPattern = /<\/?div\b[^>]*>/gi;
+  divPattern.lastIndex = rootMatch.index + rootMatch[0].length;
+  let depth = 1;
+  let closingIndex = -1;
+  let match;
+
+  while ((match = divPattern.exec(html))) {
+    if (match[0].startsWith("</")) depth -= 1;
+    else if (!match[0].endsWith("/>")) depth += 1;
+    if (depth === 0) {
+      closingIndex = divPattern.lastIndex;
+      break;
+    }
+  }
+
+  if (closingIndex < 0) return html;
+  return `${html.slice(0, rootMatch.index)}<div id="root">${rootHtml}</div>${html.slice(closingIndex)}`;
+}
+
 export function renderDocument(template, {
   title,
   description,
@@ -146,7 +201,7 @@ export function renderDocument(template, {
   html = replaceMeta(html, "name", "twitter:image", imageUrl);
   html = replaceCanonical(html, canonicalUrl);
   html = replaceJsonLd(html, structuredData);
-  return html.replace(/<div id=["']root["']>[\s\S]*?<\/div>/i, `<div id="root">${rootHtml}</div>`);
+  return replaceRoot(html, rootHtml);
 }
 
 async function writeRouteDocument(template, pathname, seo) {
@@ -180,7 +235,7 @@ export function isPublicCostume(costume) {
   if (!costume || costume.isDeleted === true || costume.deletedAt) return false;
   const status = String(costume.status || "").trim().toLowerCase();
   const operationalStatus = String(costume.operationalStatus || "").trim().toLowerCase();
-  return !NON_PUBLIC_COSTUME_STATUSES.has(status) && operationalStatus !== "hidden";
+  return !NON_PUBLIC_COSTUME_STATUSES.has(status) && !["hidden", "unavailable"].includes(operationalStatus);
 }
 
 export function isPublicCategory(category) {
@@ -194,18 +249,27 @@ export function isPublicCategory(category) {
 }
 
 export function productDescription(costume) {
-  return [
-    plainText(costume?.description),
-    plainText(costume?.categoryName),
-    plainText(costume?.styleName),
-    "Ara Dress"
-  ].filter(Boolean).join(" · ").slice(0, 160);
+  return productMetaDescription(costume);
+}
+
+export function productAvailability(costume) {
+  if (costume?.acceptsFutureBookings === true) return "https://schema.org/InStock";
+  if (costume?.acceptsFutureBookings === false) return "";
+
+  const status = String(costume?.status || "").trim().toLowerCase();
+  const operationalStatus = String(costume?.operationalStatus || "").trim().toLowerCase();
+  return operationalStatus === "active" || ["available", "washing", "laundry"].includes(status)
+    ? "https://schema.org/InStock"
+    : "";
 }
 
 export function productStructuredData(costume, productUrl, categoryUrl, images) {
   const name = plainText(costume?.name) || "Trang phục Ara Dress";
-  const description = plainText(costume?.description);
+  const description = plainText(costume?.description)
+    || plainText(costume?.seoDescription)
+    || productMetaDescription(costume);
   const price = Number(costume?.rentalPricePerDay);
+  const availability = productAvailability(costume);
   const product = {
     "@type": "Product",
     name,
@@ -220,6 +284,7 @@ export function productStructuredData(costume, productUrl, categoryUrl, images) 
         price,
         priceCurrency: "VND",
         businessFunction: "http://purl.org/goodrelations/v1#LeaseOut",
+        ...(availability ? { availability } : {}),
         priceSpecification: {
           "@type": "UnitPriceSpecification",
           price,
@@ -250,14 +315,51 @@ export function productRootHtml(costume, images) {
   const name = plainText(costume?.name) || "Trang phục Ara Dress";
   const description = plainText(costume?.description);
   const price = Number(costume?.rentalPricePerDay);
-  return `<main class="seo-prerender"><article><h1>${htmlEscape(name)}</h1>${description ? `<p>${htmlEscape(description)}</p>` : ""}${price > 0 ? `<p>Giá thuê từ ${htmlEscape(price.toLocaleString("vi-VN"))} VND/ngày.</p>` : ""}${images[0] ? `<img src="${htmlEscape(images[0])}" alt="${htmlEscape(name)}" width="1200" height="1500" fetchpriority="high" />` : ""}</article></main>`;
+  const firstImageAlt = plainText(costume?.imageAssets?.[0]?.alt) || name;
+  return `<main class="seo-prerender"><article><h1>${htmlEscape(name)}</h1>${description ? `<p>${htmlEscape(description)}</p>` : ""}${price > 0 ? `<p>Giá thuê từ ${htmlEscape(price.toLocaleString("vi-VN"))} VND/ngày.</p>` : ""}${images[0] ? `<img src="${htmlEscape(images[0])}" alt="${htmlEscape(firstImageAlt)}" width="1200" height="1500" fetchpriority="high" />` : ""}</article></main>`;
 }
 
 export function catalogRootHtml(title, description) {
   return `<main class="seo-prerender"><h1>${htmlEscape(title)}</h1>${description ? `<p>${htmlEscape(description)}</p>` : ""}</main>`;
 }
 
-async function prerenderPublicRoutes(template) {
+function homepageRootHtml(categories = []) {
+  const categoryLinks = categories
+    .filter(isPublicCategory)
+    .slice(0, 8)
+    .map((category) => `<a href="${htmlEscape(categoryPath(category.slug))}">Thuê ${htmlEscape(category.name)}</a>`)
+    .join("");
+
+  return `<main class="seo-prerender"><section><p>ARA DRESS · THUÊ TRANG PHỤC</p><h1>Cho thuê trang phục &amp; váy thiết kế</h1><p>${htmlEscape("Ara Dress chuyên cho thuê trang phục nữ, váy thiết kế và váy dự tiệc với giá thuê hợp lý. Xem size, lịch trống và đặt thuê online cho tiệc, chụp ảnh, sự kiện.")}</p><nav aria-label="Bộ sưu tập trang phục"><a href="/costumes">Xem tất cả trang phục cho thuê</a>${categoryLinks}</nav></section></main>`;
+}
+
+async function prerenderPublicRoutes(template, catalog) {
+  await writeRouteDocument(template, "/", {
+    title: "Cho Thuê Trang Phục & Váy Thiết Kế Giá Tốt | Ara Dress",
+    description: "Ara Dress chuyên cho thuê trang phục nữ, váy thiết kế và váy dự tiệc với giá thuê hợp lý. Xem size, lịch trống và đặt thuê online cho tiệc, chụp ảnh, sự kiện.",
+    canonicalPath: "/",
+    rootHtml: homepageRootHtml(catalog.categories),
+    structuredData: {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "WebSite",
+          "@id": `${absoluteSiteUrl("/")}#website`,
+          name: "Ara Dress",
+          url: absoluteSiteUrl("/"),
+          inLanguage: "vi-VN"
+        },
+        {
+          "@type": "Organization",
+          "@id": `${absoluteSiteUrl("/")}#organization`,
+          name: "Ara Dress",
+          url: absoluteSiteUrl("/"),
+          logo: absoluteSiteUrl("/AraLogoCir.svg")
+        }
+      ]
+    }
+  });
+
   const staticPages = [
     {
       pathname: "/costumes",
@@ -395,7 +497,8 @@ export async function generateSitemapArtifact() {
   await mkdir(DIST_DIR, { recursive: true });
   const template = await readFile(path.join(DIST_DIR, "index.html"), "utf8");
   await writeFile(path.join(DIST_DIR, "sitemap-fallback.xml"), renderSitemap(buildUrls(catalog)), "utf8");
-  await prerenderPublicRoutes(template);
+  await writeFile(path.join(DIST_DIR, "robots.txt"), renderRobots(), "utf8");
+  await prerenderPublicRoutes(template, catalog);
 }
 
 const invokedScript = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);

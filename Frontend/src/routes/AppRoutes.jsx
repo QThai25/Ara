@@ -82,8 +82,9 @@ function AdminRedirect({ user }) {
 }
 
 function RouteSeo() {
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   const canonicalPath = pathname === "/" ? "/" : pathname.replace(/\/+$/, "") || "/";
+  const hasQuery = Boolean(search);
 
   if (pathname === "/") {
     return (
@@ -91,6 +92,7 @@ function RouteSeo() {
         title={DEFAULT_TITLE}
         description={DEFAULT_DESCRIPTION}
         canonicalPath="/"
+        robots={hasQuery ? "noindex,follow" : "index,follow"}
         structuredData={{
           "@context": "https://schema.org",
           "@graph": [
@@ -114,7 +116,18 @@ function RouteSeo() {
     );
   }
 
-  if (pathname === "/costumes" || pathname === "/brands" || pathname.startsWith("/costumes/")) {
+  if (pathname === "/costumes") {
+    return (
+      <Seo
+        title="Cho Thuê Váy & Trang Phục | Ara Dress"
+        description="Khám phá các mẫu váy thiết kế và trang phục cho thuê của Ara Dress theo dịp mặc, phong cách và thương hiệu."
+        canonicalPath="/costumes"
+        robots={hasQuery ? "noindex,follow" : "index,follow"}
+      />
+    );
+  }
+
+  if (pathname === "/brands" || pathname.startsWith("/costumes/")) {
     return (
       <Seo
         title="Cho Thuê Váy & Trang Phục | Ara Dress"

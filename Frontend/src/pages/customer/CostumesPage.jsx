@@ -12,6 +12,7 @@ import { getCategories, getCostumePage } from "../../services/costumeService.js"
 import { isWishlisted, toggleWishlist } from "../../services/wishlistService.js";
 import { paths, views } from "../../routes/views.js";
 import { canonicalSlug, occasionLabelBySlug, styleLabelBySlug } from "../../utils/catalogData.js";
+import { rentalCategoryHeading } from "../../utils/seo.js";
 import { useAriMascot } from "../../context/AriMascotContext.jsx";
 import { Seo, absoluteSiteUrl } from "../../components/common/Seo.jsx";
 
@@ -72,7 +73,7 @@ function titleForFilters(filters, selectedBrands, categories) {
   if (selectedBrands.length) return `Thương hiệu ${selectedBrands[0].replace(/-/g, " ").toUpperCase()}`;
   if (filters.category) {
     const category = categories.find((item) => item.slug === filters.category || item.id === filters.category || item._id === filters.category);
-    return `Thuê ${category?.name || filters.category}`;
+    return rentalCategoryHeading(category?.name || filters.category);
   }
   return "Cho thuê váy & trang phục";
 }
@@ -194,9 +195,9 @@ export function CostumesPage({ setView, user, notify }) {
   const categorySeoDescription = selectedCategory?.seoDescription?.trim();
   const categorySeoIntro = selectedCategory?.seoIntro?.trim() || selectedCategory?.description?.trim();
   const catalogTitle = isCategoryLanding
-    ? categorySeoTitle || `Thuê ${selectedCategory.name} | Ara Dress`
+    ? categorySeoTitle || `${rentalCategoryHeading(selectedCategory.name)} | Ara Dress`
     : isLegacyCategoryLanding
-      ? categorySeoTitle || `Thuê ${selectedCategory.name} | Ara Dress`
+      ? categorySeoTitle || `${rentalCategoryHeading(selectedCategory.name)} | Ara Dress`
       : location.pathname === "/brands"
         ? "Thương Hiệu Trang Phục | Ara Dress"
         : "Cho Thuê Váy & Trang Phục | Ara Dress";
@@ -220,6 +221,10 @@ export function CostumesPage({ setView, user, notify }) {
       { "@type": "ListItem", position: 2, name: isCategoryRoute && selectedCategory ? selectedCategory.name : "Danh mục sản phẩm", item: absoluteSiteUrl(catalogCanonical) }
     ]
   };
+  const collectionCategories = categories.filter((category) => {
+    const name = typeof category?.name === "string" ? category.name.trim() : "";
+    return Boolean(category?.slug && name && !/^\d+$/.test(name));
+  });
   const hasActiveFilters = buildSearchParams({ ...filters, sort: "" }, selectedBrands, 1, { omitCategory: Boolean(categoryPathSlug) }).toString().length > 0;
   const openProduct = (product) => setView(views.detail, paths.detail(product.id || product._id));
   const setCatalogFilters = (next) => {
@@ -272,8 +277,8 @@ export function CostumesPage({ setView, user, notify }) {
           <div className="catalog-title-block">
             <h1>{filterTitle}</h1>
                 {isIndexableCatalog && (!isCategoryRoute || hasBackendCategoryDescription) && <p className="catalog-seo-intro">{isCategoryRoute ? categorySeoIntro : catalogDescription}</p>}
-            {categories.filter((category) => category?.slug).length > 0 && <nav className="catalog-category-links" aria-label="Danh mục trang phục">
-              {categories.filter((category) => category?.slug).map((category) => <Link key={category.slug} to={paths.category(category.slug)}>{category.name}</Link>)}
+            {collectionCategories.length > 0 && <nav className="catalog-collection-links" aria-label="Danh mục trang phục">
+              {collectionCategories.map((category) => <Link key={category.slug} to={paths.category(category.slug)}>{category.name}</Link>)}
             </nav>}
             {hasActiveFilters && <button type="button" onClick={clearAllFilters}>Xóa bộ lọc</button>}
           </div>

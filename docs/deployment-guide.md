@@ -127,7 +127,7 @@ Tạo hai project:
 
 Env:
 
-- Customer: `VITE_API_BASE_URL`, `VITE_ADMIN_URL`.
+- Customer: `VITE_API_BASE_URL`, `VITE_ADMIN_URL`, `VITE_SITE_URL`.
 - Admin: `VITE_API_BASE_URL`, `VITE_CUSTOMER_URL`.
 
 Không đưa Backend secret vào biến `VITE_*`. Preview domain chỉ thêm vào CORS khi thật sự cần test staging. Kiểm tra SPA deep link cho `/orders/:id`, `/payments/:id`, `/inspections/:orderId`, `/refunds/:id` và `/staff/:id`.
