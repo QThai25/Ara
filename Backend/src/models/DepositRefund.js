@@ -28,7 +28,7 @@ const schema = new mongoose.Schema({
   paymentId: { type: mongoose.Schema.Types.ObjectId, ref: "Payment", default: null, index: true },
   expectedAmount: { type: Number, default: 0, min: 0 },
   amountReceived: { type: Number, default: 0, min: 0 },
-  reasonCode: { type: String, enum: ["expired_order_transfer", "duplicate_transfer", "excess_transfer", "canceled_payment_transfer", "wrong_payment", "other", null], default: null },
+  reasonCode: { type: String, enum: ["expired_order_transfer", "duplicate_transfer", "excess_transfer", "canceled_payment_transfer", "order_cancellation", "wrong_payment", "other", null], default: null },
   reasonDescription: { type: String, default: "", trim: true, maxlength: 1000 },
   verificationAcknowledged: { type: Boolean, default: false },
   assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
@@ -37,7 +37,7 @@ const schema = new mongoose.Schema({
   // Immutable business separation: settlement = Hoàn cọc, manual_refund = Hoàn tiền.
   // late_payment_recovery is retained only for historical records created before
   // the standalone manual-refund module was introduced.
-  source: { type: String, enum: ["settlement", "manual_refund", "late_payment_recovery"], default: "settlement", index: true },
+  source: { type: String, enum: ["settlement", "manual_refund", "late_payment_recovery", "order_cancellation"], default: "settlement", index: true },
   recoveryId: { type: mongoose.Schema.Types.ObjectId, ref: "LatePaymentRecovery", default: null, index: true },
   sourcePaymentIds: [{ type: mongoose.Schema.Types.ObjectId, ref: "Payment" }],
   receivedAt: { type: Date, default: null },

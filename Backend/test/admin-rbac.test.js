@@ -10,6 +10,8 @@ import {
   permissionsForRole
 } from "../src/utils/adminPermissions.js";
 import { resolveAdminRoutePermission } from "../src/policies/adminRoute.policy.js";
+import { requireAdminPermission } from "../src/middlewares/adminPermission.middleware.js";
+import { AuditLog } from "../src/models/AuditLog.js";
 
 const read = (relative) => fs.readFileSync(new URL(relative, import.meta.url), "utf8");
 
@@ -81,7 +83,7 @@ test("route policy distinguishes staff operations from owner-only direct API acc
   assert.equal(resolveAdminRoutePermission("/admin/rental-orders", request("POST", "/abc/inspection")), P.INSPECTIONS_CREATE);
   assert.equal(resolveAdminRoutePermission("/admin/rental-orders", request("POST", "/abc/settlement")), P.SETTLEMENT_APPROVE);
   assert.equal(resolveAdminRoutePermission("/admin/payments", request("PATCH", "/abc/confirm")), P.PAYMENTS_CONFIRM_BANK_TRANSFER);
-  assert.equal(resolveAdminRoutePermission("/admin/refunds", request("GET", "/abc")), P.REFUNDS_VIEW_SENSITIVE);
+  assert.equal(resolveAdminRoutePermission("/admin/refunds", request("GET", "/abc")), P.REFUNDS_VIEW_STATUS);
   assert.equal(resolveAdminRoutePermission("/admin/refunds", request("PATCH", "/abc/complete")), P.REFUNDS_COMPLETE);
   assert.equal(resolveAdminRoutePermission("/admin/reports", request("GET", "/overview")), P.REPORTS_VIEW);
   assert.equal(resolveAdminRoutePermission("/admin/customers", request("GET", "/")), P.CUSTOMERS_VIEW_OPERATIONAL);
@@ -91,6 +93,49 @@ test("route policy distinguishes staff operations from owner-only direct API acc
   assert.equal(resolveAdminRoutePermission("/admin/customers", request("DELETE", "/customer-id")), P.CUSTOMERS_MANAGE_SENSITIVE);
   assert.equal(resolveAdminRoutePermission("/admin/staff", request("GET", "/")), P.STAFF_MANAGE);
   assert.equal(resolveAdminRoutePermission("/admin/audit-logs", request("GET", "/")), P.AUDIT_VIEW);
+});
+
+test("taxonomy routes allow staff reads and deny staff mutations while owners retain full access", async (t) => {
+  t.mock.method(AuditLog, "create", async () => ({}));
+  const request = (method, path) => ({ method, path });
+  const invoke = (role, permission, method, path) => new Promise((resolve) => {
+    requireAdminPermission(permission)(
+      {
+        user: { role },
+        method,
+        path,
+        originalUrl: "/api" + path,
+        ip: "127.0.0.1",
+        get: () => ""
+      },
+      {},
+      (error) => resolve(error || null)
+    );
+  });
+  const taxonomyRoutes = [
+    ["/admin/categories", "/category-id"],
+    ["/admin/brands", "/brand-id"],
+    ["/admin/occasions", "/occasion-id"],
+    ["/admin/styles", "/style-id"]
+  ];
+  for (const [basePath, itemPath] of taxonomyRoutes) {
+    const readPermission = resolveAdminRoutePermission(basePath, request("GET", "/"));
+    assert.equal(readPermission, P.INVENTORY_VIEW, basePath + " GET permission");
+    assert.equal(hasAdminPermission("staff", readPermission), true, basePath + " staff GET");
+    assert.equal(hasAdminPermission("owner", readPermission), true, basePath + " owner GET");
+    assert.equal(await invoke("staff", readPermission, "GET", basePath), null);
+    assert.equal(await invoke("owner", readPermission, "GET", basePath), null);
+
+    for (const method of ["POST", "PATCH", "DELETE"]) {
+      const mutationPermission = resolveAdminRoutePermission(basePath, request(method, itemPath));
+      assert.equal(mutationPermission, P.CATALOG_MANAGE, basePath + " " + method + " permission");
+      assert.equal(hasAdminPermission("staff", mutationPermission), false, basePath + " staff " + method + " -> 403");
+      assert.equal(hasAdminPermission("owner", mutationPermission), true, basePath + " owner " + method);
+      const staffError = await invoke("staff", mutationPermission, method, basePath + itemPath);
+      assert.equal(staffError?.statusCode, 403, basePath + " staff " + method + " -> 403");
+      assert.equal(await invoke("owner", mutationPermission, method, basePath + itemPath), null);
+    }
+  }
 });
 
 test("session authorization rechecks status and tokenVersion instead of trusting JWT role", () => {

@@ -4,6 +4,8 @@ import { DepositRefund } from "../models/DepositRefund.js";
 import { LatePaymentRecovery } from "../models/LatePaymentRecovery.js";
 import { RefundDestination } from "../models/RefundDestination.js";
 import { RentalOrder } from "../models/RentalOrder.js";
+import { Reservation } from "../models/Reservation.js";
+import { TransportReservation } from "../models/TransportReservation.js";
 import { User } from "../models/User.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ADMIN_PERMISSIONS, hasAdminPermission, isAdminRole } from "../utils/adminPermissions.js";
@@ -14,11 +16,13 @@ import { Payment } from "../models/Payment.js";
 import { resolveSupportedBank } from "./bankCatalog.service.js";
 import { createNotificationOnce } from "./notification.service.js";
 import { getOrderFinancialSnapshot } from "./rentalOrderFinancialPolicy.service.js";
+import { runFinancialTransaction } from "../utils/financialTransaction.js";
+import { releaseVoucherForOrder } from "./voucher.service.js";
 import { cloudinary } from "../config/cloudinary.js";
 import sharp from "sharp";
 
 const statuses = ["awaiting_information", "pending", "processing", "completed", "failed", "canceled"];
-const MANUAL_REFUND_SOURCES = ["manual_refund", "late_payment_recovery"];
+const MANUAL_REFUND_SOURCES = ["manual_refund", "late_payment_recovery", "order_cancellation"];
 const code = () => `ARARF-${crypto.randomBytes(5).toString("hex").toUpperCase()}`;
 const escapeRegex = (value) => String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -35,6 +39,10 @@ export function isManualRefundSource(value) {
   return MANUAL_REFUND_SOURCES.includes(typeof value === "string" ? value : value?.source);
 }
 
+export function isCancellationRefund(value) {
+  return (typeof value === "string" ? value : value?.source) === "order_cancellation";
+}
+
 function effectiveLateRefundStatus(refund) {
   if (!isManualRefundSource(refund)) return refund?.status;
   const hasDestination = hasValidRefundDestination(refund);
@@ -45,8 +53,30 @@ function effectiveLateRefundStatus(refund) {
   return refund?.status;
 }
 
-function allowedActions(refund) {
-  if (isManualRefundSource(refund)) {
+const refundActionPermissions = Object.freeze({
+  viewDetails: ADMIN_PERMISSIONS.REFUNDS_VIEW_STATUS,
+  viewMissingInformation: ADMIN_PERMISSIONS.REFUNDS_PROCESS,
+  startProcessing: ADMIN_PERMISSIONS.REFUNDS_PROCESS,
+  completeTransfer: ADMIN_PERMISSIONS.REFUNDS_COMPLETE,
+  reportFailure: ADMIN_PERMISSIONS.REFUNDS_PROCESS,
+  viewTransferEvidence: ADMIN_PERMISSIONS.REFUNDS_VIEW_SENSITIVE,
+  retry: ADMIN_PERMISSIONS.REFUNDS_PROCESS,
+  viewCancellationReason: ADMIN_PERMISSIONS.REFUNDS_VIEW_STATUS,
+  recordContact: ADMIN_PERMISSIONS.REFUNDS_PROCESS,
+  startRefund: ADMIN_PERMISSIONS.REFUNDS_PROCESS,
+  completeRefund: ADMIN_PERMISSIONS.REFUNDS_COMPLETE,
+  failRefund: ADMIN_PERMISSIONS.REFUNDS_PROCESS,
+  retryRefund: ADMIN_PERMISSIONS.REFUNDS_PROCESS,
+  cancelRefund: ADMIN_PERMISSIONS.REFUNDS_PROCESS
+});
+
+function filterAllowedActions(actions, actor) {
+  if (!actor) return actions;
+  return Object.fromEntries(Object.entries(actions).filter(([action]) => hasAdminPermission(actor, refundActionPermissions[action])));
+}
+
+function allowedActions(refund, actor = null) {
+  const actions = isManualRefundSource(refund) ? (() => {
     const status = effectiveLateRefundStatus(refund);
     return {
       viewDetails: true,
@@ -58,8 +88,7 @@ function allowedActions(refund) {
       cancelRefund: ["awaiting_information", "pending"].includes(status),
       viewTransferEvidence: status === "completed"
     };
-  }
-  return {
+  })() : {
     viewDetails: true,
     viewMissingInformation: refund.status === "awaiting_information",
     startProcessing: refund.status === "pending",
@@ -69,12 +98,48 @@ function allowedActions(refund) {
     retry: refund.status === "failed",
     viewCancellationReason: refund.status === "canceled"
   };
+  return filterAllowedActions(actions, actor);
 }
 
-function present(refund, { fullAccount = false } = {}) {
-  const value = refund?.toObject ? refund.toObject({ virtuals: true }) : refund;
+function presentStaffRefund(value, actions) {
+  const order = value.orderId && typeof value.orderId === "object" ? value.orderId : null;
+  const customer = value.customerId && typeof value.customerId === "object" ? value.customerId : null;
+  const orderId = order?._id || value.orderId || null;
+  const customerId = customer?._id || value.customerId || null;
+  const status = value.refundStatus || value.status;
+  return {
+    id: value._id || value.id,
+    _id: value._id || value.id,
+    refundCode: value.refundCode,
+    orderId: orderId ? { _id: orderId, orderCode: order?.orderCode || "" } : null,
+    orderCode: order?.orderCode || "",
+    customerId: customerId ? { _id: customerId, name: customer?.name || value.customerSnapshot?.name || "" } : null,
+    customerName: customer?.name || value.customerSnapshot?.name || "",
+    amount: value.amount,
+    status,
+    refundStatus: value.refundStatus,
+    source: value.source,
+    createdAt: value.createdAt,
+    updatedAt: value.updatedAt,
+    allowedActions: actions
+  };
+}
+
+function canViewSensitiveRefundData(actor) {
+  return Boolean(actor && hasAdminPermission(actor, ADMIN_PERMISSIONS.REFUNDS_VIEW_SENSITIVE));
+}
+
+function present(refund, { fullAccount = false, actor = null, adminView = false } = {}) {
+  const value = refund?.toObject ? refund.toObject({ virtuals: true }) : { ...(refund || {}) };
   const normalizedLateStatus = isManualRefundSource(value) ? effectiveLateRefundStatus(value) : null;
-  const normalizedLateActions = isManualRefundSource(value) ? allowedActions({ ...value, status: normalizedLateStatus }) : null;
+  const normalizedLateActions = isManualRefundSource(value) ? allowedActions({ ...value, status: normalizedLateStatus }, actor) : null;
+  if (isManualRefundSource(value)) {
+    value.refundStatus = normalizedLateStatus;
+    value.status = value.refundStatus;
+  }
+  const actions = normalizedLateActions || allowedActions(value, actor);
+  if (adminView && !canViewSensitiveRefundData(actor)) return presentStaffRefund(value, actions);
+
   const snapshot = value.refundDestinationSnapshot || value.destinationSnapshot;
   if (snapshot) {
     const visible = fullAccount ? revealDestinationSnapshot(snapshot) : { ...snapshot, accountNumber: undefined, encryptedAccountNumber: undefined, maskedAccountNumber: snapshot.maskedAccountNumber || `••••••${snapshot.accountNumberLast4 || ""}` };
@@ -87,11 +152,7 @@ function present(refund, { fullAccount = false } = {}) {
     uploadedAt: asset.uploadedAt,
     accessUrl: asset.publicId ? cloudinary.utils.private_download_url(asset.publicId, String(asset.mimeType || "image/jpeg").split("/")[1].replace("jpeg", "jpg"), { resource_type: "image", type: "authenticated", expires_at: Math.floor(Date.now() / 1000) + 600 }) : ""
   }));
-  if (isManualRefundSource(value)) {
-    value.refundStatus = normalizedLateStatus;
-    value.status = value.refundStatus;
-  }
-  return { ...value, allowedActions: normalizedLateActions || allowedActions(value) };
+  return { ...value, allowedActions: actions };
 }
 
 function uploadPrivateProof(file, refundId) {
@@ -128,7 +189,7 @@ export async function uploadProof(id, file, user) {
     await cloudinary.uploader.destroy(uploaded.public_id, { resource_type: "image", type: "authenticated", invalidate: true }).catch(() => {});
     throw new ApiError(409, "Khoản hoàn vừa thay đổi trạng thái hoặc đã đủ số chứng từ.");
   }
-  return detail(id);
+  return detail(id, { actor: user });
 }
 
 async function ownedOrder(id, user) {
@@ -205,6 +266,75 @@ export async function ensureRefund(order, inspection, actor) {
   order.settlementStatus = "pending_refund";
   await order.save();
   return refund;
+}
+
+// Cancellation refunds use the same DepositRefund ledger and processing
+// actions as other manual refunds, but their source payment is already a
+// successful rental payment. They must never be routed through the
+// late-payment rule that rejects successful payments.
+export async function ensureCancellationRefund({ order, actor, reason = "", session = null }) {
+  const existingQuery = DepositRefund.findOne({ orderId: order._id, source: "order_cancellation" }).sort({ createdAt: -1 });
+  if (session) existingQuery.session(session);
+  const existing = await existingQuery;
+  if (existing) return existing;
+
+  const paymentQuery = Payment.find({
+    orderId: order._id,
+    status: "success",
+    paymentType: { $ne: "refund" }
+  }).sort({ createdAt: 1 });
+  const refundQuery = DepositRefund.find({ orderId: order._id, source: "order_cancellation" }).select("status amount");
+  if (session) {
+    paymentQuery.session(session);
+    refundQuery.session(session);
+  }
+  const [payments, refunds] = await Promise.all([paymentQuery.lean(), refundQuery.lean()]);
+  const paidAmount = payments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+  const refundedAmount = refunds
+    .filter((refund) => refund.status === "completed")
+    .reduce((sum, refund) => sum + Number(refund.amount || 0), 0);
+  const processingAmount = refunds
+    .filter((refund) => ["awaiting_information", "pending", "processing"].includes(refund.status))
+    .reduce((sum, refund) => sum + Number(refund.amount || 0), 0);
+  const amount = Math.max(0, paidAmount - refundedAmount - processingAmount);
+  if (amount <= 0) return refunds.at(-1) || null;
+
+  const storedSnapshot = order.refundDestinationSnapshot || null;
+  const snapshot = revealDestinationSnapshot(storedSnapshot);
+  const hasDestination = Boolean(snapshot?.bankBin && snapshot?.accountNumber && snapshot?.accountName);
+  const values = {
+    refundCode: code(),
+    orderId: order._id,
+    customerId: order.customerId,
+    paymentId: payments.at(-1)?._id || null,
+    sourcePaymentIds: payments.map((payment) => payment._id),
+    expectedAmount: paidAmount,
+    amountReceived: paidAmount,
+    amount,
+    reasonCode: "order_cancellation",
+    reasonDescription: String(reason || "").trim().slice(0, 1000),
+    source: "order_cancellation",
+    contactStatus: hasDestination ? "information_confirmed" : "not_contacted",
+    status: hasDestination ? "pending" : "awaiting_information",
+    destinationType: hasDestination ? "bank_account" : null,
+    destinationSnapshot: storedSnapshot,
+    refundDestinationSnapshot: storedSnapshot,
+    refundQrPayload: "",
+    refundQrDataUrl: "",
+    refundQrGeneratedAt: null,
+    initiatedBy: actor,
+    idempotencyKey: `order-cancellation:${order._id}`,
+    auditTrail: [{ actorId: actor, action: "refund.created", reason: "order_cancellation" }]
+  };
+  try {
+    const created = await DepositRefund.create([values], session ? { session } : {});
+    return created[0];
+  } catch (error) {
+    if (error?.code !== 11000) throw error;
+    const retryQuery = DepositRefund.findOne({ idempotencyKey: values.idempotencyKey });
+    if (session) retryQuery.session(session);
+    return retryQuery;
+  }
 }
 
 export async function ensureLatePaymentRefund({ order, payment, recovery, actor, amount, receivedAt = null, transactionReference = "", transferContent = "", session = null }) {
@@ -323,16 +453,71 @@ async function resolveManualRefundContext({ orderId = null, paymentId = null } =
     const saved = await RefundDestination.findOne({ userId: customerId, isDefault: true, isEnabled: true }).select("+encryptedAccountNumber");
     destination = safeDestinationSummary(saved && destinationSnapshot(saved, "customer_profile"));
   }
+  const linkedPayments = order?._id
+    ? await Payment.find({ orderId: order._id, paymentType: { $ne: "refund" }, status: { $in: ["success", "refunded"] } }).select("_id status amount").lean()
+    : [];
+  const cancellationRefunds = order?._id
+    ? await DepositRefund.find({ orderId: order._id, source: "order_cancellation" }).select("status amount").lean()
+    : [];
+  const paidAmount = linkedPayments.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+  const refundedAmount = cancellationRefunds.filter((item) => item.status === "completed").reduce((sum, item) => sum + Number(item.amount || 0), 0);
+  const pendingRefundAmount = cancellationRefunds.filter((item) => ["awaiting_information", "pending", "processing"].includes(item.status)).reduce((sum, item) => sum + Number(item.amount || 0), 0);
+  const remainingRefundableAmount = Math.max(0, paidAmount - refundedAmount - pendingRefundAmount);
   return {
     order: order ? { id: order._id, orderCode: order.orderCode || "", status: order.status, paymentStatus: order.paymentStatus, holdExpiresAt: order.holdExpiresAt || null } : null,
     payment: payment ? { id: payment._id, code: manualPaymentCode(payment), status: payment.status, method: payment.method, provider: payment.provider, amount: payment.amount, receivedAt: payment.receivedAt || null, actualReceivedAmount: payment.actualReceivedAmount || null } : null,
     customer: safeCustomerSnapshot(customer, order?.customerInfo),
     destination,
-    existingRefunds: existing
+    existingRefunds: existing,
+    refundLedger: { paidAmount, refundedAmount, pendingRefundAmount, remainingRefundableAmount },
+    refundEligibility: {
+      eligible: payment?.status === "success" && payment.paymentType !== "refund" && remainingRefundableAmount > 0 && pendingRefundAmount === 0,
+      reason: payment?.status !== "success"
+        ? "payment_not_success"
+        : remainingRefundableAmount <= 0
+          ? "already_refunded"
+          : pendingRefundAmount > 0
+            ? "refund_pending"
+            : "eligible"
+    }
   };
 }
 
-export async function searchManualRefundContexts(search = "", limit = 20) {
+function presentManualSearchContext(item, actor) {
+  if (canViewSensitiveRefundData(actor)) return item;
+  return {
+    paymentId: item.paymentId,
+    paymentStatus: item.paymentStatus,
+    method: item.method,
+    amount: item.amount,
+    orderId: item.orderId,
+    orderCode: item.orderCode,
+    orderStatus: item.orderStatus,
+    customer: { name: item.customer?.name || "" }
+  };
+}
+
+function presentManualRefundContext(context, actor) {
+  if (canViewSensitiveRefundData(actor)) return context;
+  return {
+    order: context.order && {
+      id: context.order.id,
+      orderCode: context.order.orderCode,
+      status: context.order.status,
+      paymentStatus: context.order.paymentStatus
+    },
+    payment: context.payment && {
+      id: context.payment.id,
+      status: context.payment.status,
+      method: context.payment.method,
+      amount: context.payment.amount
+    },
+    customer: { name: context.customer?.name || "" },
+    existingRefunds: (context.existingRefunds || []).map(({ _id, refundCode, status, amount, createdAt }) => ({ _id, refundCode, status, amount, createdAt }))
+  };
+}
+
+export async function searchManualRefundContexts(search = "", limit = 20, actor = null) {
   const value = String(search || "").trim();
   if (!value) return { items: [] };
   const regex = new RegExp(escapeRegex(value), "i");
@@ -371,13 +556,13 @@ export async function searchManualRefundContexts(search = "", limit = 20) {
       customer: safeCustomerSnapshot(customer, order?.customerInfo)
     };
   });
-  return { items };
+  return { items: items.map((item) => presentManualSearchContext(item, actor)) };
 }
 
-export async function getManualRefundContext(query = {}) {
+export async function getManualRefundContext(query = {}, actor = null) {
   const context = await resolveManualRefundContext({ orderId: query.orderId || null, paymentId: query.paymentId || null });
   if (!context.order && !context.payment && !context.customer.name && !context.customer.phone && !context.customer.email) throw new ApiError(404, "Không tìm thấy đơn thuê hoặc thanh toán.");
-  return context;
+  return presentManualRefundContext(context, actor);
 }
 
 export async function createManualRefund(body = {}, user) {
@@ -413,11 +598,11 @@ export async function createManualRefund(body = {}, user) {
 
   const idempotencyKey = String(body.idempotencyKey || `manual-refund:${paymentId || orderId || "unlinked"}:${receivedReference.toUpperCase()}`).trim();
   const existingByKey = await DepositRefund.findOne({ idempotencyKey });
-  if (existingByKey) return detail(existingByKey._id);
+  if (existingByKey) return detail(existingByKey._id, { actor: user });
   const duplicateQuery = { source: { $in: MANUAL_REFUND_SOURCES }, receivedTransactionReference: receivedReference };
   if (paymentId) duplicateQuery.paymentId = paymentId;
   const duplicate = receivedReference ? await DepositRefund.findOne(duplicateQuery) : null;
-  if (duplicate) return detail(duplicate._id);
+  if (duplicate) return detail(duplicate._id, { actor: user });
 
   const storedDestination = order?.refundDestinationSnapshot || (customerId ? await RefundDestination.findOne({ userId: customerId, isDefault: true, isEnabled: true }).select("+encryptedAccountNumber").then((item) => item && secureDestinationSnapshot(destinationSnapshot(item, "customer_profile"))) : null);
   const destination = revealDestinationSnapshot(storedDestination);
@@ -446,7 +631,7 @@ export async function createManualRefund(body = {}, user) {
     actionUrl: order?._id ? `/my-rentals/${order._id}` : "/my-rentals", priority: "normal",
     eventKey: `manual-refund:${refund._id}:created`, metadata: { amount: amountReceived }
   });
-  return detail(refund._id);
+  return detail(refund._id, { actor: user });
 }
 
 export async function getOrderRefund(orderId, user) {
@@ -489,10 +674,10 @@ export async function selectDestination(orderId, destinationId, user) {
   return present(await refund.save());
 }
 
-export async function list(filter = {}) {
+export async function list(filter = {}, actor = null) {
   const page = Math.max(1, Number(filter.page) || 1);
   const limit = Math.min(100, Math.max(1, Number(filter.limit) || 20));
-  const source = ["settlement", "manual_refund", "late_payment_recovery"].includes(filter.source) ? filter.source : "settlement";
+  const source = ["settlement", "manual_refund", "late_payment_recovery", "order_cancellation"].includes(filter.source) ? filter.source : "settlement";
   const query = { source: source === "settlement" ? { $in: ["settlement", null] } : source === "manual_refund" ? { $in: MANUAL_REFUND_SOURCES } : source };
   if (filter.status && statuses.includes(filter.status)) query.status = filter.status;
 
@@ -519,12 +704,12 @@ export async function list(filter = {}) {
       .sort({ updatedAt: -1, createdAt: -1 })
       .skip((page - 1) * limit).limit(limit),
     DepositRefund.countDocuments(query),
-    source === "manual_refund" || source === "late_payment_recovery"
+    source === "manual_refund" || source === "late_payment_recovery" || source === "order_cancellation"
       ? DepositRefund.find(query).select("status startedAt refundDestinationSnapshot destinationSnapshot refundAttempts amount source").lean()
       : DepositRefund.aggregate([{ $match: query }, { $group: { _id: "$status", count: { $sum: 1 }, amount: { $sum: "$amount" } } }])
   ]);
   const summary = Object.fromEntries(statuses.map((status) => [status, { count: 0, amount: 0 }]));
-  if (source === "manual_refund" || source === "late_payment_recovery") {
+  if (source === "manual_refund" || source === "late_payment_recovery" || source === "order_cancellation") {
     for (const row of summaryRows) {
       const key = effectiveLateRefundStatus(row);
       if (summary[key]) {
@@ -535,22 +720,51 @@ export async function list(filter = {}) {
   } else {
     for (const row of summaryRows) if (summary[row._id]) summary[row._id] = { count: row.count, amount: row.amount };
   }
+  const safeSummary = actor && !canViewSensitiveRefundData(actor)
+    ? Object.fromEntries(Object.entries(summary).map(([status, value]) => [status, { count: value.count }]))
+    : summary;
   return {
-    items: rows.map((row) => present(row)), summary,
+    items: rows.map((row) => present(row, { actor, adminView: true })), summary: safeSummary,
     pagination: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) }
   };
 }
 
-export async function detail(id, { source = null } = {}) {
+export async function detail(id, { source = null, actor = null } = {}) {
   const sourceQuery = source === "settlement" ? { $in: ["settlement", null] } : source === "manual_refund" ? { $in: MANUAL_REFUND_SOURCES } : null;
-  const refund = await DepositRefund.findOne({ _id: id, ...(sourceQuery ? { source: sourceQuery } : {}) }).populate("orderId").populate("customerId", "name phone email").populate("paymentId", "paymentReference manualTransactionReference providerTransactionId providerOrderId status method provider amount").populate("initiatedBy", "name role");
+  const refund = await DepositRefund.findOne({ _id: id, ...(sourceQuery ? { source: sourceQuery } : {}) }).populate("orderId").populate("customerId", "name phone email").populate("paymentId", "paymentReference manualTransactionReference providerTransactionId providerOrderId status method provider amount").populate("sourcePaymentIds", "paymentReference manualTransactionReference providerTransactionId providerOrderId status method provider amount").populate("initiatedBy", "name role");
   if (!refund) throw new ApiError(404, "Không tìm thấy giao dịch hoàn cọc.");
-  return present(refund, { fullAccount: true });
+  const value = present(refund, { fullAccount: true, actor, adminView: true });
+  if (!isCancellationRefund(refund) || !canViewSensitiveRefundData(actor)) return value;
+
+  const sourcePaymentIds = (refund.sourcePaymentIds || []).map((payment) => payment?._id || payment);
+  const [payments, refunds] = await Promise.all([
+    Payment.find({ _id: { $in: sourcePaymentIds } }).select("paymentReference manualTransactionReference providerTransactionId providerOrderId status method provider amount").lean(),
+    DepositRefund.find({ orderId: refund.orderId?._id || refund.orderId, source: "order_cancellation" }).select("status amount").lean()
+  ]);
+  const paidAmount = payments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+  const refundedAmount = refunds.filter((item) => item.status === "completed").reduce((sum, item) => sum + Number(item.amount || 0), 0);
+  const pendingRefundAmount = refunds.filter((item) => ["awaiting_information", "pending", "processing"].includes(item.status)).reduce((sum, item) => sum + Number(item.amount || 0), 0);
+  return {
+    ...value,
+    sourcePayments: payments,
+    refundLedger: {
+      paidAmount,
+      refundedAmount,
+      pendingRefundAmount,
+      remainingRefundableAmount: Math.max(0, paidAmount - refundedAmount - pendingRefundAmount)
+    }
+  };
 }
 
 function requireFinancial(user) {
   if (!hasAdminPermission(user, ADMIN_PERMISSIONS.REFUNDS_PROCESS)) {
     throw new ApiError(403, "Chỉ Chủ tiệm được xử lý hoàn cọc.");
+  }
+}
+
+function requireRefundComplete(user) {
+  if (!hasAdminPermission(user, ADMIN_PERMISSIONS.REFUNDS_COMPLETE)) {
+    throw new ApiError(403, "Tài khoản không có quyền xác nhận hoàn cọc.");
   }
 }
 
@@ -561,10 +775,10 @@ export async function start(id, user) {
   if (!isManualRefundSource(current)) {
     const refund = await DepositRefund.findOneAndUpdate({ _id: id, status: "pending", "refundDestinationSnapshot.bankBin": { $ne: "" }, "refundDestinationSnapshot.encryptedAccountNumber": { $ne: "" } }, { $set: { status: "processing", processedBy: user._id, processingAt: new Date(), processedAt: new Date() }, $push: { auditTrail: { actorId: user._id, role: user.role, action: "refund.started" } } }, { new: true });
     if (!refund) throw new ApiError(404, "Không tìm thấy giao dịch hoàn cọc.");
-    return detail(id);
+    return detail(id, { actor: user });
   }
 
-  if (effectiveLateRefundStatus(current) === "processing" && current.startedAt && hasActiveRefundAttempt(current)) return detail(id);
+  if (effectiveLateRefundStatus(current) === "processing" && current.startedAt && hasActiveRefundAttempt(current)) return detail(id, { actor: user });
   if (effectiveLateRefundStatus(current) !== "pending") throw new ApiError(409, "Khoản hoàn tiền chưa sẵn sàng để bắt đầu xử lý.");
   if (!hasValidRefundDestination(current)) throw new ApiError(409, "Khoản hoàn tiền chưa có tài khoản nhận tiền hợp lệ.");
 
@@ -604,9 +818,9 @@ export async function start(id, user) {
     },
     { new: true, runValidators: true }
   );
-  if (refund) return detail(id);
+  if (refund) return detail(id, { actor: user });
   const after = await DepositRefund.findById(id);
-  if (isManualRefundSource(after) && effectiveLateRefundStatus(after) === "processing" && after.startedAt && hasActiveRefundAttempt(after)) return detail(id);
+  if (isManualRefundSource(after) && effectiveLateRefundStatus(after) === "processing" && after.startedAt && hasActiveRefundAttempt(after)) return detail(id, { actor: user });
   throw new ApiError(409, "Khoản hoàn tiền vừa được bắt đầu bởi yêu cầu khác hoặc chưa còn đủ điều kiện xử lý.");
 }
 
@@ -638,7 +852,7 @@ export async function requestInformation(id, user) {
     requiresAction: true,
     eventKey: `refund:${refund._id}:information_requested`
   });
-  return detail(id);
+  return detail(id, { actor: user });
 }
 
 export async function recordContact(id, body, user) {
@@ -662,13 +876,14 @@ export async function recordContact(id, body, user) {
   refund.contactHistory.push({ method, contactedAt, result, note, actorId: user._id, role: user.role });
   refund.auditTrail.push({ actorId: user._id, role: user.role, action: "refund.contact_recorded", reason: note, after: { method, contactedAt, result, contactStatus } });
   await refund.save();
-  return detail(id);
+  return detail(id, { actor: user });
 }
 
 export async function complete(id, body, user) {
-  requireFinancial(user);
+  requireRefundComplete(user);
   const refund = await DepositRefund.findById(id);
   if (!refund) throw new ApiError(404, "Không tìm thấy giao dịch hoàn cọc.");
+  if (isCancellationRefund(refund)) return completeCancellationRefund(id, body, user);
   if (refund.status === "completed") throw new ApiError(409, "Khoản hoàn cọc đã hoàn tất và không thể xác nhận lại.");
   if (refund.status !== "processing") throw new ApiError(409, "Phải bắt đầu xử lý trước khi hoàn tất.");
   const latePaymentRefund = isManualRefundSource(refund);
@@ -762,7 +977,7 @@ export async function complete(id, body, user) {
       await completeOrder(order._id);
     }
   }
-  return detail(id);
+  return detail(id, { actor: user });
 }
 
 export async function fail(id, body, user) {
@@ -793,7 +1008,7 @@ export async function fail(id, body, user) {
     { new: true }
   );
   if (!refund) throw new ApiError(409, "Chỉ khoản đang xử lý mới được đánh dấu thất bại.");
-  return detail(id);
+  return detail(id, { actor: user });
 }
 
 export async function cancel(id, body, user) {
@@ -808,7 +1023,7 @@ export async function cancel(id, body, user) {
     { new: true }
   );
   if (!refund) throw new ApiError(409, "Không thể hủy khoản hoàn ở trạng thái hiện tại.");
-  return detail(id);
+  return detail(id, { actor: user });
 }
 
 export async function retry(id, user) {
@@ -822,7 +1037,7 @@ export async function retry(id, user) {
     { new: true }
   );
   if (!refund) throw new ApiError(409, "Khoản hoàn không thể thử lại ở trạng thái hiện tại.");
-  return detail(id);
+  return detail(id, { actor: user });
 }
 
 export async function overrideDestination(id, body, user) {
@@ -846,5 +1061,120 @@ export async function overrideDestination(id, body, user) {
     { new: true, runValidators: true }
   );
   if (!updated) throw new ApiError(409, "Khoản hoàn cọc vừa được xử lý bởi yêu cầu khác.");
-  return detail(id);
+  return detail(id, { actor: user });
+}
+
+async function completeCancellationRefund(id, body, user) {
+  requireRefundComplete(user);
+  let orderId = null;
+  try {
+    await runFinancialTransaction("hoàn tiền hủy đơn", async (session) => {
+      const refundQuery = DepositRefund.findById(id);
+      if (session) refundQuery.session(session);
+      const refund = await refundQuery;
+      if (!refund) throw new ApiError(404, "Không tìm thấy giao dịch hoàn tiền.");
+      if (refund.status === "completed") {
+        orderId = refund.orderId;
+        return refund._id;
+      }
+      if (refund.status !== "processing") throw new ApiError(409, "Phải bắt đầu xử lý hoàn tiền trước khi xác nhận.");
+      if (!refund.startedAt || !hasActiveRefundAttempt(refund)) throw new ApiError(409, "Khoản hoàn tiền chưa có lần chuyển tiền đang xử lý.");
+      const transactionReference = String(body.transactionReference || "").trim().replace(/\s+/g, " ").toUpperCase();
+      if (!transactionReference && !refund.transferProofAssets?.length) throw new ApiError(400, "Cần mã giao dịch hoặc ít nhất một ảnh chứng từ.");
+      if (!refund.refundDestinationSnapshot?.encryptedAccountNumber && !refund.refundDestinationSnapshot?.accountNumber) throw new ApiError(409, "Khoản hoàn tiền chưa có tài khoản nhận tiền hợp lệ.");
+
+      const orderQuery = RentalOrder.findById(refund.orderId);
+      if (session) orderQuery.session(session);
+      const order = await orderQuery;
+      if (!order) throw new ApiError(404, "Không tìm thấy đơn thuê của khoản hoàn tiền.");
+      orderId = order._id;
+
+      const sourcePaymentIds = (refund.sourcePaymentIds || []).map((value) => value?._id || value);
+      const paymentQuery = Payment.find({ _id: { $in: sourcePaymentIds }, paymentType: { $ne: "refund" } });
+      const completedRefundQuery = DepositRefund.find({ orderId: order._id, source: "order_cancellation", status: "completed", _id: { $ne: refund._id } }).select("amount");
+      if (session) { paymentQuery.session(session); completedRefundQuery.session(session); }
+      const [payments, completedRefunds] = await Promise.all([paymentQuery.lean(), completedRefundQuery.lean()]);
+      const paidAmount = payments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+      const refundedAmount = completedRefunds.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+      const remainingRefundableAmount = Math.max(0, paidAmount - refundedAmount);
+      if (Number(refund.amount || 0) !== remainingRefundableAmount) {
+        throw new ApiError(409, "Số tiền hoàn không còn khớp với số tiền còn có thể hoàn. Vui lòng tải lại giao dịch.");
+      }
+      if (transactionReference) {
+        const duplicateQuery = DepositRefund.findOne({ _id: { $ne: refund._id }, transactionReference });
+        if (session) duplicateQuery.session(session);
+        if (await duplicateQuery) throw new ApiError(409, "Mã giao dịch này đã được sử dụng cho một khoản hoàn khác.");
+      }
+
+      const completedAt = new Date();
+      const attemptIndex = (refund.refundAttempts || []).findIndex((attempt) => attempt?.status === "processing");
+      const completionUpdate = {
+        $set: {
+          status: "completed",
+          transactionReference,
+          transferredAt: new Date(body.transferredAt || Date.now()),
+          note: String(body.note || "").trim().slice(0, 1000),
+          completedBy: user._id,
+          completedAt,
+          [`refundAttempts.${attemptIndex}.status`]: "completed",
+          [`refundAttempts.${attemptIndex}.completedAt`]: completedAt,
+          [`refundAttempts.${attemptIndex}.completedBy`]: user._id,
+          [`refundAttempts.${attemptIndex}.transactionReference`]: transactionReference,
+          [`refundAttempts.${attemptIndex}.transferredAt`]: new Date(body.transferredAt || Date.now())
+        },
+        $push: { auditTrail: { actorId: user._id, role: user.role, action: "refund.completed" } }
+      };
+      const completedQuery = DepositRefund.findOneAndUpdate({ _id: refund._id, source: "order_cancellation", status: "processing" }, completionUpdate, { new: true, runValidators: true });
+      if (session) completedQuery.session(session);
+      const updated = await completedQuery;
+      if (!updated) throw new ApiError(409, "Khoản hoàn tiền vừa được xử lý bởi yêu cầu khác.");
+
+      const paymentUpdate = Payment.updateMany(
+        { _id: { $in: sourcePaymentIds }, status: "success" },
+        { $set: { status: "refunded", active: false } },
+        session ? { session } : {}
+      );
+      await paymentUpdate;
+      const unresolvedQuery = Payment.exists({ _id: { $in: sourcePaymentIds }, status: "success" });
+      if (session) unresolvedQuery.session(session);
+      if (await unresolvedQuery) throw new ApiError(409, "Chưa thể hoàn tất vì còn khoản thanh toán thành công chưa được đối soát.");
+
+      order.status = "canceled";
+      order.bookingStatus = "cancelled";
+      order.paymentStatus = "refunded";
+      order.settlementStatus = "settled";
+      order.needsFinancialReview = false;
+      order.cancellationRefundId = updated._id;
+      order.cancellationCompletedAt = completedAt;
+      order.refundedAt = completedAt;
+      await order.save(session ? { session } : {});
+      await releaseVoucherForOrder(order._id, "order_canceled", session);
+      await Promise.all([
+        Reservation.updateMany({ orderId: order._id, status: { $nin: ["completed", "cancelled", "expired"] } }, { $set: { status: "cancelled" } }, session ? { session } : {}),
+        TransportReservation.updateMany({ orderId: order._id, status: { $nin: ["completed", "cancelled", "expired"] } }, { $set: { status: "cancelled" } }, session ? { session } : {})
+      ]);
+      await createNotificationOnce({
+        recipientId: order.customerId,
+        recipientRole: "customer",
+        type: "payment_refund_completed",
+        title: "Đơn thuê đã được hủy và hoàn tiền",
+        message: `ARA đã hoàn ${Number(updated.amount || 0).toLocaleString("vi-VN")} ₫ cho đơn ${order.orderCode || order._id}. Vui lòng kiểm tra tài khoản nhận tiền.`,
+        entityType: "deposit_refund",
+        entityId: updated._id,
+        orderId: order._id,
+        actionUrl: `/my-rentals/${order._id}`,
+        priority: "normal",
+        eventKey: `refund:${updated._id}:cancellation_completed:customer`,
+        metadata: { amount: updated.amount }
+      }, { session });
+      return updated._id;
+    });
+  } catch (error) {
+    if (error?.code === 11000) throw new ApiError(409, "Mã giao dịch này đã được sử dụng cho một khoản hoàn khác.");
+    throw error;
+  }
+
+  const result = await detail(id, { source: "manual_refund", actor: user });
+  if (orderId) emitOrderUpdated({ orderId, customerId: result.orderId?.customerId, status: result.orderId?.status, paymentStatus: result.orderId?.paymentStatus, reason: "cancellation_refund_completed" });
+  return result;
 }

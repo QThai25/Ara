@@ -3,7 +3,7 @@ import { env } from "../src/config/env.js";
 import { ShippingZone } from "../src/models/ShippingZone.js";
 import { findProvinceByLegacyName } from "../src/services/locationCatalog.service.js";
 
-await mongoose.connect(env.mongoUri);
+await mongoose.connect(env.mongodbUri);
 try {
   const zones = await ShippingZone.find({});
   for (const zone of zones) {

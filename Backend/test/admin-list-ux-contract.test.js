@@ -49,7 +49,8 @@ test("nearest schedule lookup avoids duplicate frontend requests and serial cand
   ]);
   assert.match(backend, /const verificationBatchSize = 6/);
   assert.match(backend, /Promise\.all\(batch\.map/);
-  assert.match(customer, /includeNearest: true/);
+  assert.match(customer, /includeNearest: false/);
+  assert.match(customer, /includeNearest: false, nearestOnly: true/);
   assert.doesNotMatch(customer, /const prefetchedNearest/);
 });
 

@@ -29,6 +29,21 @@ export function chatIdentity(user, guestSessionId = "") {
   return { customerId: null, guestSessionId: guest };
 }
 
+export async function claimGuestConversation(user, guestSessionId) {
+  if (!user?._id) return null;
+  const guest = clean(guestSessionId, 120);
+  if (!/^[a-zA-Z0-9_-]{16,120}$/.test(guest)) return null;
+  return ChatConversation.findOneAndUpdate(
+    {
+      customerId: null,
+      guestSessionId: guest,
+      status: { $in: ["bot_active", "waiting_admin", "admin_active"] }
+    },
+    { $set: { customerId: user._id, guestSessionId: "" } },
+    { new: true, sort: { lastMessageAt: -1 } }
+  );
+}
+
 export function canAccess(conversation, user, guestSessionId = "") {
   if (isAdminUser(user)) return true;
   if (user?._id) return String(conversation.customerId || "") === String(user._id);
@@ -44,6 +59,8 @@ export async function requireConversation(id, user, guestSessionId = "") {
 }
 
 export async function createConversation(user, guestSessionId, context = {}) {
+  const claimed = await claimGuestConversation(user, guestSessionId);
+  if (claimed) return claimed;
   const identity = chatIdentity(user, guestSessionId);
   const active = await ChatConversation.findOne({
     ...identity,

@@ -70,12 +70,13 @@ export async function requestPasswordReset({ phone, trustedDeviceToken = "", aud
 export async function resetPassword({ resetTicket, newPassword }, auditContext = {}) {
   if (!resetTicket) throw new ApiError(401, "Phiên đặt lại mật khẩu không hợp lệ hoặc đã hết hạn.");
   const now = new Date();
-  const ticket = await PasswordResetTicket.findOneAndUpdate({
+  const ticketFilter = {
     tokenHash: ticketHash(resetTicket),
     expiresAt: { $gt: now },
     consumedAt: null,
     revokedAt: null
-  }, { $set: { consumedAt: now } }, { new: false }).select("+tokenHash");
+  };
+  const ticket = await PasswordResetTicket.findOne(ticketFilter).select("+tokenHash");
   if (!ticket) throw new ApiError(401, "Phiên đặt lại mật khẩu không hợp lệ hoặc đã hết hạn.");
 
   const user = await User.findOne({
@@ -87,6 +88,20 @@ export async function resetPassword({ resetTicket, newPassword }, auditContext =
   if (user.password && await bcrypt.compare(newPassword, user.password)) {
     throw new ApiError(400, "Mật khẩu mới phải khác mật khẩu hiện tại.");
   }
+
+  if (ticket.authorizationType === "staff_grant") {
+    const activeGrant = await findActivePasswordResetGrant(ticket.userId, auditContext);
+    if (!activeGrant || String(activeGrant._id) !== String(ticket.grantId)) {
+      throw new ApiError(401, "Quyền đặt lại mật khẩu không còn hiệu lực.");
+    }
+  }
+
+  const consumedTicket = await PasswordResetTicket.findOneAndUpdate(
+    ticketFilter,
+    { $set: { consumedAt: now } },
+    { new: false }
+  ).select("+tokenHash");
+  if (!consumedTicket) throw new ApiError(401, "Phiên đặt lại mật khẩu không hợp lệ hoặc đã hết hạn.");
 
   if (ticket.authorizationType === "staff_grant") {
     const consumedGrant = await consumePasswordResetGrant(ticket.grantId, ticket.userId, auditContext);

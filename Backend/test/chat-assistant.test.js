@@ -2,7 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { classifyIntent, BOT_INTENTS } from "../src/services/chatBot.service.js";
-import { canAccess, chatIdentity, supportHandoffMessage } from "../src/services/chat.service.js";
+import { ChatConversation } from "../src/models/ChatConversation.js";
+import { canAccess, chatIdentity, claimGuestConversation, supportHandoffMessage } from "../src/services/chat.service.js";
 
 const read = path => fs.readFileSync(new URL(path, import.meta.url), "utf8");
 
@@ -27,11 +28,41 @@ test("guest identity requires a non-trivial opaque session", () => {
   assert.equal(chatIdentity(null, "1234567890abcdef").guestSessionId, "1234567890abcdef");
   assert.throws(() => chatIdentity(null, "short"));
 });
+test("authenticated chat identity wins over the guest session", () => {
+  assert.deepEqual(chatIdentity({ _id: "customer-a" }, "1234567890abcdef"), { customerId: "customer-a", guestSessionId: "" });
+});
 test("conversation authorization separates customers and guests", () => {
   assert.equal(canAccess({ customerId: "a" }, { _id: "a", role: "customer" }), true);
   assert.equal(canAccess({ customerId: "a" }, { _id: "b", role: "customer" }), false);
   assert.equal(canAccess({ guestSessionId: "guest-a" }, null, "guest-b"), false);
   assert.equal(canAccess({ customerId: "a" }, { _id: "admin", role: "admin" }), true);
+});
+test("guest conversation claim is bound to the exact session and never a conversation id", async () => {
+  const original = ChatConversation.findOneAndUpdate;
+  let query;
+  let update;
+  let options;
+  ChatConversation.findOneAndUpdate = (nextQuery, nextUpdate, nextOptions) => {
+    query = nextQuery;
+    update = nextUpdate;
+    options = nextOptions;
+    return Promise.resolve({ _id: "conversation-a", customerId: "customer-a", guestSessionId: "" });
+  };
+  try {
+    const result = await claimGuestConversation({ _id: "customer-a" }, "1234567890abcdef");
+    assert.equal(result.customerId, "customer-a");
+    assert.deepEqual(query, {
+      customerId: null,
+      guestSessionId: "1234567890abcdef",
+      status: { $in: ["bot_active", "waiting_admin", "admin_active"] }
+    });
+    assert.deepEqual(update, { $set: { customerId: "customer-a", guestSessionId: "" } });
+    assert.deepEqual(options, { new: true, sort: { lastMessageAt: -1 } });
+    assert.equal(query._id, undefined);
+    assert.equal(await claimGuestConversation({ _id: "customer-a" }, "short"), null);
+  } finally {
+    ChatConversation.findOneAndUpdate = original;
+  }
 });
 test("message model has per-conversation clientMessageId uniqueness", () => {
   const source = read("../src/models/ChatMessage.js");
@@ -63,12 +94,25 @@ test("customer chat bootstrap returns the conversation and history in one reques
   const service = read("../src/services/chat.service.js");
   const widget = read("../../Frontend/src/components/customer/AraChatWidget.jsx");
   const frontendService = read("../../Frontend/src/services/chatService.js");
+  const api = read("../../Frontend/src/services/api.js");
+  assert.match(routes, /chatRoutes\.use\(optionalAuth\)/);
   assert.match(routes, /post\("\/conversations\/open",c\.openConversation\)/);
   assert.match(service, /if \(!history\.items\.length\)[\s\S]*welcomeMessageInput/);
   assert.match(widget, /openChatConversation\(/);
   assert.match(widget, /result\.items\?\.length\?result\.items:\[welcomeMessage\]/);
   assert.match(frontendService, /\[404,405\][\s\S]*createConversation[\s\S]*getChatMessages/);
   assert.doesNotMatch(widget, /createConversation\([\s\S]*getChatMessages\(/);
+  assert.match(api, /Authorization/);
+});
+test("customer chat resets identity before reconnecting the authenticated socket", () => {
+  const widget = read("../../Frontend/src/components/customer/AraChatWidget.jsx");
+  const socket = read("../src/realtime/socket.js");
+  assert.match(widget, /identityRef=useRef\(identityKey\)/);
+  assert.match(widget, /openingRef\.current=null;setConversation\(null\);setMessages\(\[\]\)/);
+  assert.match(widget, /\[open,conversationId,loadAttempt,identityKey\]/);
+  assert.match(widget, /auth:\{token:localStorage\.getItem\("ara_token"\),guestSessionId:chatSessionId\(\)\}/);
+  assert.match(socket, /jwt\.verify\(token/);
+  assert.match(socket, /requireConversation\(payload\.conversationId,socket\.user,socket\.guestSessionId\)/);
 });
 test("customer chat hides malformed action buttons from current and saved messages", () => {
   const widget = read("../../Frontend/src/components/customer/AraChatWidget.jsx");

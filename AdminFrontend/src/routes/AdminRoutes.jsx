@@ -69,10 +69,10 @@ export function AdminRoutes({ toast, notify }) {
       <Route path="/costumes/create" element={<ProtectedPage toast={toast} permission={P.CATALOG_MANAGE}><AdminCreateCostumePage notify={notify} /></ProtectedPage>} />
       <Route path="/costumes/:id" element={<ProtectedPage toast={toast} permission={P.INVENTORY_VIEW}><AdminCostumeDetailPage notify={notify} /></ProtectedPage>} />
       <Route path="/costumes/:id/edit" element={<ProtectedPage toast={toast} permission={P.CATALOG_MANAGE}><AdminEditCostumePage notify={notify} /></ProtectedPage>} />
-      <Route path="/brands" element={<ProtectedPage toast={toast} permission={P.CATALOG_MANAGE}><AdminBrandPage notify={notify} /></ProtectedPage>} />
-      <Route path="/categories" element={<ProtectedPage toast={toast} permission={P.CATALOG_MANAGE}><AdminCategoryPage notify={notify} /></ProtectedPage>} />
-      <Route path="/occasions" element={<ProtectedPage toast={toast} permission={P.CATALOG_MANAGE}><AdminOccasionPage notify={notify} /></ProtectedPage>} />
-      <Route path="/styles" element={<ProtectedPage toast={toast} permission={P.CATALOG_MANAGE}><AdminStylePage notify={notify} /></ProtectedPage>} />
+      <Route path="/brands" element={<ProtectedPage toast={toast} permission={P.INVENTORY_VIEW}><AdminBrandPage notify={notify} /></ProtectedPage>} />
+      <Route path="/categories" element={<ProtectedPage toast={toast} permission={P.INVENTORY_VIEW}><AdminCategoryPage notify={notify} /></ProtectedPage>} />
+      <Route path="/occasions" element={<ProtectedPage toast={toast} permission={P.INVENTORY_VIEW}><AdminOccasionPage notify={notify} /></ProtectedPage>} />
+      <Route path="/styles" element={<ProtectedPage toast={toast} permission={P.INVENTORY_VIEW}><AdminStylePage notify={notify} /></ProtectedPage>} />
       <Route path="/orders" element={<ProtectedPage toast={toast} permission={P.ORDERS_VIEW}><AdminRentalOrderListPage notify={notify} /></ProtectedPage>} />
       <Route path="/orders/create" element={<ProtectedPage toast={toast} permission={P.ORDERS_OPERATE}><AdminCreateRentalOrderPage notify={notify} /></ProtectedPage>} />
       <Route path="/orders/:id" element={<ProtectedPage toast={toast} permission={P.ORDERS_VIEW}><AdminRentalOrderDetailPage notify={notify} /></ProtectedPage>} />
@@ -90,8 +90,8 @@ export function AdminRoutes({ toast, notify }) {
       <Route path="/notifications" element={<ProtectedPage toast={toast} permission={P.NOTIFICATIONS_SEND_ORDER}><AdminNotificationPage notify={notify} /></ProtectedPage>} />
       <Route path="/contact-requests" element={<ProtectedPage toast={toast} permission={P.CUSTOMERS_VIEW_OPERATIONAL}><AdminContactRequestPage notify={notify} /></ProtectedPage>} />
       <Route path="/contact-requests/:conversationId" element={<ProtectedPage toast={toast} permission={P.CUSTOMERS_VIEW_OPERATIONAL}><AdminContactRequestPage notify={notify} /></ProtectedPage>} />
-      <Route path="/deposit-refunds" element={<ProtectedPage toast={toast} permission={P.REFUNDS_VIEW_SENSITIVE}><AdminFulfillmentRefundPage notify={notify} /></ProtectedPage>} />
-      <Route path="/deposit-refunds/:id" element={<ProtectedPage toast={toast} permission={P.REFUNDS_VIEW_SENSITIVE}><AdminRefundDetailPage notify={notify} /></ProtectedPage>} />
+      <Route path="/deposit-refunds" element={<ProtectedPage toast={toast} permission={P.REFUNDS_VIEW_STATUS}><AdminFulfillmentRefundPage notify={notify} /></ProtectedPage>} />
+      <Route path="/deposit-refunds/:id" element={<ProtectedPage toast={toast} permission={P.REFUNDS_VIEW_STATUS}><AdminRefundDetailPage notify={notify} /></ProtectedPage>} />
       <Route path="/refund-transactions" element={<ProtectedPage toast={toast} permission={P.REFUNDS_VIEW_STATUS}><AdminRefundTransactionPage notify={notify} /></ProtectedPage>} />
       <Route path="/refund-transactions/new" element={<ProtectedPage toast={toast} permission={P.REFUNDS_PROCESS}><AdminRefundTransactionCreatePage notify={notify} /></ProtectedPage>} />
       <Route path="/refund-transactions/:id" element={<ProtectedPage toast={toast} permission={P.REFUNDS_VIEW_STATUS}><AdminRefundDetailPage notify={notify} manualOnly /></ProtectedPage>} />

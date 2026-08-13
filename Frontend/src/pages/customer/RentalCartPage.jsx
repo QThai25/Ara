@@ -613,11 +613,17 @@ const CHECKOUT_OPTION_STYLES = `
 
 
 function normalizePhoneInput(value) {
-  return String(value || "").replace(/[^\d+\s.-]/g, "");
+  const cleaned = String(value || "").replace(/[^\d+\s.-]/g, "");
+  return cleaned.startsWith("+0") ? cleaned.slice(1) : cleaned;
+}
+
+function canonicalVietnamesePhone(value) {
+  const phone = String(value || "").replace(/[\s.-]/g, "");
+  return phone.startsWith("+0") ? phone.slice(1) : phone;
 }
 
 function isVietnamesePhone(value) {
-  const phone = String(value || "").replace(/[\s.-]/g, "");
+  const phone = canonicalVietnamesePhone(value);
   return /^(?:\+84|84|0)(?:3|5|7|8|9)\d{8}$/.test(phone);
 }
 
@@ -1028,7 +1034,7 @@ export function RentalCartPage(props) {
     if (submitRef.current) return;
 
     const fullName = guestInfo.fullName.trim();
-    const phone = guestInfo.phone.trim();
+    const phone = canonicalVietnamesePhone(guestInfo.phone.trim());
     const email = guestInfo.email.trim().toLowerCase();
     const invoiceEmail = String(
       guestInfo.invoiceEmail || email

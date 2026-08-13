@@ -1237,15 +1237,20 @@ export function CostumeDetailPage({
   }, [user, initialFulfillment.deliveryAddressId]);
 
   useEffect(() => {
-    if (!id || !product || available === null || !mainUseDate || !pickupTime) return undefined;
+    if (!id || !product || available === null || !mainUseDate || !pickupTime) {
+      setCheckingFulfillment(false);
+      return undefined;
+    }
     const needsAddress = pickupMethod === "home_delivery";
     if (needsAddress && (!deliveryAddress.addressLine || !deliveryAddress.provinceCode || !deliveryAddress.districtCode || !deliveryAddress.communeCode)) {
       setFulfillmentQuote(null);
       setNearestBookable(null);
       setFulfillmentError("Vui lòng chọn hoặc nhập địa chỉ giao đồ để hệ thống tính giờ vận chuyển.");
+      setCheckingFulfillment(false);
       return undefined;
     }
     const controller = new AbortController();
+    setNearestBookable(null);
     setCheckingFulfillment(true);
     const timer = window.setTimeout(async () => {
       const addressInput = deliveryAddressId
@@ -1263,9 +1268,10 @@ export function CostumeDetailPage({
       let nearestSuggestion = null;
       try {
         const quote = await quoteRentalOrder(
-          { ...quotePayload, includeNearest: true },
+          { ...quotePayload, includeNearest: false },
           { signal: controller.signal, cache: true }
         );
+        if (controller.signal.aborted) return;
         setFulfillmentQuote(quote);
         nearestSuggestion = quote?.nearestBookable || null;
         if (nearestSuggestion) setNearestBookable(nearestSuggestion);
@@ -1280,7 +1286,10 @@ export function CostumeDetailPage({
           setFulfillmentQuote(null);
           nearestSuggestion = err?.data?.nearestBookable || null;
           if (nearestSuggestion) setNearestBookable(nearestSuggestion);
-          shouldFindNearest = true;
+          shouldFindNearest = Boolean(
+            err?.data?.isBookable === false ||
+            err?.data?.available === false
+          );
           setFulfillmentError(err?.response?.data?.message || err.message || "Lịch giao nhận chưa phù hợp.");
         }
       }
@@ -1301,7 +1310,6 @@ export function CostumeDetailPage({
     return () => {
       window.clearTimeout(timer);
       controller.abort();
-      setCheckingFulfillment(false);
     };
   }, [id, loadedProductId, available, mainUseDate, pickupTime, rentalDays, pickupMethod, deliveryAddressId, deliveryAddressLine, deliveryProvinceCode, deliveryDistrictCode, deliveryCommuneCode]);
 

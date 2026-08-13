@@ -12,16 +12,16 @@ Docker Compose runs all three applications:
 
 The repository has separate npm projects, so each Dockerfile uses its own `package-lock.json` and `npm ci`. Backend uses Node 22; the React/Vite applications build into `dist` and are served by Nginx. Nginx sends unknown paths to `index.html`, so React Router works after a browser refresh.
 
-Before starting, create `Backend/.env.production` from `Backend/.env.production.example` and fill the backend secrets. This file is intentionally not committed. Compose loads it with `env_file`; it then applies local-only defaults for `NODE_ENV`, CORS, URLs and PayOS so the default local command can use `localhost` safely.
+Before starting, create `Backend/.env.production` from `Backend/.env.production.example` and fill the backend secrets. This file is intentionally not committed. Compose loads it with `env_file` and defaults the backend container to `NODE_ENV=production`; local development must explicitly use `docker-compose.env.example` so it runs with `NODE_ENV=development` and localhost values.
 
 ```powershell
-docker compose config
-docker compose up --build
+docker compose --env-file docker-compose.env.example config
+docker compose --env-file docker-compose.env.example up --build
 docker compose ps
 docker compose logs -f
 ```
 
-The same public, non-secret build values are documented in `docker-compose.env.example`. To use them explicitly:
+The same public, non-secret local build values are documented in `docker-compose.env.example`. To use them explicitly:
 
 ```powershell
 docker compose --env-file docker-compose.env.example up --build

@@ -213,7 +213,7 @@ test("an expired grant is marked expired once and an active grant can be revoked
 test("an expired reset ticket is rejected before password or grant mutation", async (t) => {
   let ticketFilter;
   let userWrites = 0;
-  t.mock.method(PasswordResetTicket, "findOneAndUpdate", (filter) => {
+  t.mock.method(PasswordResetTicket, "findOne", (filter) => {
     ticketFilter = filter;
     return selected(null);
   });
@@ -228,6 +228,65 @@ test("an expired reset ticket is rejected before password or grant mutation", as
   assert.equal(userWrites, 0);
 });
 
+test("invalid, expired and revoked tickets are rejected without an atomic consume", async (t) => {
+  let consumes = 0;
+  t.mock.method(PasswordResetTicket, "findOne", () => selected(null));
+  t.mock.method(PasswordResetTicket, "findOneAndUpdate", () => {
+    consumes += 1;
+    return selected(null);
+  });
+
+  for (const resetTicket of ["invalid-ticket", "expired-ticket", "revoked-ticket"]) {
+    await assert.rejects(
+      resetPassword({ resetTicket, newPassword: "new-secret-123" }),
+      (error) => error.statusCode === 401
+    );
+  }
+  assert.equal(consumes, 0);
+});
+
+test("same-password rejection keeps the ticket reusable, then success consumes it once", async (t) => {
+  const oldPassword = await bcrypt.hash("old-secret-123", 4);
+  const user = customer({ password: oldPassword, tokenVersion: 1 });
+  const ticket = { userId: user._id, authorizationType: "trusted_device", trustedDeviceId: null, grantId: null };
+  let consumed = false;
+  let consumeCalls = 0;
+  let passwordUpdate;
+  t.mock.method(PasswordResetTicket, "findOne", () => selected(consumed ? null : ticket));
+  t.mock.method(PasswordResetTicket, "findOneAndUpdate", () => {
+    consumed = true;
+    consumeCalls += 1;
+    return selected(ticket);
+  });
+  t.mock.method(PasswordResetTicket, "updateMany", async () => ({}));
+  t.mock.method(PasswordResetGrant, "updateMany", async () => ({}));
+  t.mock.method(User, "findOne", () => selected(user));
+  t.mock.method(User, "findOneAndUpdate", (_filter, update) => {
+    passwordUpdate = update;
+    return selected({ ...user, password: update.$set.password, tokenVersion: 2 });
+  });
+  t.mock.method(AuditLog, "create", async (entry) => entry);
+
+  await assert.rejects(
+    resetPassword({ resetTicket: "same-password-ticket", newPassword: "old-secret-123" }),
+    (error) => error.statusCode === 400
+  );
+  assert.equal(consumed, false);
+  assert.equal(consumeCalls, 0);
+
+  const result = await resetPassword({ resetTicket: "same-password-ticket", newPassword: "new-secret-123" });
+  assert.equal(result.sessionsRevoked, true);
+  assert.equal(consumed, true);
+  assert.equal(consumeCalls, 1);
+  assert.deepEqual(passwordUpdate.$inc, { tokenVersion: 1 });
+
+  await assert.rejects(
+    resetPassword({ resetTicket: "same-password-ticket", newPassword: "another-secret-123" }),
+    (error) => error.statusCode === 401
+  );
+  assert.equal(consumeCalls, 1);
+});
+
 test("a staff grant is consumed once only after the customer submits a valid new password", async (t) => {
   const oldPassword = await bcrypt.hash("old-secret-123", 4);
   const user = customer({ password: oldPassword, tokenVersion: 1 });
@@ -240,13 +299,21 @@ test("a staff grant is consumed once only after the customer submits a valid new
     createdByName: "Nhân viên A",
     createdByRole: "staff",
     expiresAt: new Date(Date.now() + 60_000),
-    status: "used",
-    usedAt: new Date()
+    status: "active",
+    usedAt: null,
+    revokedAt: null
   };
+  const consumedGrant = { ...grant, status: "used", usedAt: new Date() };
   const audit = [];
-  t.mock.method(PasswordResetTicket, "findOneAndUpdate", () => selected(ticket));
+  let ticketConsumes = 0;
+  t.mock.method(PasswordResetTicket, "findOne", () => selected(ticket));
+  t.mock.method(PasswordResetTicket, "findOneAndUpdate", () => {
+    ticketConsumes += 1;
+    return selected(ticket);
+  });
   t.mock.method(PasswordResetTicket, "updateMany", async () => ({}));
-  t.mock.method(PasswordResetGrant, "findOneAndUpdate", async () => grant);
+  t.mock.method(PasswordResetGrant, "findById", async () => grant);
+  t.mock.method(PasswordResetGrant, "findOneAndUpdate", async () => consumedGrant);
   t.mock.method(PasswordResetGrant, "updateMany", async () => ({}));
   t.mock.method(User, "findOne", () => selected(user));
   t.mock.method(User, "findOneAndUpdate", () => selected({ ...user, tokenVersion: 2 }));
@@ -255,6 +322,7 @@ test("a staff grant is consumed once only after the customer submits a valid new
   const result = await resetPassword({ resetTicket: "staff-ticket", newPassword: "new-secret-123" });
   assert.equal(result.sessionsRevoked, true);
   assert.equal(result.trustedDeviceToken, "");
+  assert.equal(ticketConsumes, 1);
   assert.ok(audit.some((entry) => entry.action === "password_reset_used"));
   assert.ok(audit.every((entry) => !JSON.stringify(entry).includes("new-secret-123")));
 });
@@ -271,12 +339,19 @@ test("only one concurrent reset can atomically consume a ticket and revoke old s
   };
   let claimed = false;
   let passwordUpdates = 0;
+  let ticketReads = 0;
+  let passwordUpdate;
+  t.mock.method(PasswordResetTicket, "findOne", () => {
+    ticketReads += 1;
+    return selected(ticket);
+  });
   t.mock.method(PasswordResetTicket, "findOneAndUpdate", () => selected(claimed ? null : (claimed = true, ticket)));
   t.mock.method(PasswordResetTicket, "updateMany", async () => ({}));
   t.mock.method(PasswordResetGrant, "updateMany", async () => ({}));
   t.mock.method(User, "findOne", () => selected(user));
   t.mock.method(User, "findOneAndUpdate", (_filter, update) => {
     passwordUpdates += 1;
+    passwordUpdate = update;
     return selected({ ...user, password: update.$set.password, tokenVersion: 3 });
   });
   t.mock.method(TrustedDevice, "findOneAndUpdate", async (_filter, update) => ({ _id: deviceId, ...update.$set }));
@@ -288,10 +363,12 @@ test("only one concurrent reset can atomically consume a ticket and revoke old s
   ]);
   assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
   assert.equal(results.filter((result) => result.status === "rejected").length, 1);
+  assert.equal(ticketReads, 2);
   assert.equal(passwordUpdates, 1);
   const success = results.find((result) => result.status === "fulfilled").value;
   assert.equal(success.sessionsRevoked, true);
   assert.ok(success.trustedDeviceToken);
+  assert.deepEqual(passwordUpdate.$inc, { tokenVersion: 1 });
 });
 
 test("trusted-device login rotates an existing token and revokes profiles beyond the three-device limit", async (t) => {

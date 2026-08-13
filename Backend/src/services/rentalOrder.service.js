@@ -21,7 +21,7 @@ import { RentalCredit } from "../models/RentalCredit.js";
 import { generateRentalOrderCode } from "../utils/orderCode.js";
 import { Payment } from "../models/Payment.js";
 import { quote as quoteShipping } from "./shipping.service.js";
-import { ensureRefund } from "./refund.service.js";
+import { ensureCancellationRefund, ensureRefund } from "./refund.service.js";
 import { addCalendarDays, buildStandardRentalSchedule, resolveStandardPackagePrice } from "./rentalSchedule.service.js";
 import { storeConfig } from "../config/store.config.js";
 import { computeStoreAwareExpiry, quoteRentalTimeline } from "./rentalTimeline.service.js";
@@ -634,7 +634,8 @@ export async function decorateOrder(orderId, { actor = null } = {}) {
   const payments = Array.isArray(order.payments) ? order.payments : [];
   const refunds = await DepositRefund.find({ orderId, $or: [{ source: { $in: ["settlement", null] } }, { source: { $exists: false } }] }).sort({ createdAt: -1 }).lean();
   const recovery = await LatePaymentRecovery.findOne({ orderId }).sort({ createdAt: -1 }).lean();
-  const manualRefund = await DepositRefund.findOne({ orderId, source: { $in: ["manual_refund", "late_payment_recovery"] } }).sort({ createdAt: -1 }).select("_id status paymentId").lean();
+  const manualRefund = await DepositRefund.findOne({ orderId, source: { $in: ["manual_refund", "late_payment_recovery", "order_cancellation"] } }).sort({ createdAt: -1 }).select("_id status paymentId source amount refundCode").lean();
+  const cancellationRefund = await DepositRefund.findOne({ orderId, source: "order_cancellation" }).sort({ createdAt: -1 }).select("_id status amount refundCode").lean();
   const [reservations, transportReservations] = await Promise.all([
     Reservation.find({ orderId }).select("status").lean(),
     TransportReservation.find({ orderId }).select("status").lean()
@@ -680,6 +681,13 @@ export async function decorateOrder(orderId, { actor = null } = {}) {
       refundCode: refunds[0].refundCode,
       status: refunds[0].status,
       amount: refunds[0].amount
+    } : null,
+    cancellationPending: Boolean(order.cancellationRequestedAt && cancellationRefund && !["completed", "canceled"].includes(cancellationRefund.status)),
+    cancellationRefund: cancellationRefund ? {
+      id: String(cancellationRefund._id),
+      refundCode: cancellationRefund.refundCode,
+      status: cancellationRefund.status,
+      amount: cancellationRefund.amount
     } : null,
     latePaymentRecovery: recovery ? {
       id: String(recovery._id),
@@ -1316,7 +1324,74 @@ export async function getOrderForUser(orderId, user) {
   return order;
 }
 
+async function requestPaidOrderCancellation(orderId, adminId, reason, { markRejected = false } = {}) {
+  const requestedId = await runFinancialTransaction("yêu cầu hủy đơn đã thanh toán", async (session) => {
+    const query = RentalOrder.findById(orderId);
+    const order = session ? await query.session(session) : await query;
+    if (!order) throw new ApiError(404, "Không tìm thấy đơn thuê.");
+    if (!["pending_payment", ...canonicalStatuses(["pending", "confirmed"])].includes(order.status)) {
+      throw new ApiError(400, "Đơn thuê hiện không còn ở trạng thái cho phép hủy.");
+    }
+
+    const successfulPayments = await getSuccessfulPayments(order._id, session);
+    if (!successfulPayments.length) return null;
+
+    await cancelActivePaymentsForOrder(order, session, reason || "Cửa hàng đã yêu cầu hủy đơn thuê.", { allowSuccessful: true });
+    const refund = await ensureCancellationRefund({ order, actor: adminId, reason, session });
+    if (!refund) throw new ApiError(409, "Không xác định được số tiền cần hoàn cho đơn thuê.");
+
+    const now = new Date();
+    order.settlementStatus = "pending_refund";
+    order.paymentStatus = "settlement_pending";
+    order.cancellationRequestedAt ||= now;
+    order.cancellationRequestedBy = adminId;
+    order.cancellationReason = String(reason || "Cửa hàng không thể nhận đơn trong thời gian này.").trim().slice(0, 500);
+    order.cancellationRefundId = refund._id;
+    if (markRejected) {
+      order.rejectedBy = adminId;
+      order.rejectedAt ||= now;
+      order.rejectReason = order.cancellationReason;
+    }
+    await order.save(session ? { session } : {});
+    await Promise.all([
+      Reservation.updateMany({ orderId: order._id, status: { $nin: ["completed", "cancelled", "expired"] } }, { $set: { status: "cancelled" } }, session ? { session } : {}),
+      TransportReservation.updateMany({ orderId: order._id, status: { $nin: ["completed", "cancelled", "expired"] } }, { $set: { status: "cancelled" } }, session ? { session } : {})
+    ]);
+    await createNotificationOnce({
+      recipientId: order.customerId,
+      recipientRole: "customer",
+      type: "order_cancellation_refund_pending",
+      title: "Đơn thuê đang chờ hoàn tiền",
+      message: "Đơn đã nhận thanh toán. ARA sẽ hoàn tiền cho bạn trước khi hoàn tất hủy đơn.",
+      entityType: "rental_order",
+      entityId: order._id,
+      orderId: order._id,
+      actionUrl: `/my-rentals/${order._id}`,
+      priority: "high",
+      eventKey: `order:${order._id}:cancellation_refund_pending`
+    }, { session });
+    return order._id;
+  });
+  if (!requestedId) return null;
+  const decorated = await decorateOrder(requestedId);
+  emitOrderUpdated({ orderId: decorated._id, customerId: decorated.customerId?._id || decorated.customerId, status: decorated.status, paymentStatus: decorated.paymentStatus, reason: "cancellation_refund_pending" });
+  return decorated;
+}
+
+export async function requestOrderCancellationRefund(orderId, user, reason) {
+  if (!isAdminRole(user?.role) || !hasAdminPermission(user, ADMIN_PERMISSIONS.REFUNDS_PROCESS)) {
+    throw new ApiError(403, "Chỉ tài khoản có quyền xử lý hoàn tiền mới được tạo yêu cầu hoàn tiền hủy đơn.");
+  }
+  const result = await requestPaidOrderCancellation(orderId, user._id, reason, { markRejected: true });
+  if (!result) throw new ApiError(409, "Đơn chưa có khoản thanh toán thành công để hoàn tiền.");
+  return result;
+}
+
 export async function cancelOrder(orderId, user) {
+  if (isAdminRole(user.role)) {
+    const pendingCancellation = await requestPaidOrderCancellation(orderId, user._id, "Cửa hàng đã hủy đơn thuê.");
+    if (pendingCancellation) return pendingCancellation;
+  }
   const canceledId = await runFinancialTransaction("hủy đơn thuê", async (session) => {
     const query = RentalOrder.findById(orderId);
     const order = session ? await query.session(session) : await query;
@@ -1423,6 +1498,8 @@ export async function approveOrder(orderId, adminId) {
 }
 
 export async function rejectOrder(orderId, adminId, reason) {
+  const pendingCancellation = await requestPaidOrderCancellation(orderId, adminId, reason, { markRejected: true });
+  if (pendingCancellation) return pendingCancellation;
   const rejectedId = await runFinancialTransaction("từ chối đơn thuê", async (session) => {
     const query = RentalOrder.findById(orderId);
     const order = session ? await query.session(session) : await query;

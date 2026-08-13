@@ -284,6 +284,15 @@ const rentalOrderSchema = new mongoose.Schema(
       index: true
     },
 
+    // A paid order stays in its operational state while its cancellation
+    // refund is being processed. The terminal order status is written only
+    // after the linked refund and payment ledger are completed together.
+    cancellationRequestedAt: { type: Date, default: null, index: true },
+    cancellationRequestedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    cancellationReason: { type: String, default: "", trim: true, maxlength: 500 },
+    cancellationRefundId: { type: mongoose.Schema.Types.ObjectId, ref: "DepositRefund", default: null },
+    cancellationCompletedAt: { type: Date, default: null },
+
     finalAmount: {
       type: Number,
       default: 0,
